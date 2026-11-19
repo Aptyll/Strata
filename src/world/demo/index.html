@@ -1,0 +1,160 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Strata world preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; cursor: grab; }
+  #hud { position: fixed; left: 12px; top: 10px; color: #888; font: 12px/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; }
+</style>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<script type="module">
+  // CPU-only preview of src/world: no engine needed. Each resident plane is
+  // drawn as a few hundred dots whose pattern depends on its behavior id, so
+  // layout, streaming and fades can be judged before the real renderer exists.
+  // URL options: ?seed=strata&planes=400&awake=100&only=cathedral&auto=0
+  import { createWorld, createStreamer, Rng, math, SLOT_AWAKE } from '../index.ts';
+
+  const q = new URLSearchParams(location.search);
+  const only = q.get('only');
+  const worldOptions = { seed: q.get('seed') ?? 'strata' };
+  if (only) {
+    const chosen = new Set(only.split(','));
+    worldOptions.weights = new Proxy({}, { get: (_, k) => (chosen.has(k) ? 1 : 0) });
+    worldOptions.density = 0.9;
+  }
+  const world = createWorld(worldOptions);
+  const streamer = createStreamer(world, {
+    maxPlanes: +(q.get('planes') ?? 400),
+    maxAwake: +(q.get('awake') ?? 100),
+  });
+
+  const canvas = document.getElementById('c');
+  const hud = document.getElementById('hud');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, image, lum;
+  function resize() {
+    W = canvas.width = Math.max(2, innerWidth);
+    H = canvas.height = Math.max(2, innerHeight);
+    image = ctx.createImageData(W, H);
+    lum = new Float32Array(W * H);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  // Dot patterns standing in for behaviors. Points are in [-0.5, 0.5]^2.
+  const POINTS = 700;
+  const patterns = [
+    (r) => [r.float() - 0.5, r.float() - 0.5],
+    (r) => { const a = r.float() * 6.283, d = (1 + r.int(4)) / 9; return [Math.cos(a) * d, Math.sin(a) * d]; },
+    (r) => [(r.int(9) + 0.5) / 9 - 0.5, r.float() - 0.5],
+    (r) => [r.gauss() * 0.13, r.gauss() * 0.13],
+    (r) => { const t = r.float(), a = t * 25; return [Math.cos(a) * t * 0.48, Math.sin(a) * t * 0.48]; },
+    (r) => { const e = r.int(4), t = r.float() - 0.5; return e < 2 ? [t, e - 0.5] : [e - 2.5, t]; },
+    (r) => [(r.int(12) + 0.5) / 12 - 0.5, (r.int(12) + 0.5) / 12 - 0.5],
+    (r) => { const t = r.float() - 0.5; return r.chance(0.5) ? [t, t] : [t, -t]; },
+  ];
+  const pointCache = new Map();
+  function pointsFor(plane) {
+    let pts = pointCache.get(plane.key);
+    if (!pts) {
+      const r = new Rng(plane.seed);
+      const make = patterns[plane.behavior % patterns.length];
+      pts = new Float32Array(POINTS * 2);
+      for (let i = 0; i < POINTS; i++) {
+        const [u, v] = make(r);
+        pts[i * 2] = Math.max(-0.5, Math.min(0.5, u));
+        pts[i * 2 + 1] = Math.max(-0.5, Math.min(0.5, v));
+      }
+      pointCache.set(plane.key, pts);
+      if (pointCache.size > 4000) pointCache.delete(pointCache.keys().next().value);
+    }
+    return pts;
+  }
+
+  const cam = { position: [50, 50, 50], yaw: 0.6, pitch: -0.05 };
+  let auto = q.get('auto') !== '0';
+  const keys = new Set();
+  addEventListener('keydown', (e) => { keys.add(e.code); if (e.code === 'Space') auto = !auto; });
+  addEventListener('keyup', (e) => keys.delete(e.code));
+  let dragging = false;
+  canvas.addEventListener('pointerdown', (e) => { dragging = true; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerup', () => (dragging = false));
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    cam.yaw -= e.movementX * 0.004;
+    cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch - e.movementY * 0.004));
+  });
+
+  let last = performance.now();
+  let time = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    time += dt;
+    if (auto) {
+      cam.yaw += dt * 0.12;
+      cam.pitch = Math.sin(time * 0.07) * 0.35;
+    }
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const forward = [-sy * cp, sp, -cy * cp];
+    const right = [cy, 0, -sy];
+    const up = math.cross(right, forward);
+    const speed = (keys.has('ShiftLeft') ? 160 : 40) * dt;
+    const move = [0, 0, 0];
+    const push = (v, s) => { move[0] += v[0] * s; move[1] += v[1] * s; move[2] += v[2] * s; };
+    if (auto) push(forward, 0.45);
+    if (keys.has('KeyW')) push(forward, 1);
+    if (keys.has('KeyS')) push(forward, -1);
+    if (keys.has('KeyD')) push(right, 1);
+    if (keys.has('KeyA')) push(right, -1);
+    if (keys.has('KeyE')) push(up, 1);
+    if (keys.has('KeyQ')) push(up, -1);
+    cam.position = cam.position.map((v, i) => v + move[i] * speed);
+
+    streamer.update({ position: cam.position, forward }, dt);
+
+    lum.fill(0);
+    const focal = H * 0.9;
+    for (const slot of streamer.slots) {
+      const p = slot.plane;
+      if (!p || slot.fade <= 0) continue;
+      const ax = math.rotate(p.rotation, [p.size[0], 0, 0]);
+      const ay = math.rotate(p.rotation, [0, p.size[1], 0]);
+      const pts = pointsFor(p);
+      const gain = slot.fade * (slot.state === SLOT_AWAKE ? 1 : 0.55);
+      const wobble = slot.state === SLOT_AWAKE ? Math.sin(time * 0.8 + p.seed) * 0.01 : 0;
+      for (let i = 0; i < POINTS; i++) {
+        const u = pts[i * 2] + wobble, v = pts[i * 2 + 1];
+        const x = p.position[0] + ax[0] * u + ay[0] * v - cam.position[0];
+        const y = p.position[1] + ax[1] * u + ay[1] * v - cam.position[1];
+        const z = p.position[2] + ax[2] * u + ay[2] * v - cam.position[2];
+        const depth = x * forward[0] + y * forward[1] + z * forward[2];
+        if (depth < 0.5) continue;
+        const sx = (W / 2 + ((x * right[0] + y * right[1] + z * right[2]) / depth) * focal) | 0;
+        const sY = (H / 2 - ((x * up[0] + y * up[1] + z * up[2]) / depth) * focal) | 0;
+        if (sx < 0 || sx >= W || sY < 0 || sY >= H) continue;
+        lum[sY * W + sx] += gain * 0.75;
+      }
+    }
+    const data = image.data;
+    for (let i = 0; i < lum.length; i++) {
+      const c = Math.min(255, lum[i] * 255);
+      const o = i * 4;
+      data[o] = data[o + 1] = data[o + 2] = c;
+      data[o + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+
+    const s = streamer.stats;
+    hud.textContent =
+      `seed ${worldOptions.seed}   sector ${cam.position.map((v) => Math.floor(v / world.sectorSize)).join(',')}\n` +
+      `planes ${s.resident}/${streamer.maxPlanes}   awake ${s.awake}   asleep ${s.asleep}   leaving ${s.leaving}\n` +
+      `candidates ${s.candidates}   particle hint ${(s.particles / 1e6).toFixed(1)}M\n` +
+      `drag look, WASD QE move, shift fast, space ${auto ? 'stops' : 'starts'} drift`;
+    window.__strataStats = s;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
