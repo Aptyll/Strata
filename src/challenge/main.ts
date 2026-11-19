@@ -14,6 +14,10 @@
  *   count=100M      run a fixed count instead of ramping (k, M, B suffixes).
  *   start=1M        first count of the ramp.
  *   wg=256          compute workgroup size, for experiments.
+ *   agg=1           merge same-pixel hits per subgroup before the atomic add
+ *                   (needs the 'subgroups' feature; ignored without it). For A/B tests.
+ *   still=1         no idle camera orbit, so a fixed-count run sees one view
+ *                   and gpuMs can be compared over time.
  *   seed=1
  *
  * Keys
@@ -87,6 +91,10 @@ export interface ChallengeResult {
    */
   gpuName: string;
   workgroupSize: number;
+  /** Same-pixel hits merged per subgroup before the atomic add (?agg=1 on a device with subgroups). */
+  aggregate: boolean;
+  /** The idle camera orbit was off (?still=1). */
+  stillCamera: boolean;
 }
 
 const parseCount = (text: string | null): number | null => {
@@ -186,6 +194,10 @@ export async function startChallenge(
   const adapter = await navigator.gpu.requestAdapter(adapterOptions());
   if (!adapter) return cannot("no-adapter");
   const features: GPUFeatureName[] = adapter.features.has("timestamp-query") ? ["timestamp-query"] : [];
+  const wantAgg = query.get("agg") === "1";
+  // Only ask for subgroups when the A/B asks for it, so the default device is unchanged.
+  if (wantAgg && adapter.features.has("subgroups")) features.push("subgroups");
+  const still = query.get("still") === "1";
   let device: GPUDevice;
   try {
     device = await adapter.requestDevice({ requiredFeatures: features });
@@ -233,6 +245,7 @@ export async function startChallenge(
     planes: stackLayout(planeCount, seed),
     workgroupSize: Number(query.get("wg")) || undefined,
     seed,
+    aggregate: wantAgg,
   });
   engine.mode = query.get("mode") === "proc" ? "proc" : "sim";
 
@@ -243,7 +256,7 @@ export async function startChallenge(
       far: 200,
       minDistance: 0.3,
       maxDistance: 40,
-      idle: { enabled: true, delay: 0, rampIn: 2, orbitRate: 0.09, swayPitch: 0.06, breathe: 0.05 },
+      idle: { enabled: !still, delay: 0, rampIn: 2, orbitRate: 0.09, swayPitch: 0.06, breathe: 0.05 },
     },
   );
   attachCameraInput(canvas, camera.rig, { observeResize: false });
@@ -350,6 +363,8 @@ export async function startChallenge(
       adapter: adapterName,
       gpuName: card.name,
       workgroupSize: engine.workgroupSize,
+      aggregate: engine.aggregate,
+      stillCamera: still,
     };
   };
 
