@@ -269,6 +269,16 @@ async function start(): Promise<void> {
   hud.registerShortcut({ key: "-", label: "dimmer", run: () => scaleBrightness(0.8) });
   hud.registerShortcut({ key: "g", label: "go to nearest plane", run: () => camera.rig.focusNearest() });
 
+  // Challenge mode is its own page state (?challenge): how many particles can this GPU hold?
+  hud.registerParam({
+    id: "challenge", label: "particle challenge", type: "action", group: "performance",
+    run: () => {
+      const url = new URL(location.href);
+      url.searchParams.set("challenge", "");
+      location.assign(url);
+    },
+  });
+
   const pointerBrushes = attachBrushes(canvas, camera, () => sim.planes);
 
   // ---- opening: one plane ignites, then the world (skip with any input, or ?intro=0) ----
