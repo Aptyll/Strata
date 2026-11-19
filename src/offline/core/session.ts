@@ -181,6 +181,7 @@ export async function renderJob(
       const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
       const stats = frameStats(frame, result, developed, {
         evaluated: result.gpuEvaluated,
+        evaluatedBy: renderer.evaluatedBy,
         seconds: result.seconds,
         batches: result.batches,
       });
