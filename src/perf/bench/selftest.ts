@@ -11,18 +11,19 @@
 
 import { behaviors } from '../../behaviors';
 import type { Behavior, FrameContext, GpuContext, PlaneDesc, PlaneInstance } from '../../core/contracts';
-import { createAtomicRasterPass, LIGHT_ONE } from '../atomicRasterPass';
+import { GLOBALS_SIZE, PLANE_UNIFORM_SIZE } from '../../gpu/shaderLib';
+import { createAtomicRasterPass } from '../atomicRasterPass';
 import { PerfBudget } from '../budget';
 import {
   classifyPlane,
   DEFAULT_LOD,
+  LIGHT_ONE,
   mat4Identity,
   packPosition,
   packVelocity,
   PerfEngine,
   unpackPosition,
   unpackVelocity,
-  WEIGHT_ONE,
 } from '../index';
 
 export interface TestResult {
@@ -153,18 +154,18 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     frame(e);
     const fb = await e.readFramebuffer();
     const s = sum(fb);
-    check('draw only: framebuffer sum is exact', s === N * WEIGHT_ONE, `${s} vs ${N * WEIGHT_ONE}`);
+    check('draw only: framebuffer sum is exact', s === N * LIGHT_ONE, `${s} vs ${N * LIGHT_ONE}`);
     let max = 0;
     for (const v of fb) max = Math.max(max, v);
     const mean = N / (0.9 * SIZE) ** 2;
-    check('default seeding is evenly spread', max / WEIGHT_ONE < mean * 6 + 8, `max ${max / WEIGHT_ONE} per px, mean ${mean.toFixed(2)}`);
+    check('default seeding is evenly spread', max / LIGHT_ONE < mean * 6 + 8, `max ${max / LIGHT_ONE} per px, mean ${mean.toFixed(2)}`);
 
     const before = await e.readParticles(id, 4096);
     e.simulate = true;
     const FRAMES = 120;
     for (let i = 0; i < FRAMES; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
     const s2 = sum(await e.readFramebuffer());
-    check('simulation conserves particles', s2 === N * WEIGHT_ONE, `${s2} vs ${N * WEIGHT_ONE}`);
+    check('simulation conserves particles', s2 === N * LIGHT_ONE, `${s2} vs ${N * LIGHT_ONE}`);
     const after = await e.readParticles(id, 4096);
     let dx = 0;
     let dy = 0;
@@ -192,7 +193,7 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     e.bilinear = true;
     frame(e);
     const s3 = sum(await e.readFramebuffer());
-    check('bilinear splat keeps energy within 1%', Math.abs(s3 - N * WEIGHT_ONE) / (N * WEIGHT_ONE) < 0.01, `${s3} vs ${N * WEIGHT_ONE}`);
+    check('bilinear splat keeps energy within 1%', Math.abs(s3 - N * LIGHT_ONE) / (N * LIGHT_ONE) < 0.01, `${s3} vs ${N * LIGHT_ONE}`);
     e.destroy();
   }
 
@@ -203,8 +204,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     const s = sum(await e.readFramebuffer());
     check(
       'LOD draws a quarter at 4x brightness',
-      st.drawnParticles === N / 4 && s === N * WEIGHT_ONE,
-      `drawn ${st.drawnParticles}, sum ${s} vs ${N * WEIGHT_ONE}`,
+      st.drawnParticles === N / 4 && s === N * LIGHT_ONE,
+      `drawn ${st.drawnParticles}, sum ${s} vs ${N * LIGHT_ONE}`,
     );
     e.destroy();
   }
@@ -255,7 +256,7 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     for (const b of behaviors) e.addPlane(sheet(b.id, 10_000), b);
     for (let i = 0; i < 10; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
     const s = sum(await e.readFramebuffer());
-    const want = behaviors.length * 10_000 * WEIGHT_ONE;
+    const want = behaviors.length * 10_000 * LIGHT_ONE;
     check(`all ${behaviors.length} registered behaviors run packed: ${behaviors.map((b) => b.id).join(', ')}`, s === want, `${s} vs ${want}`);
     e.destroy();
   }
@@ -273,17 +274,17 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
       ],
     });
-    const globals = new ArrayBuffer(80);
+    const globals = new ArrayBuffer(GLOBALS_SIZE); // brushes stay zero: radius 0 means unused
     const gf = new Float32Array(globals);
     gf[0] = 0.9; gf[5] = 0.9; gf[14] = 0.5; gf[15] = 1; // sheet [-1, 1]^2 to NDC [-0.9, 0.9]
     gf[19] = 0.25; // brightness
-    const globalsBuffer = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const globalsBuffer = device.createBuffer({ size: GLOBALS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(globalsBuffer, 0, globals);
-    const planeData = new ArrayBuffer(112);
+    const planeData = new ArrayBuffer(PLANE_UNIFORM_SIZE);
     new Float32Array(planeData).set(mat4Identity());
     new Uint32Array(planeData)[24] = M / 2; // count: only half are active
     new Float32Array(planeData)[26] = 1; // brightness
-    const planeUniform = device.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const planeUniform = device.createBuffer({ size: PLANE_UNIFORM_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(planeUniform, 0, planeData);
     const pd = new Float32Array(M * 4);
     for (let i = 0; i < M; i++) {

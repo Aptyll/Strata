@@ -108,13 +108,15 @@ uploaded in chunks.
 
 ### Behaviors run unchanged
 
-The compute shader is derived from the core engine's own `buildSimShader`: same
-prelude, same helpers (`rand`, `noise2`, `wrap`, `respawn`, ...), same
-`globals` and `plane` uniforms. Only the particle storage and the entry point
-are swapped. The entry point unpacks a particle to the standard
-`Particle { pos, vel }`, calls the behavior's `update`, and packs the result.
-If the core shader changes shape, the derivation fails loudly instead of
-silently drifting.
+The compute shader starts with the core engine's own behavior prelude
+(`behaviorPreludeWGSL` in `src/gpu/shaderLib.ts`): same helpers (`rand`,
+`noise2`, `wrap`, `respawn`, ...), same `globals` and `plane` uniforms, bound
+to this path's bind group and without the engine's f32 particle array. The
+entry point unpacks a particle to the standard `Particle { pos, vel }`, calls
+`simulateParticle` (the behavior's `update` plus pointer brushes, exactly as
+the core engine's entry point does), and packs the result.
+`src/perf/shaders.verify.ts` compiles this shader for every registered
+behavior (`npm run verify`).
 
 ### One pass: simulate and rasterize together
 

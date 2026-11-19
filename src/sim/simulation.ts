@@ -12,7 +12,7 @@ import type {
 import {
   buildSimShader,
   dispatchSize,
-  paramNames,
+  paramSlotNames,
   PARTICLE_STRIDE,
   PLANE_BRIGHTNESS_OFFSET,
   PLANE_COUNT_OFFSET,
@@ -137,7 +137,7 @@ export class Simulation implements Pass, PlaneHost {
     const buf = new ArrayBuffer(PLANE_UNIFORM_SIZE);
     const f32 = new Float32Array(buf);
     f32.set(fromTRS(desc.position, desc.rotation, [desc.halfSize[0], desc.halfSize[1], 1]), 0);
-    paramNames(behavior).forEach((name, i) => {
+    paramSlotNames(behavior).forEach((name, i) => {
       f32[PLANE_PARAMS_OFFSET / 4 + i] = desc.params?.[name] ?? behavior.params[name]?.default ?? 0;
     });
     new Uint32Array(buf)[PLANE_COUNT_OFFSET / 4] = plane.activeCount;
