@@ -1,0 +1,60 @@
+# Builds the site and publishes it to GitHub Pages on every push to main.
+# Pages must be set to "GitHub Actions" in Settings > Pages (done 2026-11-19).
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A run that is already deploying finishes; runs
+# queued behind it collapse into the newest one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - run: npm ci
+
+      # base_path is "/Strata" on aptyll.github.io, or "" with a custom domain,
+      # so asset URLs stay right either way.
+      - name: Build
+        run: npm run build -- --base "${{ steps.pages.outputs.base_path }}/"
+
+      # The rendering explainer is a standalone page; publish it next to the app.
+      - name: Add the explainer pages
+        run: |
+          mkdir -p dist/docs/explainers
+          cp docs/explainers/*.html dist/docs/explainers/
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
