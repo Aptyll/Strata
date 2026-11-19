@@ -73,8 +73,11 @@ const OWNED = new Set<string>(Object.values(KEYS).map((k) => k.code));
 
 /** Keys a focused slider uses itself: one step, or a jump to either end. */
 const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
-/** Keys that press whatever button, switch or checkbox has focus. */
+/** Keys that press a focused button, switch or checkbox. */
 const PRESS_KEYS = new Set(["Space", "Enter", "NumpadEnter"]);
+/** Elements those keys press. A focused panel or dialog is not one, so Space still reaches the camera. */
+const PRESSABLE =
+  "button, a[href], summary, input[type=checkbox], [role=button], [role=switch], [role=checkbox], [role=tab], [role=menuitem]";
 
 /**
  * True when the focused element takes this key press itself, so the camera
@@ -86,7 +89,7 @@ function keptByFocus(e: KeyboardEvent): boolean {
   if (e.defaultPrevented) return true;
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName;
-  if (!t || !tag || tag === "BODY" || tag === "HTML" || tag === "CANVAS") return false;
+  if (!t || !tag) return false;
   // Typing in a field must not fly the camera.
   if (t.isContentEditable || tag === "TEXTAREA" || tag === "SELECT") return true;
   if (tag === "INPUT") {
@@ -94,9 +97,9 @@ function keptByFocus(e: KeyboardEvent): boolean {
     if (type === "range") return SLIDER_KEYS.has(e.code);
     if (type !== "checkbox") return true;
   }
-  // Space and Enter press the focused control: Tab to a menu switch, Space flips it.
+  // Space and Enter press the focused control: Tab to the die, Space rolls it.
   // Letters and the other arrows still fly the camera from a button or a slider.
-  return PRESS_KEYS.has(e.code);
+  return PRESS_KEYS.has(e.code) && t.matches(PRESSABLE);
 }
 
 export interface KeyRouter {

@@ -666,9 +666,10 @@ export function createHud(options = {}) {
     return roll;
   };
   dice.addEventListener('click', () => randomize());
-  // A mouse or touch click must not leave the die or the menu dot holding focus: the next Space
-  // would press them again instead of reaching the world. Focus that came from Tab stays put.
-  for (const b of [dice, dot]) b.addEventListener('click', (e) => { if (e.detail > 0) b.blur(); });
+  // A mouse or touch press must not focus the die or the menu dot. Focus there would keep Space
+  // (the camera's idle drift) for the button, and closing the menu hands focus back to the dot.
+  // Tab still reaches both, and Space or Enter then presses them as usual.
+  for (const b of [dice, dot]) b.addEventListener('mousedown', (e) => e.preventDefault());
 
   // ---- idle fade ---------------------------------------------------------
   let idleTimer = 0;
