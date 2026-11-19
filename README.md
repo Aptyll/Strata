@@ -14,9 +14,10 @@ brightness instead of disappearing behind the nearest dot.
 [Render the trillion yourself](#render-the-trillion-yourself) ·
 [Docs](#docs)
 
-![One 3840x2160 frame with 1,000,000,000,000 particles](docs/record/trillion-key1-f0.png)
+[![One 3840x2160 frame with 1,000,000,000,000 particles](docs/record/web/trillion-key1-f0-1920.jpg)](docs/record/trillion-key1-f0.png)
 
-<sub>One 3840x2160 frame from the offline renderer. The positions of all
+<sub>One 3840x2160 frame from the offline renderer, shown at half size (click
+a picture on this page for its full frame). The positions of all
 1,000,000,000,000 particles were computed for this frame, and about 843 billion
 of them land in view. Rendered on an RTX 2070 (8 GB) in under a minute. More
 frames in [docs/record](docs/record).</sub>
@@ -69,7 +70,7 @@ count weighting does, so expect such frames to take about as long as count
 frames; this has not been timed on the 2070 yet. With count weighting every
 particle in view adds exactly one unit of light.
 
-![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/trillion-key2-f0.png)
+[![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/web/trillion-key2-f0-1920.jpg)](docs/record/trillion-key2-f0.png)
 
 <sub>Closer in, fewer particles land in the picture: 107,787,615,440 here. The
 rest are still computed; they just fall outside the frame.</sub>

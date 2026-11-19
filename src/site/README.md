@@ -10,6 +10,7 @@ build-time code and a few images.
 | `head.ts` | the privacy lock (a Content-Security-Policy), and the tags built from a row (title, description, canonical, Open Graph, X card, schema.org data); both are written into a page's HTML here |
 | `plugin.mjs` | the Vite plugin that `vite.config.ts` loads: locks and tags every page in dev and build, publishes the `docs/explainers` pages and the share card, writes `sitemap.xml`, prints the landing page's weight |
 | `share/strata-1t.jpg` | the share card, 1200x630, made by `share/make-card.py` |
+| `share/make-web-frames.py` | makes web-sized copies of record frames (`docs/record/web`) for the main README or a page |
 | `site.test.mjs` | unit tests (`npm test -- site`) |
 
 ## The privacy lock
@@ -114,6 +115,52 @@ To see a preview after a deploy, paste the page's address into the LinkedIn
 Post Inspector or the Facebook Sharing Debugger (both also refresh their
 cache), or into a private chat on Slack, Discord or iMessage. X has no
 checker any more; a draft post shows the card.
+
+## Showing a record frame
+
+A record frame in `docs/record` is a 3840x2160 PNG of 1 to 2 MB. Shown inline,
+the browser downloads all of it to draw it at a third of its size. Show a
+web-sized copy and link it to the PNG:
+
+```sh
+python3 src/site/share/make-web-frames.py trillion-key1-f0    # docs/record/web/trillion-key1-f0-1920.jpg
+```
+
+| `trillion-key1-f0` | size |
+| --- | ---: |
+| the PNG, 3840 wide | 1613 kB |
+| copy 1920 wide, JPEG (the default, read everywhere a README is) | 282 kB |
+| copy 1920 wide, WebP (`--format webp`) | 196 kB |
+| copy 1920 wide, AVIF (`--format avif`) | 130 kB |
+
+The main README shows the JPEG copies of its two frames: 444 kB together,
+where the PNGs were 3.3 MB.
+
+On a page of the site:
+
+- Reference the copy from the page's HTML or import it from its script, so
+  the build gives it a fingerprinted name. Because of the privacy lock a
+  picture has to come from the repo anyway.
+- Give the `<img>` its `width` and `height`, so nothing jumps when it arrives,
+  and `loading="lazy"` and `decoding="async"` unless it is the first thing on
+  screen.
+- Link it to the PNG on GitHub. A link is not a request.
+- For AVIF or WebP with a JPEG fallback, make those copies too
+  (`--format avif`, `--format webp`) and use `<picture>`:
+
+```html
+<a href="https://github.com/Aptyll/Strata/blob/main/docs/record/trillion-key1-f0.png">
+  <picture>
+    <source type="image/avif" srcset="/docs/record/web/trillion-key1-f0-1920.avif" />
+    <source type="image/webp" srcset="/docs/record/web/trillion-key1-f0-1920.webp" />
+    <img src="/docs/record/web/trillion-key1-f0-1920.jpg" width="1920" height="1080"
+         loading="lazy" decoding="async" alt="What the frame shows, and its counts" />
+  </picture>
+</a>
+```
+
+The landing page shows no picture today. It opens straight into the
+simulation, and what it loads is script: see "The load budget" below.
 
 ## The site's address
 
