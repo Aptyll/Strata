@@ -1,45 +1,40 @@
 /**
- * Compute rasterizer as a drop-in `rasterize` pass for the shared engine
- * (src/core/contracts.ts, docs/architecture.md).
+ * Compute rasterizer as a drop-in `rasterize` pass for the main engine
+ * (src/core/contracts.ts, docs/architecture.md). It is the app's default
+ * rasterizer ("atomic-raster" in src/main.ts).
  *
- * It reads the engine's own 16-byte f32 particle buffers through each plane's
- * `simBindGroup`, projects every active particle in a compute shader and
- * adds light per pixel with atomicAdd, in fixed point: one hit adds
+ * Reads the engine's own 16-byte f32 particle buffers through each plane's
+ * `simBindGroup`, projects every active particle in a compute shader and adds
+ * light per pixel with atomicAdd, in fixed point: one hit adds
  * `plane.brightness * LIGHT_ONE`. A single fullscreen triangle then adds
- * `light / LIGHT_ONE * globals.brightness` to the HDR target. No vertex buffers, no point
- * draw calls, no blending per particle.
+ * `light / LIGHT_ONE * globals.brightness` to the HDR target. No vertex
+ * buffers, no point draw calls, no blending per particle.
+ *
+ * Bindings: group(0) Globals, group(1) the plane (engine `planeSim` layout),
+ * group(2) this pass' size uniform and u32 light buffer (one per pixel, row
+ * major, top row first).
  *
  * Use it instead of a point-list rasterize pass, not together with one.
+ * PerfEngine (./engine.ts) has its own fused simulate + rasterize kernel for
+ * 8-byte particles; this pass is the same idea for the engine's 16-byte ones.
  */
 
 import type { FrameContext, GpuContext, Pass } from '../core/contracts';
-import { dispatchSize, DISPATCH_ROW_GROUPS, WORKGROUP_SIZE } from '../gpu/shaderLib';
+import {
+  dispatchSize,
+  DISPATCH_ROW_PARTICLES,
+  GLOBALS_WGSL,
+  PARTICLE_WGSL,
+  PLANE_STRUCT_WGSL,
+  WORKGROUP_SIZE,
+} from '../gpu/shaderLib';
+import { FULLSCREEN_VS_WGSL } from '../gpu/wgsl';
+import { LIGHT_ONE } from './shaders';
 
-const WORKGROUP = WORKGROUP_SIZE;
-/** Fixed-point scale of the per-pixel light buffer: a full-brightness hit adds this much. */
-export const LIGHT_ONE = 256;
-
-const SHARED = /* wgsl */ `
-struct Globals {
-  viewProj: mat4x4f,
-  time: f32,
-  dt: f32,
-  frame: u32,
-  brightness: f32,
-}
-@group(0) @binding(0) var<uniform> globals: Globals;
-`;
-
-const RASTER_WGSL = /* wgsl */ `${SHARED}
-struct Plane {
-  model: mat4x4f,
-  params0: vec4f,
-  params1: vec4f,
-  count: u32,
-  seed: f32,
-  brightness: f32,
-}
-struct Particle { pos: vec2f, vel: vec2f }
+/** Projects each active particle and adds its light to the pixel it lands on. */
+export const ATOMIC_RASTER_WGSL = /* wgsl */ `${GLOBALS_WGSL}
+${PLANE_STRUCT_WGSL}
+${PARTICLE_WGSL}
 struct Size { width: u32, height: u32 }
 
 @group(1) @binding(0) var<uniform> plane: Plane;
@@ -47,9 +42,9 @@ struct Size { width: u32, height: u32 }
 @group(2) @binding(0) var<uniform> size: Size;
 @group(2) @binding(1) var<storage, read_write> counts: array<atomic<u32>>;
 
-@compute @workgroup_size(${WORKGROUP})
+@compute @workgroup_size(${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let i = gid.x + gid.y * ${DISPATCH_ROW_GROUPS * WORKGROUP}u;
+  let i = gid.x + gid.y * ${DISPATCH_ROW_PARTICLES}u;
   if (i >= plane.count) { return; }
   let light = u32(clamp(plane.brightness, 0.0, 16.0) * ${LIGHT_ONE}.0 + 0.5);
   if (light == 0u) { return; }
@@ -64,16 +59,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
-const COMPOSITE_WGSL = /* wgsl */ `${SHARED}
+/** Adds the light buffer to the HDR target, scaled by globals.brightness. */
+export const ATOMIC_COMPOSITE_WGSL = /* wgsl */ `${GLOBALS_WGSL}
 struct Size { width: u32, height: u32 }
 @group(1) @binding(0) var<uniform> size: Size;
 @group(1) @binding(1) var<storage, read> counts: array<u32>;
-
-@vertex
-fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
-  let p = vec2f(f32((vi << 1u) & 2u), f32(vi & 2u));
-  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
-}
+${FULLSCREEN_VS_WGSL}
 
 @fragment
 fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
@@ -120,9 +111,9 @@ export function createAtomicRasterPass(gpu: GpuContext, options: AtomicRasterPas
   const rasterPipeline = device.createComputePipeline({
     label: 'strata-perf atomic raster',
     layout: device.createPipelineLayout({ bindGroupLayouts: [gpu.layouts.globals, gpu.layouts.planeSim, rasterLayout] }),
-    compute: { module: device.createShaderModule({ code: RASTER_WGSL }), entryPoint: 'main' },
+    compute: { module: device.createShaderModule({ label: 'strata-perf atomic raster', code: ATOMIC_RASTER_WGSL }), entryPoint: 'main' },
   });
-  const compositeModule = device.createShaderModule({ code: COMPOSITE_WGSL });
+  const compositeModule = device.createShaderModule({ label: 'strata-perf atomic composite', code: ATOMIC_COMPOSITE_WGSL });
   const compositePipeline = device.createRenderPipeline({
     label: 'strata-perf atomic composite',
     layout: device.createPipelineLayout({ bindGroupLayouts: [gpu.layouts.globals, compositeLayout] }),

@@ -17,8 +17,9 @@
 
 import { BRUSH_FLOATS, MAX_BRUSHES, type Behavior, type PlaneDesc } from '../core/contracts';
 import {
+  dispatchSize,
   GLOBALS_BRUSHES_OFFSET,
-  paramNames,
+  paramSlotNames,
   PLANE_BRIGHTNESS_OFFSET,
   PLANE_COUNT_OFFSET,
   PLANE_PARAMS_OFFSET,
@@ -33,17 +34,16 @@ import { ParticlePool, type ParticleRange } from './particlePool';
 import {
   BLOCK_ALIGN,
   buildSimRasterWGSL,
-  dispatchSize,
   FLAG_BILINEAR,
   FLAG_DRAW,
   FLAG_SIM,
   GLOBALS_BLOCK_SIZE,
   INIT_WGSL,
+  LIGHT_ONE,
   PERF_BLOCK_SIZE,
   PLANE_BLOCK_SIZE,
   RESOLVE_WGSL,
   SLOT_STRIDE,
-  WEIGHT_ONE,
 } from './shaders';
 
 export interface PerfEngineOptions {
@@ -391,7 +391,7 @@ export class PerfEngine {
         dt = Math.min(plane.pendingDt, MAX_STEP_DT);
         plane.pendingDt = 0;
       }
-      const weight = drawCount > 0 ? Math.max(1, Math.round((WEIGHT_ONE * planeBrightness * plane.count) / drawCount)) : 0;
+      const weight = drawCount > 0 ? Math.max(1, Math.round((LIGHT_ONE * planeBrightness * plane.count) / drawCount)) : 0;
       const flags = baseFlags | (doSim ? FLAG_SIM : 0) | (drawCount > 0 ? FLAG_DRAW : 0);
       const processed = Math.max(drawCount, simCount);
       this.writeSlot(active.length, plane, p.viewProj, this.mvp, dt, p.time, frame, simCount, drawCount, weight, flags, processed);
@@ -489,7 +489,7 @@ export class PerfEngine {
   private applyDesc(plane: PlaneRec): void {
     const d = plane.desc;
     plane.model.set(fromTRS(d.position, d.rotation, [d.halfSize[0], d.halfSize[1], 1]));
-    paramNames(plane.behavior).forEach((name, i) => {
+    paramSlotNames(plane.behavior).forEach((name, i) => {
       plane.params[i] = d.params?.[name] ?? plane.behavior.params[name]?.default ?? 0;
     });
   }

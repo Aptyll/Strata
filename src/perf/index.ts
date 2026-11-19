@@ -12,7 +12,7 @@ export {
   packVelocity,
   unpackVelocity,
 } from './packing';
-export { WORKGROUP_SIZE, WEIGHT_ONE, buildSimRasterWGSL } from './shaders';
+export { LIGHT_ONE, buildSimRasterWGSL } from './shaders';
 export { mat4Identity, mat4Multiply, mat4Perspective, mat4LookAt } from './math';
 export type { Mat4 } from './math';
 export { PerfBudget } from './budget';
