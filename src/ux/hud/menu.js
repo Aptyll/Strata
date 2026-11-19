@@ -6,8 +6,8 @@
 //
 //   +--------------------------------------+
 //   |  60 fps   16.7 ms         /\_/\__/\  |  summary header (#strata-menu-summary)
-//   |  4.19M simulating  8M stored  32 pl  |
-//   |  1920x1080  theme red  boids         |
+//   |  4.19M simulated  8M stored          |
+//   |  32 sheets  1920x1080  theme red     |
 //   |  scene behaviors look color perf ..  |  page tabs   (role=tablist)
 //   |  curl flow  galaxy                   |  section tabs (role=tablist, 2+ sections), or
 //   |  world                               |  on a stacked page a small title per section
@@ -138,12 +138,14 @@ export function createMenu(src) {
     if (anchor) anchor.dt.after(wrap); else facts.append(wrap);
     factEls.set(key, { dt: wrap, dd, label: dt, shown: '' });
   };
-  fact('particles', 'simulating', 'Particles the GPU stepped and drew last frame (realtime, stored state)');
+  // Words match the rest of the app: "simulated" and "stored" for the two counts, "sheets" for planes.
+  // The lead behavior is not here: it names the world's most common behavior, which reads as if it
+  // were the one on screen.
+  fact('particles', 'simulated', 'Particles stepped last frame, each with stored state (realtime)');
   fact('total', 'stored', 'Particles held in GPU memory; the frame-rate governor may draw fewer');
-  fact('planes', 'planes');
+  fact('planes', 'sheets');
   fact('resolution', 'pixels', 'Drawing buffer size');
   fact('theme', 'theme');
-  fact('behavior', 'behavior');
   summary.append(top, facts);
 
   // ---- page tabs and pages ----------------------------------------------
@@ -442,8 +444,6 @@ export function createMenu(src) {
     setFact('resolution', res ? `${res[0]}×${res[1]}` : '');
     const theme = src.param('theme');
     setFact('theme', theme == null ? '' : String(theme));
-    const behavior = src.stat('behavior');
-    setFact('behavior', behavior == null ? '' : String(behavior));
     drawGraph();
   };
 

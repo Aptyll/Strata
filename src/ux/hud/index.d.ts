@@ -296,8 +296,8 @@ export interface Hud {
   removeView(id: string): void;
   /**
    * Write a fact in the menu's summary header (the grid under the frame rate). A new key adds
-   * a fact. One of the menu's own keys ('particles', 'total', 'planes', 'resolution', 'theme',
-   * 'behavior') takes that fact over: the menu stops writing it until it is given back.
+   * a fact. One of the menu's own keys ('particles', 'total', 'planes', 'resolution', 'theme')
+   * takes that fact over: the menu stops writing it until it is given back.
    * `null` or '' hides the fact and keeps it yours; `undefined` gives it back (an added fact is removed).
    */
   setFact(key: string, text: string | null | undefined, options?: FactOptions): void;
