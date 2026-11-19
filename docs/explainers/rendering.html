@@ -1,0 +1,1004 @@
+<meta charset="utf-8">
+<title>Strata Rendering Field Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column in a black void. Figures break out wider than the text.
+   Single deliberate look (white on black), matching the project's TOKENS. */
+:root {
+  color-scheme: dark;
+  --bg: #000;
+  --ink: rgba(255,255,255,.92);
+  --dim: rgba(255,255,255,.64);
+  --faint: rgba(255,255,255,.4);
+  --line: rgba(255,255,255,.16);
+  --panel: #0a0a0a;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+body { background: var(--bg); color: var(--ink); font: 16px/1.65 var(--sans); }
+.wrap { max-width: 1000px; margin: 0 auto; padding-block: 28px 96px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.prose { max-width: 66ch; }
+h1 { font: 600 clamp(30px, 5vw, 46px)/1.1 var(--sans); letter-spacing: -.02em; margin: 28px 0 14px; text-wrap: balance; }
+h2 { font: 600 26px/1.2 var(--sans); letter-spacing: -.01em; margin: 0 0 12px; text-wrap: balance; }
+h3 { font: 600 17px/1.3 var(--sans); margin: 28px 0 8px; }
+p { margin: 0 0 14px; }
+section { padding-top: 72px; }
+a { color: var(--ink); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lede { font-size: 19px; color: var(--ink); }
+.dim { color: var(--dim); }
+.mono, code { font-family: var(--mono); font-size: .88em; }
+code { color: var(--ink); background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 3px; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 14px; }
+.note { border-left: 1px solid var(--line); padding: 2px 0 2px 16px; color: var(--dim); font-size: 14.5px; max-width: 66ch; margin: 18px 0; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 12px/1.6 var(--mono); padding: 14px 0; border-block: 1px solid var(--line); margin-top: 28px; }
+.toc a { color: var(--dim); text-decoration: none; }
+.toc a:hover { color: #fff; }
+
+figure { margin: 26px 0 8px; }
+figcaption { font-size: 13.5px; color: var(--dim); max-width: 70ch; margin-top: 10px; }
+figcaption b { color: var(--ink); font-weight: 500; }
+.scroll { overflow-x: auto; }
+.scroll > svg { min-width: 600px; }
+svg { display: block; width: 100%; height: auto; }
+svg text { font: 11px var(--mono); fill: var(--dim); }
+svg .strong { fill: var(--ink); }
+svg .title { font: 500 12px var(--mono); fill: var(--ink); letter-spacing: .04em; }
+svg .big { font: 500 13px var(--mono); fill: var(--ink); }
+svg .box { fill: var(--panel); stroke: rgba(255,255,255,.55); stroke-width: 1; }
+svg .fixed { stroke-dasharray: 4 3; }
+svg .wire { stroke: rgba(255,255,255,.7); stroke-width: 1.2; fill: none; }
+svg .hair { stroke: var(--line); stroke-width: 1; fill: none; }
+svg .axis { stroke: rgba(255,255,255,.35); stroke-width: 1; fill: none; }
+svg .mark { fill: #fff; }
+svg [data-tip] { cursor: default; }
+
+canvas { display: block; width: 100%; height: auto; background: #000; }
+.frame { border: 1px solid var(--line); }
+.hero { position: relative; }
+.hud { position: absolute; left: 10px; bottom: 8px; font: 11px/1.5 var(--mono); color: var(--dim); letter-spacing: .04em; pointer-events: none; }
+.pixel { image-rendering: pixelated; }
+
+.steps { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 0; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 4px 20px; padding: 13px 0; border-top: 1px solid var(--line); }
+.steps .space { font: 500 11px/1.6 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.steps .val { font: 14px/1.5 var(--mono); color: #fff; overflow-wrap: anywhere; }
+.steps .how { font-size: 14px; color: var(--dim); grid-column: 2; }
+@media (max-width: 560px) { .steps li { grid-template-columns: 1fr; } .steps .how { grid-column: 1; } }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; margin: 14px 0; font: 12px/1.4 var(--mono); color: var(--dim); }
+.controls label { display: flex; align-items: center; gap: 10px; }
+.controls output, .readout b { color: #fff; font-weight: 400; font-variant-numeric: tabular-nums; }
+input[type=range] { accent-color: #fff; width: 170px; max-width: 46vw; }
+.seg { display: inline-flex; border: 1px solid var(--line); }
+.seg button, .btn { font: 12px/1 var(--mono); color: var(--dim); background: none; border: 0; padding: 8px 11px; cursor: pointer; letter-spacing: .03em; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed=true] { background: #fff; color: #000; }
+.seg button:hover:not([aria-pressed=true]), .btn:hover { color: #fff; }
+.btn { border: 1px solid var(--line); }
+.readout { font: 12px/1.7 var(--mono); color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 22px; font-variant-numeric: tabular-nums; }
+
+.split { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .split { grid-template-columns: minmax(0,1fr); } }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+@media (max-width: 700px) { .tiles { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+.tile .cap { font: 11px/1.5 var(--mono); color: var(--dim); margin-top: 6px; }
+.tile .cap b { color: #fff; font-weight: 400; display: block; }
+
+pre { font: 12.5px/1.6 var(--mono); color: var(--ink); background: var(--panel); border: 1px solid var(--line); padding: 14px 16px; overflow-x: auto; margin: 18px 0; }
+pre .c { color: var(--faint); }
+.tablewrap { overflow-x: auto; margin: 20px 0; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-top: 0; }
+td:first-child { color: var(--dim); }
+td.num { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.calc { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0; border: 1px solid var(--line); margin-top: 14px; }
+.calc div { padding: 14px 16px; border-left: 1px solid var(--line); min-width: 0; }
+.calc div:first-child { border-left: 0; }
+.calc .k { font: 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.calc .v { font: 500 22px/1.3 var(--mono); color: #fff; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .calc { grid-template-columns: 1fr; } .calc div { border-left: 0; border-top: 1px solid var(--line); } .calc div:first-child { border-top: 0; } }
+#tip { position: fixed; z-index: 20; pointer-events: none; background: #fff; color: #000; font: 11.5px/1.45 var(--mono); padding: 6px 9px; max-width: 260px; }
+dl { display: grid; grid-template-columns: 170px minmax(0,1fr); gap: 0; margin: 18px 0; font-size: 14.5px; }
+dt, dd { padding: 9px 0; border-top: 1px solid var(--line); margin: 0; }
+dt { font-family: var(--mono); font-size: 13px; color: #fff; padding-right: 14px; }
+dd { color: var(--dim); }
+@media (max-width: 560px) { dl { grid-template-columns: 1fr; } dd { border-top: 0; padding-top: 0; } }
+</style>
+
+<div class="wrap">
+
+<div class="eyebrow">Strata · rendering field guide · first edition, 19 Nov 2026</div>
+<figure class="hero frame" style="margin-top:0">
+  <canvas id="hero" width="720" height="405" aria-label="Five sheets of white particles in a black void, seen by a slowly orbiting camera"></canvas>
+  <div class="hud" id="heroHud">200,000 particles · 0 bytes stored · every position recomputed each frame</div>
+</figure>
+
+<h1>How a trillion particles become a picture</h1>
+<div class="prose">
+<p class="lede">The picture above is a tiny version of the whole plan, running in your browser. No particle is saved anywhere. Each frame, every particle's position is worked out from its id number and the clock, pushed through a camera, and counted into a pixel. Then the counts are turned into brightness.</p>
+<p>This guide walks through that chain one idea at a time, with the math, the computer science and the bit of physics behind each step. Most figures are live: drag the sliders.</p>
+</div>
+<p class="note">Where the code stands today: <code>main</code> has the shared contracts, the camera and the behaviour building blocks. The renderer itself (<code>src/render</code>, <code>src/challenge</code>, <code>src/offline</code>, <code>src/perf</code>) is still being built in other threads. So the numbers here come from arithmetic, and the speed figures are estimates until the project measures them. Where a figure quotes project code, the file is named.</p>
+
+<nav class="toc" aria-label="Contents">
+  <a href="#journey">One particle's trip</a><a href="#perspective">Perspective</a><a href="#stateless">Motion without memory</a><a href="#memory">The memory wall</a><a href="#pipelines">Two ways to draw a dot</a><a href="#atomics">Counting safely</a><a href="#density">Pixels as counters</a><a href="#tonemap">Tone mapping</a><a href="#time">Render time</a><a href="#words">Words</a>
+</nav>
+
+<!-- ============================================================ journey -->
+<section id="journey">
+<div class="prose">
+<h2>One particle's trip to a pixel</h2>
+<p>Follow a single particle through one frame of a 4K render. Every step is a small piece of arithmetic, and the GPU does the same steps for every other particle at the same time.</p>
+</div>
+<ol class="steps">
+  <li><span class="space">Identity</span><span class="val">id = 7,301,442,118</span><span class="how">Particles are just the whole numbers 0, 1, 2 … up to the count. Nothing else exists about this particle yet.</span></li>
+  <li><span class="space">Randomness</span><span class="val">hash(id, seed) → (0.613, 0.207)</span><span class="how">A hash scrambles the id into numbers between 0 and 1 that look random but come out the same every time. This is the particle's personal starting point.</span></li>
+  <li><span class="space">Plane space</span><span class="val">motion(start, t = 12.3 s) → (0.31, −0.58)</span><span class="how">The behaviour moves it to where it is at this moment. The sheet spans −1 to 1 on both axes, so this is "a bit right of centre, more than halfway down".</span></li>
+  <li><span class="space">World space</span><span class="val">model × (0.31, −0.58, 0, 1) → (4.2, −1.1, 12.0)</span><span class="how">The plane's model matrix places the flat sheet in the 3D void: scale by its size, rotate, move.</span></li>
+  <li><span class="space">Clip space</span><span class="val">viewProj × world → (x, y, z, w)</span><span class="how">One more matrix moves the world so the camera sits at the origin and applies the lens. The fourth number, w, is the distance in front of the camera.</span></li>
+  <li><span class="space">Screen, −1 to 1</span><span class="val">(x / w, y / w) → (0.12, −0.33)</span><span class="how">Dividing by distance is what makes far things small. This is the perspective divide.</span></li>
+  <li><span class="space">Pixel</span><span class="val">(2150, 1436) of 3840 × 2160</span><span class="how">Stretch −1…1 to the image size and round down. Screen y points down, so y flips.</span></li>
+  <li><span class="space">Memory address</span><span class="val">1436 × 3840 + 2150 = 5,516,390</span><span class="how">The image is one long list of counters, row after row. This is the particle's slot.</span></li>
+  <li><span class="space">Count</span><span class="val">atomicAdd(counts[5516390], 1)</span><span class="how">Add one. The particle's whole contribution to the film is this single +1. Then it is forgotten.</span></li>
+</ol>
+<div class="prose">
+<p style="margin-top:18px">In shader code the whole trip is about ten lines. This is a sketch of the idea, not the project's final shader:</p>
+</div>
+<pre><span class="c">// one invocation of this runs per particle, millions at a time</span>
+@compute @workgroup_size(256)
+fn splat(@builtin(global_invocation_id) gid: vec3u) {
+  let id   = globals.firstId + gid.x;               <span class="c">// which particle am I?</span>
+  let p    = motion(id, plane.seed, globals.time);  <span class="c">// plane space, never stored</span>
+  let clip = globals.viewProj * plane.model * vec4f(p, 0.0, 1.0);
+  if (clip.w <= 0.0) { return; }                    <span class="c">// behind the camera</span>
+  let ndc  = clip.xy / clip.w;                      <span class="c">// perspective divide</span>
+  if (any(abs(ndc) >= vec2f(1.0))) { return; }      <span class="c">// off screen</span>
+  let px   = vec2u((ndc * vec2f(0.5, -0.5) + 0.5) * globals.size);
+  atomicAdd(&counts[px.y * u32(globals.size.x) + px.x], 1u);
+}</pre>
+<p class="note">A detail that matters at this scale: a <code>u32</code> id only reaches 4.29 billion. A trillion ids have to arrive in about 233 batches of 2<sup>32</sup>, with the batch number mixed into the hash.</p>
+</section>
+
+<!-- ======================================================== perspective -->
+<section id="perspective">
+<div class="prose">
+<h2>Perspective: divide by distance</h2>
+<p>A camera is a point (the eye) and a flat screen in front of it. To find where a particle lands, draw a straight line from the particle to the eye and mark where it crosses the screen. Similar triangles give the whole rule: the height on screen is the real height, times the screen distance, divided by how far away the particle is.</p>
+</div>
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 720 300" role="img" aria-label="Side view of a camera. Two particles at the same height but different distances project to different heights on the screen; the nearer one lands farther from the centre.">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="rgba(255,255,255,.8)"/></marker></defs>
+  <line class="hair" x1="60" y1="180" x2="690" y2="180" stroke-dasharray="3 4"/>
+  <text x="690" y="196" text-anchor="end">straight ahead (the optical axis)</text>
+  <circle class="mark" cx="60" cy="180" r="4"/><text class="strong" x="60" y="204" text-anchor="middle">eye</text>
+  <line x1="220" y1="40" x2="220" y2="270" stroke="#fff" stroke-width="2"/>
+  <text class="strong" x="220" y="30" text-anchor="middle">screen</text>
+  <!-- far particle P (560,80): y=100,z=500 ; crosses at 180-100*160/500=148 -->
+  <line class="wire" x1="60" y1="180" x2="560" y2="80"/>
+  <!-- near particle Q (360,80): crosses at 180-100*160/300=126.7 -->
+  <line class="wire" x1="60" y1="180" x2="360" y2="80" stroke-dasharray="5 3"/>
+  <circle class="mark" cx="560" cy="80" r="4"/><text class="strong" x="570" y="76">far particle</text>
+  <circle class="mark" cx="360" cy="80" r="4"/><text class="strong" x="370" y="76">near particle</text>
+  <circle cx="220" cy="148" r="4" fill="#000" stroke="#fff" stroke-width="1.5"/>
+  <circle cx="220" cy="126.7" r="4" fill="#000" stroke="#fff" stroke-width="1.5"/>
+  <text x="230" y="160">far one lands here</text>
+  <text x="208" y="118" text-anchor="end">near one lands higher</text>
+  <!-- dimension: y -->
+  <line class="axis" x1="600" y1="80" x2="600" y2="180" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <text class="strong" x="610" y="134">y, real height</text>
+  <!-- dimension: f -->
+  <line class="axis" x1="60" y1="240" x2="220" y2="240" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <text class="strong" x="140" y="256" text-anchor="middle">f, eye to screen</text>
+  <!-- dimension: z -->
+  <line class="axis" x1="60" y1="278" x2="560" y2="278" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <text class="strong" x="400" y="294" text-anchor="middle">z, distance to the particle</text>
+  <text class="big" x="440" y="232">screen height = f · y / z</text>
+</svg>
+</div>
+<figcaption><b>Same height, different distance.</b> The nearer particle crosses the screen farther from the centre, so near things look bigger. In Strata, <code>f = 1 / tan(fovY / 2)</code>, so a wider field of view means a smaller f and a smaller image of everything (see <code>perspective()</code> in <code>src/ux/camera/math.ts</code>). The 4×4 matrix exists so that this divide can be done for x and y in one step: it copies z into the slot called w, and the GPU divides by w.</div></figcaption>
+</figure>
+
+<div class="prose">
+<h3>What this does to a sheet</h3>
+<p>A sheet of particles is flat. Turn it away from the camera and it covers fewer pixels, but it still holds the same number of particles. The same light is squeezed into a smaller area, so the sheet gets brighter as it turns edge-on. That is the reason a rotating camera in Strata keeps revealing new things: every angle re-sorts which particles share a pixel.</p>
+</div>
+<figure>
+  <canvas id="persp" class="frame" width="640" height="300" aria-label="A single sheet of particles that can be rotated from face-on to edge-on"></canvas>
+  <div class="controls">
+    <label for="perspYaw">turn the sheet <input id="perspYaw" type="range" min="0" max="88" step="1" value="35"> <output id="perspYawOut">35°</output></label>
+  </div>
+  <div class="readout" id="perspRead"></div>
+  <figcaption><b>250,000 particles on one sheet, linear brightness.</b> Watch "particles per lit pixel" climb as the sheet turns. Nothing about the particles changed, only how many of them the camera stacks on each pixel.</figcaption>
+</figure>
+</section>
+
+<!-- ========================================================== stateless -->
+<section id="stateless">
+<div class="prose">
+<h2>Motion without memory</h2>
+<p>The usual way to animate a particle is to store where it is, then nudge it forward a little each frame. That needs memory for every particle. The trillion-particle render uses a different idea: write the motion as a formula that answers "where is particle number <i>id</i> at time <i>t</i>?" directly.</p>
+<p>The formula has two halves. A <b>hash</b> gives each id its own fixed random numbers (a starting spot, a speed, a lane). Then a <b>closed-form motion</b> moves that starting spot according to the clock. "Closed-form" means you can jump straight to any time without playing through the times before it.</p>
+</div>
+<figure>
+<div class="split">
+  <div>
+    <canvas id="sl" class="frame" width="460" height="460" aria-label="A sheet of particles whose positions are computed from id and time"></canvas>
+  </div>
+  <div>
+    <div class="controls" style="margin-top:0">
+      <span class="seg" role="group" aria-label="Motion">
+        <button type="button" id="slM0" aria-pressed="true">folds</button><button type="button" id="slM1" aria-pressed="false">rings</button><button type="button" id="slM2" aria-pressed="false">curves</button>
+      </span>
+    </div>
+    <div class="controls">
+      <label for="slT">time <input id="slT" type="range" min="0" max="120" step="0.05" value="12.3"> <output id="slTOut">12.30 s</output></label>
+    </div>
+    <div class="controls">
+      <button type="button" class="btn" id="slPlay">play</button>
+      <button type="button" class="btn" id="slJump">jump to a random time</button>
+    </div>
+    <div class="readout" id="slRead" style="display:block"></div>
+<pre id="slCode" style="font-size:11.5px"></pre>
+  </div>
+</div>
+<figcaption><b>150,000 particles, none stored.</b> Dragging the time slider does not rewind or fast-forward a simulation. It just asks the formula a different question. "Jump to a random time" costs exactly the same as the next frame, which is why a render like this can compute its frames in any order, or on several machines at once.</figcaption>
+</figure>
+
+<div class="prose">
+<h3>Where structure comes from</h3>
+<p>If every particle started at a random spot and nothing else happened, the sheet would be flat grey fog. Patterns appear when the formula pushes many different starting spots toward the same places. In "folds", each point is pushed by a sine wave that depends on where it started. Neighbours get slightly different pushes, so in some places they are squeezed together and in others spread apart. Where they are squeezed, a bright crease appears, the same way light bunches into bright lines on the bottom of a swimming pool.</p>
+
+<h3>Curl noise: flow that never piles up</h3>
+<p>Smooth random noise is like a landscape of hills. Its slope (the gradient) points uphill. Turn every slope arrow a quarter turn and you get arrows that run <i>along</i> the hillsides, around the hills, like contour lines on a map. A flow like that never runs into a peak or out of a pit, so particles swirl forever without clumping or leaving holes. Mathematicians call it divergence-free. The project's <code>curl2</code> block in <code>src/behaviors/core/wgsl.ts</code> does exactly this with three noise lookups.</p>
+</div>
+<figure>
+  <canvas id="curl" class="frame" style="aspect-ratio: 16 / 9" aria-label="A noise landscape drawn in grey with arrows running along its contour lines"></canvas>
+  <figcaption><b>Grey is the noise landscape (lighter is higher). Arrows are its curl.</b> Each arrow is the uphill direction turned 90°, so the flow circles the bright hills and dark hollows and never crosses a contour. One catch for the stateless plan: following a flow like this over time normally needs stored positions. A stateless render can use it as a displacement (start + curl × amount), or re-walk a few steps from the start every frame at a few times the cost.</figcaption>
+</figure>
+
+<div class="prose">
+<h3>Attractors: gravity with a safety valve</h3>
+<p>Real gravity pulls with a force of 1 / distance². That goes to infinity as the distance goes to zero, and a particle that passes very close gets flung away at absurd speed. Simulations fix this with <b>softening</b>: pretend the particle is never closer than a small distance <i>s</i>. The project's <code>attract</code> block uses force = r / (r² + s²)<sup>1.5</sup>.</p>
+</div>
+<figure>
+  <div class="scroll"><svg id="forceChart" viewBox="0 0 720 300" role="img" aria-label="Line chart of pull strength against distance for true inverse-square gravity and softened gravity"></svg></div>
+  <figcaption><b>Softened gravity matches real gravity far away and stays finite close in.</b> With s = 0.2 the pull peaks at a distance of 0.14 and then falls back to zero at the centre, so nothing explodes.</figcaption>
+</figure>
+</section>
+
+<!-- ============================================================= memory -->
+<section id="memory">
+<div class="prose">
+<h2>The memory wall</h2>
+<p>In the stored (stateful) design, each particle is a position and a velocity on its sheet: four 32-bit numbers, 16 bytes (<code>Particle</code> in <code>src/core/contracts.ts</code>). Multiply by the particle count and compare with the memory on a graphics card.</p>
+</div>
+<figure>
+  <div class="scroll"><svg id="memChart" viewBox="0 0 760 290" role="img" aria-label="Dot plot on a logarithmic scale of memory needed for 4 million, 100 million, 1 billion and 1 trillion stored particles, compared with graphics card memory"></svg></div>
+  <figcaption><b>Each step to the right is ten times more memory.</b> A billion stored particles need 16 GB, which fits only on the largest consumer cards. A trillion need 16 TB, about 670 of those cards. The stateless version stores no particles at all. Its only big buffer is one counter per pixel: 33 MB at 4K.</figcaption>
+</figure>
+
+<div class="prose">
+<h3>Two designs, side by side</h3>
+</div>
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 880 290" role="img" aria-label="Stateful design reads a particle buffer, updates it and writes it back each frame. Stateless design computes each position from id, seed and time with nothing stored.">
+  <text class="title" x="20" y="26">STATEFUL · realtime sim, up to about 1 billion</text>
+  <rect class="box" x="20" y="80" width="170" height="64"/>
+  <text class="strong" x="105" y="106" text-anchor="middle">particle buffer</text>
+  <text x="105" y="124" text-anchor="middle">16 bytes × N in VRAM</text>
+  <rect class="box" x="270" y="80" width="150" height="64"/>
+  <text class="strong" x="345" y="106" text-anchor="middle">update(p)</text>
+  <text x="345" y="124" text-anchor="middle">one small step</text>
+  <line class="wire" x1="190" y1="100" x2="268" y2="100" marker-end="url(#ah)"/><text x="229" y="93" text-anchor="middle">read</text>
+  <line class="wire" x1="270" y1="126" x2="192" y2="126" marker-end="url(#ah)"/><text x="229" y="141" text-anchor="middle">write back</text>
+  <line class="wire" x1="345" y1="144" x2="345" y2="198" marker-end="url(#ah)"/><text x="355" y="176">new position</text>
+  <rect class="box" x="270" y="200" width="150" height="50"/>
+  <text class="strong" x="345" y="230" text-anchor="middle">draw</text>
+  <text x="20" y="182">Each frame depends on</text><text x="20" y="198">the frame before it.</text>
+
+  <line class="hair" x1="450" y1="10" x2="450" y2="280"/>
+
+  <text class="title" x="480" y="26">STATELESS · the 1 trillion render</text>
+  <rect class="box" x="480" y="80" width="150" height="64"/>
+  <text class="strong" x="555" y="106" text-anchor="middle">id · seed · t</text>
+  <text x="555" y="124" text-anchor="middle">three numbers</text>
+  <rect class="box" x="710" y="80" width="150" height="64"/>
+  <text class="strong" x="785" y="106" text-anchor="middle">f(id, seed, t)</text>
+  <text x="785" y="124" text-anchor="middle">a pure formula</text>
+  <line class="wire" x1="630" y1="112" x2="708" y2="112" marker-end="url(#ah)"/>
+  <line class="wire" x1="785" y1="144" x2="785" y2="198" marker-end="url(#ah)"/><text x="795" y="176">position</text>
+  <rect class="box" x="710" y="200" width="150" height="50"/>
+  <text class="strong" x="785" y="230" text-anchor="middle">draw</text>
+  <text x="480" y="182">No buffer. Each frame stands</text><text x="480" y="198">alone and is thrown away.</text>
+</svg>
+</div>
+<figcaption><b>The difference is the loop on the left.</b> Stateful particles are read, changed and written back every frame, so they must live in memory. Stateless particles are recomputed from three numbers and never written anywhere.</figcaption>
+</figure>
+<div class="tablewrap">
+<table>
+  <thead><tr><th></th><th>Stateful (stored)</th><th>Stateless (computed)</th></tr></thead>
+  <tbody>
+    <tr><td>Memory per particle</td><td>16 bytes</td><td>0 bytes</td></tr>
+    <tr><td>What limits the count</td><td>Graphics memory</td><td>Only time: how long you will wait per frame</td></tr>
+    <tr><td>Can particles react to their own past, or to each other?</td><td>Yes. Velocity, collisions and fields are natural</td><td>No. Only motion that fits in a formula</td></tr>
+    <tr><td>Jump to any moment</td><td>No. Must simulate every step from the start</td><td>Yes, at no extra cost</td></tr>
+    <tr><td>Split a render across frames or machines</td><td>Hard, the state has to travel</td><td>Easy, every frame is independent</td></tr>
+    <tr><td>Work per particle per frame</td><td>Read 16 bytes, compute, write 16 bytes, draw</td><td>Compute, draw</td></tr>
+    <tr><td>Strata's use</td><td>Realtime 100M, offline 1B</td><td>The 1T film</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<!-- ========================================================== pipelines -->
+<section id="pipelines">
+<div class="prose">
+<h2>Two ways to draw a dot</h2>
+<p>A GPU has a built-in drawing machine called the render pipeline. It was designed for triangles that cover many pixels each. You can ask it for one-pixel points, and for millions of particles that works well. But every point still pays for machinery it does not need. The alternative is to skip the machine and write the pixel yourself from a compute shader, which is a plain program that runs once per particle.</p>
+</div>
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 880 330" role="img" aria-label="The render pipeline passes each particle through a vertex shader, fixed rasterizer hardware, a fragment shader and a blender. The compute rasterizer does position, projection and the pixel write in one program.">
+  <text class="title" x="20" y="24">RENDER PIPELINE · the GPU's built-in path</text>
+  <g>
+    <rect class="box" x="20" y="44" width="140" height="64"/><text class="strong" x="90" y="70" text-anchor="middle">particle buffer</text><text x="90" y="88" text-anchor="middle">stored positions</text>
+    <rect class="box" x="190" y="44" width="140" height="64"/><text class="strong" x="260" y="70" text-anchor="middle">vertex shader</text><text x="260" y="88" text-anchor="middle">project to screen</text>
+    <rect class="box fixed" x="360" y="44" width="140" height="64"/><text class="strong" x="430" y="70" text-anchor="middle">rasterizer</text><text x="430" y="88" text-anchor="middle">which pixels?</text>
+    <rect class="box" x="530" y="44" width="140" height="64"/><text class="strong" x="600" y="70" text-anchor="middle">fragment shader</text><text x="600" y="88" text-anchor="middle">what colour?</text>
+    <rect class="box fixed" x="700" y="44" width="160" height="64"/><text class="strong" x="780" y="70" text-anchor="middle">blender: add</text><text x="780" y="88" text-anchor="middle">into rgba16float</text>
+    <line class="wire" x1="160" y1="76" x2="188" y2="76" marker-end="url(#ah)"/><line class="wire" x1="330" y1="76" x2="358" y2="76" marker-end="url(#ah)"/><line class="wire" x1="500" y1="76" x2="528" y2="76" marker-end="url(#ah)"/><line class="wire" x1="670" y1="76" x2="698" y2="76" marker-end="url(#ah)"/>
+    <text x="430" y="126" text-anchor="middle">fixed hardware, built for triangles</text>
+    <text x="860" y="126" text-anchor="end">fixed, stalls near 2,048</text>
+  </g>
+  <line class="hair" x1="20" y1="158" x2="860" y2="158"/>
+  <text class="title" x="20" y="190">COMPUTE RASTERIZER · write the pixel yourself</text>
+  <g>
+    <rect class="box" x="20" y="210" width="140" height="64"/><text class="strong" x="90" y="236" text-anchor="middle">particle id</text><text x="90" y="254" text-anchor="middle">0 … N − 1</text>
+    <rect class="box" x="190" y="210" width="310" height="64"/><text class="strong" x="345" y="236" text-anchor="middle">compute shader</text><text x="345" y="254" text-anchor="middle">f(id, t) → project → pixel index</text>
+    <rect class="box" x="530" y="210" width="140" height="64"/><text class="strong" x="600" y="236" text-anchor="middle">atomicAdd</text><text x="600" y="254" text-anchor="middle">counts[pixel] += 1</text>
+    <rect class="box" x="700" y="210" width="160" height="64"/><text class="strong" x="780" y="236" text-anchor="middle">counter per pixel</text><text x="780" y="254" text-anchor="middle">u32, up to 4.29 billion</text>
+    <line class="wire" x1="160" y1="242" x2="188" y2="242" marker-end="url(#ah)"/><line class="wire" x1="500" y1="242" x2="528" y2="242" marker-end="url(#ah)"/><line class="wire" x1="670" y1="242" x2="698" y2="242" marker-end="url(#ah)"/>
+    <text x="345" y="292" text-anchor="middle">one program you wrote does all of it</text>
+  </g>
+  <text x="20" y="320">solid box: code you write · dashed box: fixed hardware you configure</text>
+</svg>
+</div>
+<figcaption><b>The compute path removes two fixed-hardware stages and the stored buffer.</b> For dots that are exactly one pixel, there is nothing for a rasterizer to work out, so skipping it saves work. Published point-cloud research (Schütz, Kerbl and Wimmer, 2021) measured compute-shader point rendering at up to about ten times the speed of the built-in point path. Strata's own numbers will come from <code>src/perf</code>.</figcaption>
+</figure>
+<div class="prose">
+<p>The built-in path stays the right tool for the realtime view. The frame graph in <code>src/core/contracts.ts</code> runs the stages <span class="mono">simulate → interplane → rasterize → depth → tonemap → ui → capture</span>, and "rasterize" there means additive points into a floating-point texture. The compute rasterizer is the special tool for the giant offline counts.</p>
+</div>
+</section>
+
+<!-- ============================================================ atomics -->
+<section id="atomics">
+<div class="prose">
+<h2>Counting safely when thousands write at once</h2>
+<p>A GPU runs thousands of particles at the same instant. With a trillion particles and eight million pixels, many of them want to add one to the same pixel at the same moment. Adding one is really three steps: read the number, add one, write it back. If two threads overlap, one of the additions vanishes.</p>
+</div>
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 880 250" role="img" aria-label="Without atomics, two threads both read 5 and both write 6, losing one count. With atomicAdd, the adds happen one after the other and the counter reaches 7.">
+  <text class="title" x="20" y="24">PLAIN  count = count + 1</text>
+  <text x="20" y="74">thread A</text><text x="20" y="124">thread B</text><text class="strong" x="20" y="194">the counter</text>
+  <line class="hair" x1="96" y1="70" x2="420" y2="70"/><line class="hair" x1="96" y1="120" x2="420" y2="120"/><line class="axis" x1="96" y1="190" x2="420" y2="190"/>
+  <rect class="box" x="110" y="56" width="62" height="28"/><text class="strong" x="141" y="74" text-anchor="middle">read 5</text>
+  <rect class="box" x="186" y="106" width="62" height="28"/><text class="strong" x="217" y="124" text-anchor="middle">read 5</text>
+  <rect class="box" x="262" y="56" width="66" height="28"/><text class="strong" x="295" y="74" text-anchor="middle">write 6</text>
+  <rect class="box" x="338" y="106" width="66" height="28"/><text class="strong" x="371" y="124" text-anchor="middle">write 6</text>
+  <line class="wire" x1="295" y1="84" x2="295" y2="180" stroke-dasharray="2 3" marker-end="url(#ah)"/>
+  <line class="wire" x1="371" y1="134" x2="371" y2="180" stroke-dasharray="2 3" marker-end="url(#ah)"/>
+  <text class="big" x="141" y="212" text-anchor="middle">5</text><text class="big" x="217" y="212" text-anchor="middle">5</text><text class="big" x="295" y="212" text-anchor="middle">6</text><text class="big" x="371" y="212" text-anchor="middle">6</text>
+  <text x="96" y="238">Two particles arrived, the counter rose by one. One was lost.</text>
+
+  <line class="hair" x1="450" y1="10" x2="450" y2="240"/>
+
+  <text class="title" x="480" y="24">ATOMIC  atomicAdd(&amp;count, 1)</text>
+  <text x="480" y="74">thread A</text><text x="480" y="124">thread B</text><text class="strong" x="480" y="194">the counter</text>
+  <line class="hair" x1="556" y1="70" x2="860" y2="70"/><line class="hair" x1="556" y1="120" x2="860" y2="120"/><line class="axis" x1="556" y1="190" x2="860" y2="190"/>
+  <rect class="box" x="600" y="56" width="62" height="28"/><text class="strong" x="631" y="74" text-anchor="middle">add 1</text>
+  <rect class="box" x="730" y="106" width="62" height="28"/><text class="strong" x="761" y="124" text-anchor="middle">add 1</text>
+  <line class="wire" x1="631" y1="84" x2="631" y2="180" stroke-dasharray="2 3" marker-end="url(#ah)"/>
+  <line class="wire" x1="761" y1="134" x2="761" y2="180" stroke-dasharray="2 3" marker-end="url(#ah)"/>
+  <text class="big" x="575" y="212" text-anchor="middle">5</text><text class="big" x="631" y="212" text-anchor="middle">6</text><text class="big" x="761" y="212" text-anchor="middle">7</text>
+  <text x="480" y="238">Read, add and write happen as one unbreakable step.</text>
+</svg>
+</div>
+<figcaption><b>An atomic operation cannot be interrupted halfway.</b> The hardware guarantees that no other thread sees the counter between the read and the write. In WGSL the counter buffer is declared as <code>array&lt;atomic&lt;u32&gt;&gt;</code>.</figcaption>
+</figure>
+
+<div class="prose">
+<h3>How high can one pixel count?</h3>
+<p>The built-in blender adds light into a 16-bit floating-point texture (<code>rgba16float</code>, the project's <code>hdrFormat</code>). Floats keep about the same number of significant digits at every size, so big totals get coarse. A 16-bit float has only 11 bits of precision. Once a pixel's total reaches about 2,048 times the size of one particle's contribution, adding one more rounds back to the same number, and the pixel stops getting brighter. A plain 32-bit whole-number counter keeps counting exactly to 4.29 billion.</p>
+</div>
+<figure>
+  <div class="scroll"><svg id="capChart" viewBox="0 0 760 250" role="img" aria-label="Dot plot on a logarithmic scale of how many overlapping particles a pixel can count in three storage formats, compared with the average particles per pixel for one billion and one trillion particles at 4K"></svg></div>
+  <figcaption><b>The 16-bit float target is fine for the realtime view and too small for the trillion.</b> At 1T and 4K the <i>average</i> pixel holds 120,563 particles, and bright pixels hold far more. This is the second reason the big render uses integer counters. The counts are "HDR" (high dynamic range) simply because they are real totals with no ceiling at white.</figcaption>
+</figure>
+</section>
+
+<!-- ============================================================ density -->
+<section id="density">
+<div class="prose">
+<h2>A pixel is a counter, an image is a histogram</h2>
+<p>A 4K frame has 8,294,400 pixels. A trillion particles is about 120,000 for every one of them. It is fair to ask what the point is, when most particles can never be seen as separate dots.</p>
+<p>The answer is that the picture stops being a drawing of dots and becomes a <i>measurement of density</i>. Each pixel reports how many particles fell in it. With few particles that report is rough and grainy. With many, it becomes smooth and can tell apart very fine differences in brightness.</p>
+</div>
+<figure>
+  <div class="tiles" id="tiles"></div>
+  <figcaption><b>The same scene at four particle budgets, shown as 4K-equivalent counts.</b> The shape never changes, only the number of particles used to measure it. Faint structure is invisible at 4 million, noisy at 100 million, and clean at a trillion. Each square here is one pixel.</figcaption>
+</figure>
+<div class="prose">
+<h3>The square-root law</h3>
+<p>Particles land in a pixel at random, like raindrops in a bucket. Physics calls the resulting graininess shot noise, and it follows a simple rule: if a pixel expects n particles, the count typically wobbles by about √n. So the wobble <i>relative to the signal</i> is 1 / √n. Four times the particles gives half the grain. This is the same law that makes a long-exposure photo cleaner than a short one.</p>
+</div>
+<figure>
+  <div class="scroll"><svg id="noiseChart" viewBox="0 0 760 340" role="img" aria-label="Log-log line chart showing relative noise falling as one over the square root of particles per pixel, with the four project tiers marked"></svg></div>
+  <figcaption><b>Grain falls by ten for every hundred-fold increase in particles.</b> A screen shows 256 brightness steps, so one step is 0.39%. Near 65,000 particles per pixel the grain drops below one step, and an average pixel in the 1T render (120,563) is past that line. In plain words: around a trillion particles is where a 4K frame becomes perfectly smooth at average brightness. Dimmer regions hold fewer particles and stay grainier.</figcaption>
+</figure>
+</section>
+
+<!-- ============================================================ tonemap -->
+<section id="tonemap">
+<div class="prose">
+<h2>Tone mapping: from counts to brightness</h2>
+<p>The counter image can hold a pixel with 3 particles next to a pixel with 3 million. A screen can show 256 levels. Tone mapping is the rule that squeezes the first range into the second, and the choice of rule decides what the viewer can see.</p>
+</div>
+<dl>
+  <dt>linear</dt><dd>Brightness is the count divided by a chosen "white" count. Honest, but it can only show a range of about 256 to 1. Either the bright core clips to flat white or the faint parts vanish into black.</dd>
+  <dt>log</dt><dd>Brightness follows the logarithm of the count, so every ten-fold increase adds the same step of brightness. A range of a million to one fits on screen. This is close to how eyes judge brightness.</dd>
+  <dt>filmic</dt><dd>Nearly linear in the darks, then a smooth "shoulder" that eases toward white instead of clipping. The version here is extended Reinhard, the simplest curve of this family. It keeps contrast in the mid-tones and still holds detail in highlights.</dd>
+</dl>
+<figure>
+<div class="controls">
+  <span class="seg" role="group" aria-label="Particle budget">
+    <button type="button" data-n="0.4823" aria-pressed="false">4M</button><button type="button" data-n="12.056" aria-pressed="false">100M</button><button type="button" data-n="120.56" aria-pressed="true">1B</button><button type="button" data-n="120563" aria-pressed="false">1T</button>
+  </span>
+  <label for="labN">particles per pixel <input id="labN" type="range" min="-1.5" max="6" step="0.001" value="2.081"> <output id="labNOut"></output></label>
+</div>
+<div class="controls">
+  <span class="seg" role="group" aria-label="Tone curve">
+    <button type="button" data-mode="linear" aria-pressed="false">linear</button><button type="button" data-mode="log" aria-pressed="true">log</button><button type="button" data-mode="filmic" aria-pressed="false">filmic</button>
+  </span>
+  <label for="labW">white point <input id="labW" type="range" min="-3" max="0" step="0.01" value="0"> <output id="labWOut"></output></label>
+</div>
+<div class="split">
+  <div>
+    <canvas id="lab" class="frame pixel" width="192" height="108" aria-label="The test scene rendered with the chosen particle budget and tone curve"></canvas>
+    <div class="readout" id="labRead" style="margin-top:10px"></div>
+  </div>
+  <div class="scroll"><svg id="labChart" viewBox="0 0 520 336" style="min-width:420px" role="img" aria-label="Top: the tone curve, output brightness against particles in a pixel. Bottom: histogram of how many pixels hold each count, each bar filled with the brightness the curve gives it."></svg></div>
+</div>
+<figcaption><b>Top right: the curve. Bottom right: how many pixels hold each count, with every bar painted the brightness the curve gives it.</b> Try linear with the white point at 100%: almost every bar is black, because nearly all pixels are far below the brightest one. Slide the white point down and the picture appears, but bars to the right of the white line all clip to the same white. Then switch to log and see the whole histogram spread across the greys.</figcaption>
+</figure>
+<p class="note">A real pipeline has one more step after this curve: encoding for the display (sRGB gamma) and writing 8-bit video. That is left out here so the curves stay easy to compare. The project's <code>RenderSettings.brightness</code> plays the role of the white point: it scales counts before the curve.</p>
+</section>
+
+<!-- =============================================================== time -->
+<section id="time">
+<div class="prose">
+<h2>Render time: the only limit left</h2>
+<p>With memory out of the way, a stateless render is limited by throughput: how many particles the GPU can compute and count per second. Everything follows from one division.</p>
+<p class="mono" style="color:#fff">seconds per frame = particles ÷ particles per second<br>total time = seconds per frame × frames in the video</p>
+</div>
+<figure>
+<div class="controls">
+  <label for="tN">particles <input id="tN" type="range" min="6" max="12" step="0.01" value="12"> <output id="tNOut"></output></label>
+  <label for="tR">GPU speed <input id="tR" type="range" min="8" max="11" step="0.01" value="10"> <output id="tROut"></output></label>
+</div>
+<div class="controls">
+  <label for="tD">video length <input id="tD" type="range" min="5" max="300" step="5" value="60"> <output id="tDOut"></output></label>
+  <span class="seg" role="group" aria-label="Frame rate"><button type="button" data-fps="30" aria-pressed="false">30 fps</button><button type="button" data-fps="60" aria-pressed="true">60 fps</button></span>
+</div>
+<div class="calc">
+  <div><div class="k">one frame takes</div><div class="v" id="tFrame"></div></div>
+  <div><div class="k">frames to render</div><div class="v" id="tFrames"></div></div>
+  <div><div class="k">whole video takes</div><div class="v" id="tTotal"></div></div>
+</div>
+<div class="readout" id="tNote" style="margin-top:10px"></div>
+<figcaption><b>Plug in the measured speed when <code>src/perf</code> has one.</b> The default of 10 billion particles per second is my rough guess for a strong GPU doing simple motion and one counter write per particle. I have not measured it, and the true figure could be several times higher or lower. It depends heavily on how expensive the motion formula is.</figcaption>
+</figure>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Tier</th><th>Particles</th><th>Needed speed or time</th><th>What that means</th></tr></thead>
+  <tbody>
+    <tr><td>Realtime</td><td class="num">100,000,000</td><td class="num">3 billion / s</td><td>100M at 30 frames a second. Every particle is also read and written, so memory speed matters as much as math.</td></tr>
+    <tr><td>Offline 4K60</td><td class="num">1,000,000,000</td><td class="num">0.1 s / frame at 10 B/s</td><td>A one-minute video is 3,600 frames, about 6 minutes of rendering.</td></tr>
+    <tr><td>Moonshot</td><td class="num">1,000,000,000,000</td><td class="num">100 s / frame at 10 B/s</td><td>The same one-minute video takes about 100 hours. A 10-second clip takes under 17 hours.</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="prose">
+<p>Two honest consequences. First, the trillion render is a patience problem, and every bit of work removed from the per-particle formula is hours saved. Second, because frames are independent, the render can stop and resume, or spread across several GPUs, without any change to the picture.</p>
+</div>
+</section>
+
+<!-- ============================================================== words -->
+<section id="words">
+<div class="prose"><h2>Words used here</h2></div>
+<dl>
+  <dt>splat</dt><dd>To deposit a particle's light into the pixel it lands on.</dd>
+  <dt>compute shader</dt><dd>A small program the GPU runs thousands of copies of at once, with no built-in drawing behaviour.</dd>
+  <dt>rasterize</dt><dd>To decide which pixels a shape covers. For a one-pixel dot there is nothing to decide.</dd>
+  <dt>atomic</dt><dd>An operation that completes as one step, so parallel threads cannot corrupt each other's work.</dd>
+  <dt>HDR</dt><dd>High dynamic range: pixel values that are real totals and are not capped at "white".</dd>
+  <dt>tone mapping</dt><dd>The curve that turns those totals into the 0 to 255 a screen can show.</dd>
+  <dt>hash</dt><dd>A function that scrambles a number into a random-looking one, identically every time.</dd>
+  <dt>stateless</dt><dd>Nothing is remembered between frames. Everything is recomputed from id, seed and time.</dd>
+  <dt>VRAM</dt><dd>The graphics card's own memory.</dd>
+  <dt>shot noise</dt><dd>The graininess of counting random arrivals. It shrinks as 1 / √count.</dd>
+</dl>
+<div class="prose">
+<h3>Sources and where to look in the repo</h3>
+<p class="dim" style="font-size:14.5px">Particle layout, frame stages and HDR format: <code>src/core/contracts.ts</code> and <code>docs/architecture.md</code>. Perspective matrix: <code>src/ux/camera/math.ts</code>. Curl noise and softened attraction: <code>src/behaviors/core/wgsl.ts</code>. Compute rasterization of points: Schütz, Kerbl, Wimmer, "Rendering Point Clouds with Compute Shaders and Vertex Order Optimization" (2021). Tone curve: Reinhard et al., "Photographic Tone Reproduction for Digital Images" (2002). The source of this page lives in <code>docs/explainers/</code>.</p>
+</div>
+</section>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const TAU = Math.PI * 2;
+const fmt = (n) => Math.round(n).toLocaleString("en-US");
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- hashing: id -> repeatable random numbers ---------- */
+function hash32(x) {
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+function rnd(id, salt) { return hash32(id ^ Math.imul(salt, 0x9e3779b9)) / 4294967296; }
+function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+/* ---------- three stateless motions: position = f(id, t) ---------- */
+let MX = 0, MY = 0;
+function mFolds(id, t) {
+  const x = rnd(id, 1) * 2 - 1, y = rnd(id, 2) * 2 - 1, a = 0.4;
+  const x1 = x + a * Math.sin(2.9 * x + 1.7 * y + 0.7 * t);
+  const y1 = y + a * Math.sin(2.3 * y - 1.9 * x1 - 0.5 * t);
+  MX = x1 * 0.62; MY = y1 * 0.62;
+}
+function mRings(id, t) {
+  const u = rnd(id, 1), v = rnd(id, 2), w = rnd(id, 3);
+  const band = Math.floor(u * 6), r0 = 0.14 + 0.145 * band, dir = band & 1 ? -1 : 1;
+  const th0 = TAU * v, th = th0 + dir * t * 0.35 / (0.25 + r0);
+  const r = r0 + 0.05 * (u * 6 - band - 0.5) * w + 0.035 * Math.sin((2 + band) * th0 - dir * t * 0.9);
+  MX = r * Math.cos(th); MY = r * Math.sin(th);
+}
+function mCurves(id, t) {
+  const u = rnd(id, 1), v = rnd(id, 2), w = rnd(id, 3);
+  const k = Math.floor(u * 3), s = TAU * v, j = (w - 0.5) * 0.035 * (u * 3 - k);
+  MX = 0.9 * Math.sin((k + 1) * s + 0.23 * t + k) + j;
+  MY = 0.9 * Math.sin((k + 2) * s + 0.155 * t * (k + 1)) - j;
+}
+const MOTIONS = [mFolds, mRings, mCurves];
+
+/* ---------- tone curves: count -> 0..1 ---------- */
+function tone(c, mode, white) {
+  if (c <= 0) return 0;
+  if (mode === "linear") return Math.min(1, c / white);
+  if (mode === "log") return Math.min(1, Math.log1p(c) / Math.log1p(white));
+  const k = white / 8, x = c / k;                       // extended Reinhard, hits 1 at c = white
+  return Math.min(1, (x * (1 + x / 64)) / (1 + x));
+}
+function paint(ctx, acc, W, H, mode, white) {
+  const img = ctx.createImageData(W, H), d = img.data;
+  const lutN = Math.min(4096, Math.ceil(white) + 2), lut = new Uint8ClampedArray(lutN);
+  for (let i = 0; i < lutN; i++) lut[i] = 255 * tone(i, mode, white);
+  for (let i = 0, j = 0; i < acc.length; i++, j += 4) {
+    const c = acc[i], v = c < lutN ? lut[c] : 255 * tone(c, mode, white);
+    d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ---------- the mini renderer: project and count ---------- */
+function camera(yaw, pitch, dist, fovY, target = [0, 0, 0]) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const e = [target[0] + dist * sy * cp, target[1] + dist * sp, target[2] + dist * cy * cp];
+  const f = [-sy * cp, -sp, -cy * cp], r = [cy, 0, -sy];
+  const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+  return { e, f, r, u, focal: 1 / Math.tan(fovY / 2) };
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+/* plane = { c: centre, a: local x axis, b: local y axis, motion, n, base } */
+function splat(acc, W, H, cam, planes, t) {
+  const aspect = W / H, F = cam.focal;
+  for (const P of planes) {
+    const d = [P.c[0] - cam.e[0], P.c[1] - cam.e[1], P.c[2] - cam.e[2]];
+    const cx = dot(d, cam.r), cyy = dot(d, cam.u), cz = dot(d, cam.f);
+    const ax = dot(P.a, cam.r), ay = dot(P.a, cam.u), az = dot(P.a, cam.f);
+    const bx = dot(P.b, cam.r), by = dot(P.b, cam.u), bz = dot(P.b, cam.f);
+    const m = P.motion;
+    for (let i = 0; i < P.n; i++) {
+      m(P.base + i, t);
+      const z = cz + MX * az + MY * bz;
+      if (z <= 0.05) continue;
+      const x = cx + MX * ax + MY * bx, y = cyy + MX * ay + MY * by;
+      const px = Math.floor((0.5 + 0.5 * F * x / (z * aspect)) * W);
+      const py = Math.floor((0.5 - 0.5 * F * y / z) * H);
+      if (px < 0 || py < 0 || px >= W || py >= H) continue;
+      acc[py * W + px]++;
+    }
+  }
+}
+
+/* ---------- hero ---------- */
+(function hero() {
+  const cv = $("#hero"), ctx = cv.getContext("2d"), W = cv.width, H = cv.height;
+  const acc = new Uint32Array(W * H), planes = [];
+  for (let k = 0; k < 5; k++) planes.push({ c: [0, 0, (k - 2) * 1.1], a: [1.5, 0, 0], b: [0, 1.5, 0], motion: MOTIONS[k % 3], n: 40000, base: k * 1000003 });
+  let visible = true, last = 0;
+  function frame(ms) {
+    const t = ms / 1000;
+    acc.fill(0);
+    splat(acc, W, H, camera(0.6 + t * 0.12, 0.16, 6.2, 0.8), planes, 4 + t * 0.6);
+    paint(ctx, acc, W, H, "log", 24);
+  }
+  frame(0);
+  if (reduced) return;
+  new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(cv);
+  (function loop(ms) { if (visible && ms - last > 30) { last = ms; frame(ms); } requestAnimationFrame(loop); })(0);
+})();
+
+/* ---------- perspective: turn one sheet ---------- */
+(function persp() {
+  const cv = $("#persp"), ctx = cv.getContext("2d"), W = cv.width, H = cv.height, acc = new Uint32Array(W * H);
+  const yawIn = $("#perspYaw");
+  function draw() {
+    const deg = +yawIn.value, a = deg * Math.PI / 180;
+    $("#perspYawOut").textContent = deg + "°";
+    acc.fill(0);
+    const P = { c: [0, 0, 0], a: [1.25 * Math.cos(a), 0, -1.25 * Math.sin(a)], b: [0, 1.25, 0], motion: mFolds, n: 250000, base: 7 };
+    splat(acc, W, H, camera(0, 0, 4.2, 0.7), [P], 12.3);
+    paint(ctx, acc, W, H, "linear", 14);
+    let lit = 0, max = 0;
+    for (let i = 0; i < acc.length; i++) { if (acc[i]) lit++; if (acc[i] > max) max = acc[i]; }
+    $("#perspRead").innerHTML = `<span>lit pixels <b>${fmt(lit)}</b> (${(100 * lit / acc.length).toFixed(1)}% of the image)</span><span>particles per lit pixel <b>${(P.n / Math.max(1, lit)).toFixed(1)}</b></span><span>brightest pixel <b>${fmt(max)}</b></span>`;
+  }
+  yawIn.addEventListener("input", draw); draw();
+})();
+
+/* ---------- stateless scrubber ---------- */
+(function stateless() {
+  const cv = $("#sl"), ctx = cv.getContext("2d"), W = cv.width, H = cv.height, acc = new Uint32Array(W * H);
+  const tIn = $("#slT"), N = 150000, PID = 123456;
+  const code = [
+`<span class="c">// folds: push each start point by a wave of its own position</span>
+s = hash(id) * 2 - 1
+x = s.x + 0.4 * sin(2.9 * s.x + 1.7 * s.y + 0.7 * t)
+y = s.y + 0.4 * sin(2.3 * s.y - 1.9 * x   - 0.5 * t)`,
+`<span class="c">// rings: six lanes, inner lanes turn faster</span>
+lane  = floor(hash(id).x * 6)
+r     = 0.14 + 0.145 * lane + ripple(angle, t)
+angle = hash(id).y * 2π ± t * 0.35 / (0.25 + r)
+x, y  = r * cos(angle), r * sin(angle)`,
+`<span class="c">// curves: each id is a point along a looping curve</span>
+s = hash(id).y * 2π          <span class="c">// how far along</span>
+x = 0.9 * sin(a * s + 0.23 * t)
+y = 0.9 * sin(b * s + 0.16 * t)`];
+  let mi = 0, playing = false, lastMs = 0;
+  function draw() {
+    const t = +tIn.value, m = MOTIONS[mi];
+    $("#slTOut").textContent = t.toFixed(2) + " s";
+    acc.fill(0);
+    for (let i = 0; i < N; i++) {
+      m(i, t);
+      const px = Math.floor((MX * 0.5 + 0.5) * W), py = Math.floor((0.5 - MY * 0.5) * H);
+      if (px >= 0 && py >= 0 && px < W && py < H) acc[py * W + px]++;
+    }
+    paint(ctx, acc, W, H, "log", 30);
+    m(PID, t);
+    $("#slRead").innerHTML = `particle <b>${fmt(PID)}</b> at t = <b>${t.toFixed(2)} s</b><br>is at (<b>${MX.toFixed(3)}</b>, <b>${MY.toFixed(3)}</b>) on its sheet`;
+    $("#slCode").innerHTML = code[mi];
+  }
+  [0, 1, 2].forEach((k) => $("#slM" + k).addEventListener("click", () => { mi = k; [0, 1, 2].forEach((j) => $("#slM" + j).setAttribute("aria-pressed", j === k)); draw(); }));
+  tIn.addEventListener("input", draw);
+  $("#slJump").addEventListener("click", () => { tIn.value = (Math.random() * 120).toFixed(2); draw(); });
+  $("#slPlay").addEventListener("click", (e) => {
+    playing = !playing; e.currentTarget.textContent = playing ? "pause" : "play"; lastMs = 0;
+    if (playing) requestAnimationFrame(function step(ms) {
+      if (!playing) return;
+      if (lastMs) { let t = +tIn.value + (ms - lastMs) / 1000; if (t > 120) t = 0; tIn.value = t; draw(); }
+      lastMs = ms; requestAnimationFrame(step);
+    });
+  });
+  draw();
+})();
+
+/* ---------- curl noise field ---------- */
+(function curl() {
+  const cv = $("#curl"), cssW = Math.min(1000, cv.clientWidth || 800), cssH = Math.round(cssW * 9 / 16);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = cssW * dpr; cv.height = cssH * dpr;
+  const ctx = cv.getContext("2d");
+  const g = (ix, iy) => { const a = TAU * rnd(ix * 7919 + iy * 104729, 5); return [Math.cos(a), Math.sin(a)]; };
+  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  function noise2(x, y) {
+    const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, u = fade(fx), v = fade(fy);
+    const d = (gx, gy, dx, dy) => { const q = g(gx, gy); return q[0] * dx + q[1] * dy; };
+    const a = d(ix, iy, fx, fy), b = d(ix + 1, iy, fx - 1, fy), c = d(ix, iy + 1, fx, fy - 1), e = d(ix + 1, iy + 1, fx - 1, fy - 1);
+    return a + u * (b - a) + v * (c - a + u * (a - b - c + e));
+  }
+  const S = 3.2 / cssH;                                   // noise units per css pixel
+  const lw = Math.ceil(cssW / 2), lh = Math.ceil(cssH / 2), img = ctx.createImageData(lw, lh);
+  for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+    const n = noise2(x * 2 * S, y * 2 * S), band = Math.abs(((n * 9) % 1 + 1) % 1 - 0.5) < 0.04 ? 26 : 0;
+    const v = Math.max(0, Math.min(255, 52 + n * 95 + band)), j = (y * lw + x) * 4;
+    img.data[j] = img.data[j + 1] = img.data[j + 2] = v; img.data[j + 3] = 255;
+  }
+  const off = document.createElement("canvas"); off.width = lw; off.height = lh; off.getContext("2d").putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, cv.width, cv.height);
+  ctx.scale(dpr, dpr); ctx.strokeStyle = "#fff"; ctx.fillStyle = "#fff"; ctx.lineWidth = 1.1;
+  const step = cssW < 520 ? 22 : 30, e = 0.01;
+  for (let y = step / 2; y < cssH; y += step) for (let x = step / 2; x < cssW; x += step) {
+    const n = noise2(x * S, y * S), dx = (noise2(x * S + e, y * S) - n) / e, dy = (noise2(x * S, y * S + e) - n) / e;
+    const vx = dy, vy = -dx, mag = Math.hypot(vx, vy);
+    if (mag < 0.05) continue;
+    const L = Math.min(step * 0.42, 5 + mag * 8), ux = vx / mag, uy = vy / mag;
+    const x0 = x - ux * L, y0 = y - uy * L, x1 = x + ux * L, y1 = y + uy * L;
+    ctx.globalAlpha = Math.min(1, 0.35 + mag * 0.5);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - ux * 5 - uy * 2.6, y1 - uy * 5 + ux * 2.6); ctx.lineTo(x1 - ux * 5 + uy * 2.6, y1 - uy * 5 - ux * 2.6); ctx.closePath(); ctx.fill();
+  }
+})();
+
+/* ---------- small SVG chart helpers ---------- */
+const NS = "http://www.w3.org/2000/svg";
+function S(tag, attrs, parent, text) {
+  const el = document.createElementNS(NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (text != null) el.textContent = text;
+  if (parent) parent.appendChild(el);
+  return el;
+}
+const logScale = (d0, d1, r0, r1) => (v) => r0 + (Math.log10(v) - Math.log10(d0)) / (Math.log10(d1) - Math.log10(d0)) * (r1 - r0);
+const linScale = (d0, d1, r0, r1) => (v) => r0 + (v - d0) / (d1 - d0) * (r1 - r0);
+function bytes(b) { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return (b >= 100 ? b.toFixed(0) : b >= 10 ? b.toFixed(0) : b.toFixed(1)).replace(/\.0$/, "") + " " + u[i]; }
+function dot2(svg, x, y, tip) {
+  S("circle", { cx: x, cy: y, r: 5, class: "mark" }, svg);
+  S("circle", { cx: x, cy: y, r: 16, fill: "transparent", "data-tip": tip }, svg);
+}
+
+/* memory chart */
+(function mem() {
+  const svg = $("#memChart"), L = 232, R = 730, T = 44, x = logScale(1e7, 1e14, L, R);
+  const rows = [
+    ["4M stored · your previous best", 64e6], ["100M stored · realtime goal", 1.6e9], ["1B stored · offline goal", 16e9], ["1T stored", 16e12], ["1T stateless · counters only", 33177600]];
+  const B = T + rows.length * 38;
+  S("rect", { x: x(8e9), y: T - 10, width: x(24e9) - x(8e9), height: B - T + 10, fill: "rgba(255,255,255,.14)" }, svg);
+  S("text", { x: x(14e9), y: T - 18, "text-anchor": "middle", class: "strong" }, svg, "consumer GPU memory, 8 to 24 GB");
+  for (let p = 7; p <= 14; p++) {
+    const v = 10 ** p; S("line", { x1: x(v), x2: x(v), y1: T - 10, y2: B, class: "hair" }, svg);
+    S("text", { x: x(v), y: B + 18, "text-anchor": "middle" }, svg, bytes(v));
+  }
+  rows.forEach(([name, v], i) => {
+    const y = T + 14 + i * 38;
+    S("text", { x: L - 16, y: y + 4, "text-anchor": "end", class: i === 4 ? "strong" : "" }, svg, name);
+    dot2(svg, x(v), y, `${name}: ${bytes(v)}`);
+    S("text", { x: x(v) + 12, y: y + 4, class: "strong" }, svg, bytes(v));
+  });
+  S("text", { x: R, y: B + 40, "text-anchor": "end" }, svg, "memory needed at 16 bytes per particle (log scale)");
+})();
+
+/* counter capacity chart */
+(function cap() {
+  const svg = $("#capChart"), L = 232, R = 730, T = 56, x = logScale(10, 1e10, L, R);
+  const rows = [["rgba16float · today's HDR target", 2048], ["r32float", 16777216], ["u32 with atomicAdd", 4294967295]];
+  const B = T + rows.length * 38;
+  for (let p = 1; p <= 10; p++) {
+    const v = 10 ** p; S("line", { x1: x(v), x2: x(v), y1: T - 6, y2: B, class: "hair" }, svg);
+    if (p % 3 === 0 || p === 1) S("text", { x: x(v), y: B + 18, "text-anchor": "middle" }, svg, v >= 1e9 ? "1 billion" : v >= 1e6 ? "1 million" : fmt(v));
+  }
+  [[120.56, "1B at 4K", "avg 121 per pixel"], [120563, "1T at 4K", "avg 120,563 per pixel"]].forEach(([v, a, b]) => {
+    S("line", { x1: x(v), x2: x(v), y1: T - 6, y2: B, stroke: "#fff", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    S("text", { x: x(v), y: T - 28, "text-anchor": "middle", class: "strong" }, svg, a);
+    S("text", { x: x(v), y: T - 14, "text-anchor": "middle" }, svg, b);
+  });
+  rows.forEach(([name, v], i) => {
+    const y = T + 14 + i * 38;
+    S("text", { x: L - 16, y: y + 4, "text-anchor": "end" }, svg, name);
+    dot2(svg, x(v), y, `${name}: counts exactly up to ${fmt(v)}`);
+    S("text", { x: x(v) + (i === 2 ? -12 : 12), y: y + 4, class: "strong", "text-anchor": i === 2 ? "end" : "start" }, svg, fmt(v));
+  });
+  S("text", { x: R, y: B + 40, "text-anchor": "end" }, svg, "largest count one pixel can hold exactly (log scale)");
+})();
+
+/* noise chart */
+(function noise() {
+  const svg = $("#noiseChart"), L = 70, R = 730, T = 24, B = 280;
+  const x = logScale(0.1, 1e6, L, R), y = logScale(0.1, 1000, B, T);
+  for (let p = -1; p <= 6; p++) { const v = 10 ** p; S("line", { x1: x(v), x2: x(v), y1: T, y2: B, class: "hair" }, svg); S("text", { x: x(v), y: B + 18, "text-anchor": p === 6 ? "end" : "middle" }, svg, v < 1 ? "0.1" : fmt(v)); }
+  for (let p = -1; p <= 3; p++) { const v = 10 ** p; S("line", { x1: L, x2: R, y1: y(v), y2: y(v), class: "hair" }, svg); S("text", { x: L - 10, y: y(v) + 4, "text-anchor": "end" }, svg, (v < 1 ? "0.1" : fmt(v)) + "%"); }
+  S("text", { x: R, y: B + 40, "text-anchor": "end" }, svg, "particles in a pixel (log scale)");
+  S("text", { x: L, y: T - 8 }, svg, "grain: typical wobble as a share of the pixel's brightness");
+  const q = 100 / 256;
+  S("line", { x1: L, x2: R, y1: y(q), y2: y(q), stroke: "#fff", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+  S("text", { x: L + 8, y: y(q) - 7, class: "strong" }, svg, "one step of an 8-bit screen, 0.39%");
+  S("line", { x1: x(0.1), y1: y(100 / Math.sqrt(0.1)), x2: x(1e6), y2: y(0.1), stroke: "#fff", "stroke-width": 2 }, svg);
+  [[0.4823, "4M at 4K", -1], [48.2, "100M at 1080p", 1], [120.56, "1B at 4K", -1], [120563, "1T at 4K", -1]].forEach(([n, name, side]) => {
+    const v = 100 / Math.sqrt(n), cx = x(n), cy = y(v), pct = v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
+    S("circle", { cx, cy, r: 7, fill: "#000" }, svg);
+    dot2(svg, cx, cy, `${name}: ${n < 10 ? n.toFixed(2) : fmt(n)} particles per pixel, grain ${pct}%`);
+    const ty = side < 0 ? cy - (n > 1e5 ? 44 : 26) : cy + 24, anchor = side > 0 || n > 1e5 ? "end" : "start", tx = anchor === "end" ? cx - 2 : cx + 8;
+    S("text", { x: tx, y: ty, class: "strong", "text-anchor": anchor }, svg, name);
+    S("text", { x: tx, y: ty + 14, "text-anchor": anchor }, svg, `grain ${pct}%`);
+  });
+})();
+
+/* force chart */
+(function force() {
+  const svg = $("#forceChart"), L = 60, R = 700, T = 24, B = 250, s = 0.2;
+  const x = linScale(0, 1.5, L, R), y = linScale(0, 30, B, T);
+  for (let v = 0; v <= 30; v += 10) { S("line", { x1: L, x2: R, y1: y(v), y2: y(v), class: "hair" }, svg); S("text", { x: L - 10, y: y(v) + 4, "text-anchor": "end" }, svg, v); }
+  for (let v = 0; v <= 1.5; v += 0.25) S("text", { x: x(v), y: B + 18, "text-anchor": "middle" }, svg, v);
+  S("line", { x1: L, x2: R, y1: B, y2: B, class: "axis" }, svg);
+  S("text", { x: R, y: B + 40, "text-anchor": "end" }, svg, "distance from the attractor");
+  S("text", { x: L, y: T - 8 }, svg, "strength of the pull");
+  let a = "", b = "";
+  for (let r = 0.002; r <= 1.5; r += 0.004) {
+    const f1 = 1 / (r * r), f2 = r / Math.pow(r * r + s * s, 1.5);
+    if (f1 <= 30) a += `${x(r).toFixed(1)},${y(f1).toFixed(1)} `;
+    b += `${x(r).toFixed(1)},${y(f2).toFixed(1)} `;
+  }
+  S("polyline", { points: a, fill: "none", stroke: "#fff", "stroke-width": 1.5, "stroke-dasharray": "5 4" }, svg);
+  S("polyline", { points: b, fill: "none", stroke: "#fff", "stroke-width": 2 }, svg);
+  S("text", { x: x(0.2) + 10, y: y(27), class: "strong" }, svg, "true gravity, 1 / r² (dashed): shoots off to infinity");
+  const pr = s / Math.SQRT2, pf = pr / Math.pow(pr * pr + s * s, 1.5);
+  dot2(svg, x(pr), y(pf), `softened pull peaks at distance ${pr.toFixed(2)} with strength ${pf.toFixed(1)}`);
+  S("text", { x: x(pr) + 4, y: y(pf) - 12, class: "strong" }, svg, "softened, s = 0.2: peaks at 9.6");
+  S("line", { x1: x(s), x2: x(s), y1: B, y2: B - 8, stroke: "#fff" }, svg);
+  S("text", { x: x(1.0), y: y(1) - 12, class: "strong", "text-anchor": "middle" }, svg, "far away the two agree");
+})();
+
+/* ---------- density field shared by tiles and the tone lab ---------- */
+const GW = 192, GH = 108, field = new Float64Array(GW * GH);
+(function buildField() {
+  let sum = 0;
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const x = (i + 0.5) / GW * 3.556 - 1.778, y = (j + 0.5) / GH * 2 - 1, r2 = x * x + y * y, r = Math.sqrt(r2), th = Math.atan2(y, x);
+    const ring = r - 0.62 - 0.07 * Math.sin(5 * th), fil = y - 0.55 * Math.sin(1.9 * x + 1), fil2 = y + 0.3 - 0.35 * Math.cos(2.6 * x);
+    const v = 60 * Math.exp(-r2 / 0.0035) + 1.2 * Math.exp(-r2 / 0.12) + 0.7 * Math.exp(-ring * ring / 0.0012)
+      + 0.09 * Math.exp(-fil * fil / 0.0016) + 0.03 * Math.exp(-fil2 * fil2 / 0.0016) + 0.004;
+    field[j * GW + i] = v; sum += v;
+  }
+  const mean = sum / field.length;
+  for (let i = 0; i < field.length; i++) field[i] /= mean;
+})();
+function sample(nbar, seed) {
+  const rng = mulberry(seed), out = new Float64Array(field.length);
+  for (let i = 0; i < out.length; i++) {
+    const l = nbar * field[i];
+    if (l < 30) { const Lm = Math.exp(-l); let k = 0, p = 1; do { k++; p *= rng(); } while (p > Lm); out[i] = k - 1; }
+    else { const g = Math.sqrt(-2 * Math.log(rng() || 1e-12)) * Math.cos(TAU * rng()); out[i] = Math.max(0, Math.round(l + Math.sqrt(l) * g)); }
+  }
+  return out;
+}
+function paintCounts(cv, counts, mode, white) {
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(GW, GH);
+  for (let i = 0, j = 0; i < counts.length; i++, j += 4) { const v = 255 * tone(counts[i], mode, white); img.data[j] = img.data[j + 1] = img.data[j + 2] = v; img.data[j + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+}
+const maxOf = (a) => { let m = 0; for (let i = 0; i < a.length; i++) if (a[i] > m) m = a[i]; return m; };
+
+/* four tiles */
+[[0.4823, "4 million", "0.5 per pixel"], [12.056, "100 million", "12 per pixel"], [120.56, "1 billion", "121 per pixel"], [120563, "1 trillion", "120,563 per pixel"]].forEach(([n, name, per], k) => {
+  const d = document.createElement("div"); d.className = "tile";
+  d.innerHTML = `<canvas class="frame pixel" width="${GW}" height="${GH}" aria-label="Test scene with ${name} particles"></canvas><div class="cap"><b>${name}</b>${per}</div>`;
+  $("#tiles").appendChild(d);
+  const c = sample(n, 11 + k); paintCounts($("canvas", d), c, "log", Math.max(2, maxOf(c)));
+});
+
+/* ---------- tone mapping lab ---------- */
+(function lab() {
+  const cv = $("#lab"), svg = $("#labChart"), nIn = $("#labN"), wIn = $("#labW");
+  const nBtns = $$("button[data-n]"), mBtns = $$("button[data-mode]");
+  let mode = "log";
+  const L = 46, R = 506, T1 = 22, B1 = 132, T2 = 172, B2 = 292;
+  function draw() {
+    const nbar = 10 ** +nIn.value, pct = 10 ** +wIn.value;
+    const counts = sample(nbar, 5), max = Math.max(1, maxOf(counts)), white = Math.max(1, max * pct);
+    $("#labNOut").textContent = (nbar < 10 ? nbar.toFixed(2) : fmt(nbar)) + "  (" + short(nbar * 8294400) + " at 4K)";
+    $("#labWOut").textContent = (pct * 100 < 1 ? (pct * 100).toFixed(1) : (pct * 100).toFixed(0)) + "% of brightest = " + fmt(white);
+    nBtns.forEach((b) => b.setAttribute("aria-pressed", Math.abs(Math.log10(+b.dataset.n) - +nIn.value) < 0.006));
+    paintCounts(cv, counts, mode, white);
+    let empty = 0, clipped = 0, black = 0;
+    for (let i = 0; i < counts.length; i++) { const c = counts[i]; if (c === 0) empty++; else { const v = tone(c, mode, white); if (v >= 0.998) clipped++; else if (v < 1.5 / 255) black++; } }
+    const pc = (k) => (100 * k / counts.length).toFixed(1) + "%";
+    $("#labRead").innerHTML = `<span>brightest pixel <b>${fmt(max)}</b></span><span>empty pixels <b>${pc(empty)}</b></span><span>lit but shown black <b>${pc(black)}</b></span><span>clipped to white <b>${pc(clipped)}</b></span>`;
+
+    svg.textContent = "";
+    const dec = Math.max(2, Math.ceil(Math.log10(max) + 1e-9)), x = logScale(1, 10 ** dec, L, R), y1 = linScale(0, 1, B1, T1);
+    S("text", { x: L, y: T1 - 9, class: "strong" }, svg, "brightness on screen");
+    for (let p = 0; p <= dec; p++) {
+      const v = 10 ** p; S("line", { x1: x(v), x2: x(v), y1: T1, y2: B1, class: "hair" }, svg); S("line", { x1: x(v), x2: x(v), y1: T2, y2: B2, class: "hair" }, svg);
+      if (dec <= 5 || p % 2 === 0) S("text", { x: x(v), y: B2 + 16, "text-anchor": "middle" }, svg, short(v));
+    }
+    [[0, "black"], [1, "white"]].forEach(([v, s]) => { S("line", { x1: L, x2: R, y1: y1(v), y2: y1(v), class: v ? "hair" : "axis" }, svg); S("text", { x: L - 6, y: y1(v) + 4, "text-anchor": "end" }, svg, s); });
+    const wx = Math.min(R, Math.max(L, x(white)));
+    S("line", { x1: wx, x2: wx, y1: T1, y2: B2, stroke: "#fff", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    S("text", { x: wx - 5, y: B1 + 14, "text-anchor": "end", class: "strong" }, svg, "white point");
+    ["linear", "log", "filmic"].forEach((mname) => {
+      let pts = "";
+      for (let k = 0; k <= 160; k++) { const c = 10 ** (dec * k / 160); pts += `${x(c).toFixed(1)},${y1(tone(c, mname, white)).toFixed(1)} `; }
+      const on = mname === mode;
+      S("polyline", { points: pts, fill: "none", stroke: on ? "#fff" : "rgba(255,255,255,.4)", "stroke-width": on ? 2.2 : 1, "stroke-dasharray": on ? "" : "3 3" }, svg);
+    });
+    // direct labels at a count where the three curves are apart
+    const lw = Math.log10(white);
+    [["log", 0.3, -7], ["filmic", 0.72, -7], ["linear", 0.93, 14]].forEach(([mname, frac, dy]) => {
+      const c = 10 ** (lw * frac), yy = y1(tone(c, mname, white));
+      S("text", { x: Math.min(R - 4, Math.max(L + 4, x(Math.max(1, c)))), y: Math.max(T1 + 9, yy + dy), "text-anchor": mname === "linear" ? "start" : "end", class: mname === mode ? "strong" : "" }, svg, mname);
+    });
+    // histogram, each bar painted the brightness it is displayed with
+    const nb = 46, bins = new Uint32Array(nb);
+    for (let i = 0; i < counts.length; i++) { const c = counts[i]; if (c >= 1) bins[Math.min(nb - 1, Math.floor(Math.log10(c) / dec * nb))]++; }
+    const bmax = Math.max(1, ...bins), yh = linScale(0, bmax, B2, T2 + 6), bw = (R - L) / nb;
+    S("text", { x: L, y: T2 - 9, class: "strong" }, svg, "how many pixels hold that count");
+    S("line", { x1: L, x2: R, y1: B2, y2: B2, class: "axis" }, svg);
+    for (let b = 0; b < nb; b++) {
+      if (!bins[b]) continue;
+      const lo = 10 ** (dec * b / nb), hi = 10 ** (dec * (b + 1) / nb), g = Math.round(255 * tone(Math.sqrt(lo * hi), mode, white)), h = Math.max(2, B2 - yh(bins[b]));
+      S("rect", { x: L + b * bw + 1, y: B2 - h, width: bw - 2, height: h, fill: `rgb(${g},${g},${g})`, stroke: "rgba(255,255,255,.45)", "stroke-width": 0.75,
+        "data-tip": `${fmt(bins[b])} pixels hold ${fmt(Math.ceil(lo))} to ${fmt(hi)} particles. Shown at ${(100 * g / 255).toFixed(0)}% brightness.` }, svg);
+    }
+    S("text", { x: R, y: B2 + 34, "text-anchor": "end" }, svg, "particles in a pixel (log scale)");
+  }
+  function short(v) { const u = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]]; for (const [d, s] of u) if (v >= d * 0.9995) return (v / d >= 100 ? (v / d).toFixed(0) : (v / d).toFixed(v / d >= 10 ? 0 : 1)).replace(/\.0$/, "") + s; return v >= 10 ? v.toFixed(0) : String(+v.toFixed(1)); }
+  nIn.addEventListener("input", draw); wIn.addEventListener("input", draw);
+  nBtns.forEach((b) => b.addEventListener("click", () => { nIn.value = Math.log10(+b.dataset.n); draw(); }));
+  mBtns.forEach((b) => b.addEventListener("click", () => { mode = b.dataset.mode; mBtns.forEach((o) => o.setAttribute("aria-pressed", o === b)); draw(); }));
+  draw();
+})();
+
+/* ---------- render time calculator ---------- */
+(function time() {
+  const nIn = $("#tN"), rIn = $("#tR"), dIn = $("#tD"), fBtns = $$("button[data-fps]");
+  let fps = 60;
+  const big = (v) => { const u = [[1e12, "trillion"], [1e9, "billion"], [1e6, "million"]]; for (const [d, s] of u) if (v >= d * 0.9995) return +(v / d).toPrecision(3) + " " + s; return fmt(v); };
+  function dur(s) {
+    if (s < 1e-3) return (s * 1e6).toPrecision(3) + " µs";
+    if (s < 1) return +(s * 1e3).toPrecision(3) + " ms";
+    if (s < 120) return +s.toPrecision(3) + " s";
+    if (s < 7200) return +(s / 60).toPrecision(3) + " min";
+    if (s < 720000) return +(s / 3600).toPrecision(3) + " hours";
+    if (s < 86400 * 730) return +(s / 86400).toPrecision(3) + " days";
+    return +(s / 86400 / 365).toPrecision(3) + " years";
+  }
+  function draw() {
+    const n = 10 ** +nIn.value, r = 10 ** +rIn.value, d = +dIn.value, per = n / r, frames = d * fps;
+    $("#tNOut").textContent = big(n); $("#tROut").textContent = big(r) + " / s"; $("#tDOut").textContent = d + " s";
+    $("#tFrame").textContent = dur(per); $("#tFrames").textContent = fmt(frames); $("#tTotal").textContent = dur(per * frames);
+    const live = 1 / per;
+    $("#tNote").innerHTML = live >= fps ? `<span>Fast enough to run live: about <b>${fmt(live)}</b> frames per second.</span>` : `<span>Too slow to watch live (<b>${live >= 1 ? live.toFixed(1) : live.toPrecision(2)}</b> frames per second), so it renders offline to a video file.</span>`;
+  }
+  [nIn, rIn, dIn].forEach((e) => e.addEventListener("input", draw));
+  fBtns.forEach((b) => b.addEventListener("click", () => { fps = +b.dataset.fps; fBtns.forEach((o) => o.setAttribute("aria-pressed", o === b)); draw(); }));
+  draw();
+})();
+
+/* ---------- hover tooltips for chart marks ---------- */
+(function tips() {
+  const tip = $("#tip");
+  document.addEventListener("pointermove", (e) => {
+    const t = e.target.closest && e.target.closest("[data-tip]");
+    if (!t) { tip.hidden = true; return; }
+    tip.textContent = t.getAttribute("data-tip"); tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, e.clientX + 14)) + "px";
+    tip.style.top = (e.clientY - h - 12 < 8 ? e.clientY + 18 : e.clientY - h - 12) + "px";
+  });
+  document.addEventListener("pointerleave", () => { tip.hidden = true; });
+})();
+})();
+</script>
