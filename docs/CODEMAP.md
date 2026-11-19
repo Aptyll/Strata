@@ -81,7 +81,7 @@ adding another.
 
 | engine | folder | particle state | how it draws | used by |
 | --- | --- | --- | --- | --- |
-| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/perf/atomicRasterPass.ts`), `points`, `density-splat`, `depth-sprites` | the app `/` |
+| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/raster`, with optional sub-pixel and depth cues), `points`, `density-splat`, `depth-sprites` | the app `/` |
 | `PerfEngine` | `src/perf` | 8 bytes packed (below), 64 MB pages, one range per plane | fused kernel: simulate and `atomicAdd` in one pass, then a fullscreen resolve | bench page; not yet the app's simulation |
 | `ChallengeEngine` | `src/challenge` | 8 bytes packed, a different velocity encoding (below), 128 MiB slabs | fused kernel with its own forces (not contract behaviors), `atomicAdd`, own resolve | `/?challenge` |
 | stateless "proc" mode | `src/challenge` | none: position from `(id, time)` | same accumulation buffer as above | `/?challenge`, key `M` |
@@ -254,7 +254,8 @@ and particles) or `renderBindGroup` (uniform only, vertex stage) from
 
 `src/perf` has two parts (see `src/perf/index.ts`):
 
-- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`) is the
+- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`, a
+  re-export of `src/raster` since the rasterizers were unified) is the
   default rasterizer: one compute dispatch per plane reads the engine's
   16-byte particles, projects them and adds `plane.brightness * LIGHT_ONE` to a
   u32 per pixel with `atomicAdd`; a fullscreen triangle then adds each pixel's
@@ -346,10 +347,11 @@ list is `RASTERIZERS` in `src/app/graph.ts`).
 
 | pass | file | how it draws | where counting stops |
 | --- | --- | --- | --- |
-| `atomic-raster` (default) | `src/perf/atomicRasterPass.ts` | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` (default) | `src/raster` (`kernel.ts`, `pass.ts`; `src/perf/atomicRasterPass.ts` keeps the old names) | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` with `?depth=1` and/or `?subpixel=1` | `src/raster/kernel.ts` (`rasterKernelWgsl`) | the same pass with options: fog, near fade and size gain as a weight per particle, depth of field as a fixed lens offset per particle (`src/depth`), the 2x2 bilinear split; stochastic rounding keeps dim light on average | the same u32 limit: nothing blends in f16 |
 | `points` (`?raster=points`) | `src/passes/points.pass.ts` | one-pixel point list, additive blend | about 2048 hits per pixel, where adding to f16 stops changing it |
 | `sheet-hue` (`?raster=hue`) | `src/hue/sheetHue.ts` | points that also write the sheet's hue; its `ui` pass `sheet-hue-tint` tints the canvas after the tone map | the same f16 limit |
-| `depth-sprites` (`?raster=sprites` or `?depth=1`) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
+| `depth-sprites` (`?raster=sprites`, debug) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
 | `density-splat` (`?raster=splat`) | `src/render/passes.ts` (`SplatAccumulator` in `quad` mode) | instanced quads with a 2x2 tent, smooth below one pixel | the same f16 limit |
 
 `interplane-streams` (`src/interplane/interplane.pass.ts`) is a rasterize pass
