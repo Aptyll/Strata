@@ -22,6 +22,7 @@ import { attachBrushes } from "./ux/experience/engine-brushes";
 import { formatCount } from "./ux/hud/index.js";
 import { mountFallback } from "./ux/experience/fallback";
 import { mountHud } from "./ux/hud/wire";
+import { mountThemes } from "./ux/theme";
 import { startStreamingWorld, type StreamingWorld } from "./world";
 import { scatterLayout, scatterRadius } from "./world/layout";
 
@@ -213,6 +214,7 @@ async function start(): Promise<void> {
     transition: { swapBehavior: (plane, target) => sim.setBehavior(plane, target) },
   });
   hud.defineStat("total", { label: "total", format: formatCount });
+  mountThemes(hud, canvas); // color themes: Esc menu, T to cycle, ?theme=red
 
   /** Rebuild the layout for a new particle or plane count, keeping the camera and brightness. */
   const rebuild = () => {
