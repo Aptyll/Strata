@@ -134,12 +134,15 @@ fn depth_point_weight(viewZIn: f32, dist: f32, p: DepthParams) -> f32 {
 fn depth_lens_jitter_px(viewZ: f32, u: vec2f, p: DepthParams) -> vec2f {
   let coc = depth_coc_px(viewZ, p);
   // Radial density 1 + e t^4: a uniform disc (radius sqrt(u)) mixed with a rim
-  // term (radius u^(1/6)) that is picked with probability e / (3 + e). The
-  // pick reuses the low bits of u.y, which the angle does not visibly need.
+  // term (radius u^(1/6)) that is picked with probability w = e / (3 + e).
+  // u.y is split at w and each part rescaled to [0, 1), so the pick and the
+  // angle stay independent.
   let e = p.bokehEdge;
-  let rim = fract(u.y * 64.0) < e / (3.0 + e);
+  let w = e / (3.0 + e);
+  let rim = u.y < w;
+  let v = select((u.y - w) / max(1.0 - w, 1e-6), u.y / max(w, 1e-6), rim);
   let r = select(sqrt(u.x), pow(u.x, 1.0 / 6.0), rim);
-  let a = 6.2831853 * u.y;
+  let a = 6.2831853 * v;
   return coc * r * vec2f(cos(a), sin(a));
 }
 

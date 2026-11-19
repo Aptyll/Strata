@@ -140,9 +140,12 @@ export class DepthParams {
     const coc = this.cocAt(viewZ);
     if (coc <= 0) return [0, 0];
     const e = this.bokehEdge;
-    const rim = (u2 * 64) % 1 < e / (3 + e);
+    // Split u2 at the rim weight so the pick and the angle stay independent.
+    const w = e / (3 + e);
+    const rim = u2 < w;
+    const v = rim ? u2 / Math.max(w, 1e-6) : (u2 - w) / Math.max(1 - w, 1e-6);
     const r = rim ? Math.pow(u1, 1 / 6) : Math.sqrt(u1);
-    const a = 2 * Math.PI * u2;
+    const a = 2 * Math.PI * v;
     return [coc * r * Math.cos(a), coc * r * Math.sin(a)];
   }
 
