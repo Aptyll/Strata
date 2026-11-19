@@ -64,7 +64,7 @@ Two very different modes, and the wording must keep them apart:
 | folder | what lives there |
 | --- | --- |
 | `main.ts` | app entry: the boot sequence, read top to bottom; `?challenge` branches off here |
-| `app/` | the app shell main boots from: URL options (`options.ts`), frame graph, scene, HUD entries, keys (`keys.ts`), frame loop and its hooks (`loop.ts`) |
+| `app/` | the app shell main boots from: URL options (`options.ts`), frame graph, scene, HUD entries, keys (`keys.ts`), the Esc menu's table of contents (`menu.ts`), frame loop and its hooks (`loop.ts`) |
 | `core/` | shared contracts (`contracts.ts`), frame graph, particle budget |
 | `gpu/` | device init (`HDR_FORMAT = rgba16float`), shared WGSL prelude |
 | `sim/` | per-plane simulation host that runs behaviors |
@@ -159,6 +159,11 @@ defaults are heavy. Offline Node CLI: `src/offline/README.md`.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
   owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **The Esc menu has a table of contents.** `MENU` in `src/app/menu.ts` lists
+  every control by id: its page, section, position, name and a one line hint.
+  Register the control where it is built, then give it a row there. Rarely
+  needed controls go in the page's folded "advanced" section, and six page
+  tabs is all that fits on one line.
 - **Chrome is styled with the design tokens.** Fonts, sizes, text opacities,
   spacing and timings of anything on screen come from `src/ux/design` as
   `var(--st-*)`; no literal fonts, alphas or durations in new UI. Rules and

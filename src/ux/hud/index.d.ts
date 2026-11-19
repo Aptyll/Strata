@@ -54,6 +54,57 @@ export interface HudOptions {
   panelOpen?: boolean;
   /** Where to listen for keys. Default window. */
   keyTarget?: EventTarget;
+  /** The menu's table of contents: pages, sections, and where each control sits. */
+  layout?: MenuLayout;
+}
+
+/** One page of the settings menu. The default table is PAGES in menu.js. */
+export interface MenuPage {
+  id: string;
+  /** Text on the page tab. */
+  label: string;
+  /**
+   * Group names that land on this page. Their order is the order of the page's sections;
+   * a group the page gets without listing it follows in the order it showed up.
+   */
+  groups: string[];
+  /** Section names for groups whose own name is empty or terse: { performance: 'frame rate' }. */
+  labels?: Record<string, string>;
+  /**
+   * Show the sections stacked under small titles instead of as section tabs. Right for a short
+   * page whose sections belong to one task; tabs suit sections that are alternatives.
+   */
+  stack?: boolean;
+  /** On a stacked page, groups that start folded behind their title ("advanced"). */
+  fold?: string[];
+}
+
+/** Where a control sits in the menu and what it is called there. */
+export interface ParamPlacement {
+  /** Page id. */
+  page?: string;
+  /** Section on that page. */
+  group?: string;
+  /** The name shown. */
+  label?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
+}
+
+/**
+ * The menu's table of contents, kept by the app in one place (Strata's is src/app/menu.ts).
+ * Controls register wherever they are built; `params` has the last word on where each one
+ * appears and what it is called.
+ */
+export interface MenuLayout {
+  /** Pages in tab order. The last page takes every group no page lists. Default PAGES in menu.js. */
+  pages?: MenuPage[];
+  /** By control id. */
+  params?: Record<string, ParamPlacement>;
 }
 
 export type ParamValue = number | boolean | string;
@@ -62,10 +113,16 @@ interface ParamBase<T> {
   id: string;
   /** Defaults to id. */
   label?: string;
-  /** Section heading. Params without one go first. */
+  /** Section on its page. Params without one go first. */
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
   onChange?: (value: T, id: string) => void;
   /** Save the value in localStorage. Default true. */
   persist?: boolean;
@@ -95,8 +152,14 @@ export interface ActionParam {
   id: string;
   label?: string;
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
   type?: 'action';
   run: () => void;
 }
@@ -148,7 +211,7 @@ export interface JobSpec {
   label?: string;
   /** Menu section, e.g. 'capture'. */
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
   /** Resolve with a string to show it as the closing line. Throw to report a failure. */
   run(job: JobContext): Promise<string | void> | string | void;
