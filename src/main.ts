@@ -60,11 +60,16 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   }
 
   // ---- engine: frame graph, budget, camera, scene ------------------------
+  // Light per particle, read while drawing so it follows scene loads and the brightness setting.
+  // Captures at a fixed size multiply it by captureGain (set in setResolution below); depth
+  // sprites size and dim themselves from the target height, so they skip it.
+  let captureGain = 1;
+  const particleLight = () =>
+    scenes.current.render.brightness * (render.rasterizer.current() === "depth-sprites" ? 1 : captureGain);
   const render = createRenderGraph(gpu, {
     raster: options.raster,
     interplane: options.interplane,
-    // Read while drawing, so it follows scene loads and the brightness setting.
-    brightness: () => scenes.current.render.brightness,
+    brightness: particleLight,
   });
   const { graph, sim, depthSprites } = render;
   const budget = createBudgetChoice(options);
@@ -106,7 +111,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   const loop = createFrameLoop({
     gpu, graph, sim, budget, fps,
     camera: view,
-    brightness: () => scenes.current.render.brightness,
+    brightness: particleLight,
     brushes: (dt) => brushes.update(dt, performance.now()),
   });
   if (intro) {
@@ -131,7 +136,13 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     frame: (dt) => loop.renderFrame(dt),
     flush: () => gpu.device.queue.onSubmittedWorkDone(),
     setOffline: (on) => (loop.offline = on),
-    setResolution: (size) => (graph.fixedSize = size),
+    setResolution: (size) => {
+      // Points and splats put a fixed amount of light per particle into one pixel, so a capture
+      // taller than the window would come out darker than what was on screen. The vertical field
+      // of view is fixed, so pixels per radian follow the height.
+      captureGain = size ? (size.height / Math.max(1, graph.height)) ** 2 : 1;
+      graph.fixedSize = size;
+    },
     keys: { screenshot: KEYS.screenshot, record: KEYS.record },
   });
 
