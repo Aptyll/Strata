@@ -374,10 +374,17 @@ export class StatelessRenderer {
 
   /** Steer the batch size toward the time target, at most 2x per step. */
   private steer(count: number, ms: number): void {
-    // Only full-size batches are trusted: a plane's short tail says nothing.
-    if (count !== this.batch) return;
-    const factor = Math.min(2, Math.max(0.5, this.targetBatchMs / Math.max(ms, 0.01)));
-    this.batch = Math.max(4096, Math.min(this.maxBatch, Math.round(this.batch * factor)));
+    const rate = count / Math.max(ms, 0.01);
+    let next = this.batch;
+    if (ms > this.targetBatchMs) {
+      // Too slow, even for a short tail: shrink to what fits the target. This
+      // keeps the watchdog margin when every batch is a sheet's tail.
+      next = Math.min(this.batch, Math.floor(rate * this.targetBatchMs));
+    } else if (count === this.batch) {
+      // Only full-size batches are trusted to grow the batch, at most 2x.
+      next = Math.min(2 * this.batch, Math.round(rate * this.targetBatchMs));
+    }
+    this.batch = Math.max(4096, Math.min(this.maxBatch, next));
   }
 
   /** One of this job's planes as the trillion kernel sees it this frame. */
