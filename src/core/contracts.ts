@@ -299,6 +299,34 @@ export interface UIPanel {
   update?(app: AppContext): void;
 }
 
+// ---------------------------------------------------------- interaction ----
+
+/** Pointer brushes live in the Globals uniform, so every behavior can feel them. */
+export const MAX_BRUSHES = 4;
+/** Floats per brush when packed for the GPU. */
+export const BRUSH_FLOATS = 8;
+
+/**
+ * The pointer as a force on one sheet. Packed as BRUSH_FLOATS floats in this
+ * field order, MAX_BRUSHES of them, into `Globals.brushes` (WGSL `Brush`).
+ * The engine applies them to every behavior after `update()`; a behavior may
+ * also call `brushAccel(pos)` itself.
+ */
+export interface Brush {
+  /** Sheet-local position, [-1, 1]. */
+  pos: Vec2;
+  /** Sheet-local radius. 0 disables the brush. */
+  radius: number;
+  /** Positive pulls particles in, negative pushes them away. Roughly -2..1. */
+  strength: number;
+  /** Sheet-local velocity, units per second. */
+  vel: Vec2;
+  /** `PlaneDesc.seed` of the plane it touches. -1 when unused. */
+  planeSeed: number;
+  /** 0..1, how long it has been held. */
+  charge: number;
+}
+
 // -------------------------------------------------------- design tokens ----
 
 /** The whole visual language: white on black, one font, two opacities, one easing. */

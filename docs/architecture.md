@@ -55,6 +55,11 @@ struct Plane {
 @group(1) @binding(1) var<storage, read_write> particles: array<Particle>; // compute only
 ```
 
+Pointer forces: `Globals` ends with `brushes: array<Brush, 4>` (see `Brush`
+in the contracts). After a behavior's `update()` the engine adds
+`brushAccel(p.pos)` to the particle, so every behavior responds to the cursor
+without doing anything. A brush names its plane by `PlaneDesc.seed`.
+
 ## Behavior WGSL scope
 
 A behavior defines `fn update(p: Particle, i: u32) -> Particle`. Available:

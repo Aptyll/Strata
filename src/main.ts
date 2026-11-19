@@ -10,6 +10,7 @@ import { PerfBudget } from "./perf/budget";
 import { Simulation } from "./sim/simulation";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
+import { attachBrushes } from "./ux/experience/engine-brushes";
 import { formatCount } from "./ux/hud/index.js";
 import { mountHud } from "./ux/hud/wire";
 import { scatterLayout, scatterRadius } from "./world/layout";
@@ -205,6 +206,8 @@ async function start(): Promise<void> {
   hud.registerShortcut({ key: "-", label: "dimmer", run: () => scaleBrightness(0.8) });
   hud.registerShortcut({ key: "g", label: "go to nearest plane", run: () => camera.rig.focusNearest() });
 
+  const pointerBrushes = attachBrushes(canvas, camera, () => sim.planes);
+
   // ---- frame loop --------------------------------------------------------
   let last = performance.now();
   let time = 0;
@@ -227,7 +230,9 @@ async function start(): Promise<void> {
     adaptiveBudget.setViewport(graph.width, graph.height);
     camera.update(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
-    writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness });
+    // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
+    const brushes = pointerBrushes.update(dt, now);
+    writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness, brushes });
 
     const counts = budget.allocate({
       planes: measurePlanes(sim.planes, camera, viewProj),
