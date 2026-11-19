@@ -20,7 +20,7 @@ import { createAppContext } from "./app/context";
 import { createRenderGraph } from "./app/graph";
 import { mountAppHud } from "./app/hud";
 import { mountIntro } from "./app/intro";
-import { KEYS, createKeyRouter } from "./app/keys";
+import { KEYS, MOVES_CAMERA, createKeyRouter } from "./app/keys";
 import { createFpsMeter, createFrameLoop } from "./app/loop";
 import { readOptions, type AppOptions } from "./app/options";
 import { createSceneHost } from "./app/scene";
@@ -137,6 +137,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // Auto camera tour: C, the Esc menu or ?autocam=1; any camera input hands control back.
   const autocam = mountAutoCam({
     hud: ui.hud, canvas, camera, planes: () => sim.planes, busy: () => intro?.active, key: KEYS.autoCamera,
+    cameraKeys: keys.cameraTarget, moveKeys: MOVES_CAMERA,
   });
   loop.hooks.push({ beforeCamera: (f) => autocam.step(f.dt) });
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });

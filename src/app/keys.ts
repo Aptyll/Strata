@@ -37,6 +37,12 @@ export interface KeyBinding {
   owner: KeyOwner;
   /** Shown in the HUD's keys sheet (?). */
   label: string;
+  /**
+   * The key moves the camera although another module owns it (G flies to the nearest plane).
+   * Code that hands the camera back on camera input (the opening, the auto tour) treats it as a
+   * camera key; every other row leaves them running.
+   */
+  camera?: boolean;
 }
 
 export const KEYS = {
@@ -50,7 +56,7 @@ export const KEYS = {
   fewerParticles: { key: "[", code: "BracketLeft", owner: "app", label: "halve particles" },
   brighter: { key: "=", code: "Equal", owner: "app", label: "brighter" },
   dimmer: { key: "-", code: "Minus", owner: "app", label: "dimmer" },
-  nearestPlane: { key: "g", code: "KeyG", owner: "app", label: "go to nearest plane" },
+  nearestPlane: { key: "g", code: "KeyG", owner: "app", label: "go to nearest plane", camera: true },
 
   screenshot: { key: "p", code: "KeyP", owner: "capture", label: "screenshot" },
   record: { key: "v", code: "KeyV", owner: "capture", label: "record video" },
@@ -73,6 +79,18 @@ export const shortcut = (binding: KeyBinding, run: ShortcutSpec["run"]): Shortcu
 
 /** KeyboardEvent.code values some module other than the camera owns. */
 const OWNED = new Set<string>(Object.values(KEYS).map((k) => k.code));
+
+/**
+ * KeyboardEvent.code of the rows marked `camera`: keys the router does not forward to the
+ * camera that still move it. With the router's cameraTarget they make up every key that moves the view.
+ */
+export const MOVES_CAMERA: ReadonlySet<string> = new Set(
+  (Object.values(KEYS) as KeyBinding[]).filter((k) => k.camera).map((k) => k.code),
+);
+
+/** Shift on its own and Ctrl, Alt or Meta shortcuts move nothing, even on a camera key. */
+export const isPlainKey = (e: KeyboardEvent): boolean =>
+  !(e.ctrlKey || e.altKey || e.metaKey) && !e.code.startsWith("Shift");
 
 /** Keys a focused slider uses itself: one step, or a jump to either end. */
 const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
