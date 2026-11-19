@@ -71,7 +71,7 @@ fn add64(idx: u32, w: u32) {
 
 // Adds one particle to the grid. Returns true when its position is inside
 // the frame, whatever its weight.
-fn splat(pos: vec2f, key: u32) -> bool {
+fn splat(pos: vec2f, key: Key) -> bool {
   let c = B.c0.xyz * pos.x + B.c1.xyz * pos.y + B.c2.xyz;
   // Written so that a NaN fails the test and is dropped.
   if (!(c.z > B.near)) { return false; }
