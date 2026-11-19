@@ -51,9 +51,9 @@ burned-in label.
 | [`trillion-still-f0.png`](../../record/trillion-still-f0.png) | the whole cluster from far away | 28.9 s | 35 B/s | every sheet is in frame (this label has no in-frame line yet) | default |
 | [`trillion-key1-f0.png`](../../record/trillion-key1-f0.png) | inside the field of sheets, wide | 52 s | 19 B/s | 843,3??,515,567 (two digits hidden behind a sheet) | default |
 | [`trillion-key2-f0.png`](../../record/trillion-key2-f0.png) | closer, one large Kepler disc in front | 26 s | 38 B/s | 107,787,615,440 | default |
-| [`trillion-A.png`](../../record/trillion-A.png) | close-up: spiral disc, Lissajous ribbon, ring sheet, one sheet edge-on | 172 s | 5.8 B/s | 985,878,512,802 | default |
+| [`trillion-A.png`](../../record/retired/trillion-A-32bit.png) | close-up: spiral disc, Lissajous ribbon, ring sheet, one sheet edge-on | 172 s | 5.8 B/s | 985,878,512,802 | default |
 | [`trillion-C.png`](../../record/trillion-C.png) | wide shot from inside the cloud | 48 s | 21 B/s | 31?,?13,737,244 (two digits hidden) | contrast 256 |
-| [`trillion-B.png`](../../record/trillion-B.png) | a tower of 32 stacked sheets, seen from the side | 59 s | 17 B/s | 927,901,560,630 | contrast 256 |
+| [`trillion-B.png`](../../record/retired/trillion-B-32bit.png) | a tower of 32 stacked sheets, seen from the side | 59 s | 17 B/s | 927,901,560,630 | contrast 256 |
 | `trillion256-A.png` | A again | 205 s | 4.9 B/s | 985,878,512,802 | contrast 256 |
 | `trillion256-K0.png` | the far view again | not reported | | 1,000,000,000,000 | contrast 256 |
 | `trillion-clip-k068.mp4` | 8 frames, the key2 camera with a slow push | about 32 s per frame | 31 B/s | 107,787,615,782 on the first frame, 107,743,038,598 on the last | contrast 256 |
@@ -62,7 +62,7 @@ burned-in label.
 rendered on 32-bit keys (before PR #45) with stacked identical sheets, so they
 are **not** a trillion distinct particles: A holds at most about 17.2 billion
 distinct, B about 137 billion. The cluster frames are still 1T distinct. See
-[docs/record/README.md](../../record/README.md#distinct-particles-read-this-before-using-a-or-b).
+[docs/record/README.md](../../record/README.md#distinct-particles-and-keys).
 
 The first six are in git under [`docs/record/`](../../record/README.md). The
 last three are in the project files only.
@@ -162,7 +162,7 @@ evaluated.*
 
 ### Composition A
 
-[![Composition A at the default grade](images/trillion-A_1280.jpg)](../../record/trillion-A.png)
+[![Composition A at the default grade](images/trillion-A_1280.jpg)](../../record/retired/trillion-A-32bit.png)
 
 *`trillion-A.png`, 172 s, default grade, 985,878,512,802 in frame.*
 
@@ -181,7 +181,7 @@ presets since [#67](https://github.com/Aptyll/Strata/pull/67).*
 
 ### Composition B
 
-[![Composition B: a tower of stacked sheets](images/trillion-B_1280.jpg)](../../record/trillion-B.png)
+[![Composition B: a tower of stacked sheets](images/trillion-B_1280.jpg)](../../record/retired/trillion-B-32bit.png)
 
 *`trillion-B.png`, 59 s, contrast 256, 927,901,560,630 in frame.*
 

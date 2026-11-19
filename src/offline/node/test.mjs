@@ -3,6 +3,8 @@
  * Quick self-checks for the offline renderer. Seconds on any adapter.
  *
  *   conservation     with everything in view, the grid sum is exactly N * ONE
+ *   flux             far particles keep their light: every one in frame adds
+ *                    some, and the total matches a double-precision reference
  *   batch invariance different batch sizes give bit-identical grids
  *   64-bit carry     more light in one pixel than a u32 holds is still exact
  *   CPU cross-check  the shader agrees with the double-precision reference
@@ -96,7 +98,90 @@ for (const splat of ["point", "bilinear"]) {
   const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
   const out = await renderOnce(job);
   const sum = accumulationSum(out.lo, out.hi);
-  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n} particles, landed ${out.landed}, evaluated ${out.gpuEvaluated}`);
+  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.drawn === BigInt(n) && out.gpuEvaluated === BigInt(n) && out.unitsPerParticle === ONE, `${sum / BigInt(ONE)} of ${n} particles, landed ${out.landed}, drawn ${out.drawn}, evaluated ${out.gpuEvaluated}`);
+}
+
+// ---- flux: far particles keep their light ---------------------------------------
+/**
+ * Double-precision reference: visits every particle of a job's frame that
+ * lands inside the picture, with its depth. Same hash, law and projection as
+ * the shader, including each particle's shutter instant and the camera's.
+ */
+function eachInFrame(job, frame, visit) {
+  const path = new CameraPath(/** @type {any} */ (job.camera));
+  const cam = cameraBasis(path.atFrame(frame, job.frames));
+  const shutterSpan = job.frames > 1 ? job.shutter / (job.frames - 1) : 0;
+  const tMid = job.frames > 1 ? frame / (job.frames - 1) : 0;
+  const time = job.timeOffset + (frame / job.fps) * job.timeScale;
+  const span = (job.shutter / job.fps) * job.timeScale;
+  for (const plane of job.planes) {
+    const h0 = planeHomography(cam, /** @type {any} */ (plane), job.width, job.height);
+    const ho = planeHomography(cameraBasis(path.at(tMid - shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
+    const hc = planeHomography(cameraBasis(path.at(tMid + shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
+    for (let i = 0; i < plane.particleCount; i++) {
+      const key = particleKey(i, plane.seed);
+      const s = u01(draw(key, 6)) - 0.5;
+      const h = h0.map((v, j) => v + s * (hc[j] - ho[j]));
+      const [x, y] = lawPosition(plane.law, key, time + span * s, plane.params);
+      const depth = h[2] * x + h[5] * y + h[8];
+      if (!(depth > job.near)) continue;
+      const px = (h[0] * x + h[3] * y + h[6]) / depth;
+      const py = (h[1] * x + h[4] * y + h[7]) / depth;
+      if (px >= 0 && py >= 0 && px < job.width && py < job.height) visit(px, py, depth);
+    }
+  }
+}
+
+for (const splat of ["point", "bilinear"]) {
+  // So far away that a particle's weight is about a hundredth of 1/65536.
+  const far = { splat, weighting: "flux", fluxRef: 1, camera: [{ t: 0, target: [0, 0, 0], yaw: 0.1, pitch: -0.1, distance: 2500, fovY: 0.7 }] };
+  const fineJob = testJob({ ...far, fluxBits: 31 });
+  const fine = await renderOnce(fineJob);
+  // No fluxBits: the first renders' 16 bits, where such a weight is rounded at random to 1 unit or to 0.
+  const coarse = await renderOnce(testJob(far));
+  let light = 0;
+  let inFrame = 0;
+  eachInFrame(fineJob, 1, (_px, _py, depth) => {
+    light += Math.min(1, (fineJob.fluxRef / depth) ** 2);
+    inFrame++;
+  });
+  const fineLight = Number(accumulationSum(fine.lo, fine.hi)) / fine.unitsPerParticle;
+  const coarseSum = accumulationSum(coarse.lo, coarse.hi);
+  const coarseLight = Number(coarseSum) / coarse.unitsPerParticle;
+  check(
+    `flux, ${splat}: every particle in frame adds light`,
+    fine.unitsPerParticle === 2 ** 31 && fine.landed === BigInt(inFrame) && fine.drawn === fine.landed,
+    `${fine.drawn} drawn of ${fine.landed} in frame`,
+  );
+  check(
+    `flux, ${splat}: total light matches the reference`,
+    Math.abs(fineLight / light - 1) < 1e-3,
+    `${fineLight.toFixed(4)} particles of light, reference ${light.toFixed(4)}`,
+  );
+  // The old behaviour, kept for jobs without fluxBits: drawn by a small random
+  // share of the particles. Point splats round with 24 random bits, so the
+  // total is right on average and each drawn particle adds exactly one unit.
+  // Bilinear splats round each of 4 shares with 8 random bits, good to 1/256
+  // of a unit, which is as large as a whole share this far away: the total
+  // comes out more than 10% too bright here. Finer units fix both.
+  check(
+    `flux, ${splat}: 16-bit weights draw only a random share`,
+    coarse.unitsPerParticle === ONE && coarse.landed === fine.landed && coarse.drawn * 20n < coarse.landed && coarse.drawn > 0n && (splat !== "point" || (coarseSum === coarse.drawn && Math.abs(coarseLight / light - 1) < 0.1)),
+    `${coarse.drawn} drawn of ${coarse.landed} in frame, ${coarseLight.toFixed(4)} particles of light against ${light.toFixed(4)}`,
+  );
+}
+
+// ---- flux: full weights of 2^31 units carry exactly ---------------------------------
+{
+  // The single-pixel sheet again, this time in flux at full weight and 31 bits:
+  // every particle adds 2^31 units, so combining runs must flush before a u32 wraps.
+  const job = testJob({ weighting: "flux", fluxRef: 1e6, fluxBits: 31 });
+  job.planes = [{ ...job.planes[0], position: [0.015, 0.015, 0], halfSize: [1e-4, 1e-4], particleCount: 200_000 }];
+  const out = await renderOnce(job);
+  const lit = [...out.lo.keys()].filter((i) => out.lo[i] || out.hi[i]);
+  const sum = accumulationSum(out.lo, out.hi);
+  const expected = 200_000n << 31n;
+  check("flux at full weight: 2^31 units per particle add up exactly", lit.length === 1 && sum === expected && out.drawn === 200_000n, `sum ${sum}, expected ${expected}, ${lit.length} lit pixel`);
 }
 
 // ---- tally matches the grid with part of the world off frame ----------------
@@ -155,8 +240,8 @@ for (const splat of ["point", "bilinear"]) {
   );
 }
 
-// ---- the same through the session: stop, run again, read the frame's stats ------
-{
+/** A FileStore in memory, with its files visible to the checks. */
+function memoryFiles() {
   /** @type {Map<string, Uint8Array>} */
   const files = new Map();
   const store = {
@@ -164,6 +249,32 @@ for (const splat of ["point", "bilinear"]) {
     write: async (/** @type {string} */ name, /** @type {Uint8Array} */ data) => void files.set(name, data),
     remove: async (/** @type {string} */ name) => void files.delete(name),
   };
+  return { files, store };
+}
+
+// ---- flux through the session: the stored frame is in ONE units -----------------
+{
+  const { files, store } = memoryFiles();
+  const job = testJob({ frames: 1, weighting: "flux", fluxRef: 1, fluxBits: 31, camera: [{ t: 0, target: [0, 0, 0], yaw: 0.1, pitch: -0.1, distance: 2500, fovY: 0.7 }] });
+  await renderJob(device, /** @type {any} */ (job), store, nodeZlib, {});
+  const statsFile = files.get("frame-000000.json");
+  const image = files.get("frame-000000.png");
+  const stats = statsFile ? JSON.parse(new TextDecoder().decode(statsFile)) : {};
+  // Light in the stored frame, decoded from its log codes, in particles.
+  let stored = 0;
+  if (image) for (const code of (await decodeGrayPng16(image, nodeZlib)).samples) if (code) stored += (2 ** (code / 1024) - 1) / ONE;
+  const direct = await renderOnce(job, {}, 0);
+  const light = Number(accumulationSum(direct.lo, direct.hi)) / direct.unitsPerParticle;
+  check(
+    "session: a flux frame is stored in ONE units, with its units and drawn tally in the stats",
+    stats.unitsPerParticle === 2 ** 31 && stats.drawn === stats.landed && stats.unitSum === accumulationSum(direct.lo, direct.hi).toString() && Math.abs(stored / light - 1) < 2e-3,
+    `${stored.toFixed(4)} particles of light in the stored frame, ${light.toFixed(4)} in the grid`,
+  );
+}
+
+// ---- the same through the session: stop, run again, read the frame's stats ------
+{
+  const { files, store } = memoryFiles();
   const job = testJob({ frames: 1 });
   const opts = { initialBatch: 60_000, maxBatch: 60_000 };
   let batches = 0;
@@ -182,10 +293,12 @@ for (const splat of ["point", "bilinear"]) {
 
 // ---- batch invariance -------------------------------------------------------
 {
-  const job = testJob({ splat: "bilinear", weighting: "flux", fluxRef: 8.5 });
-  const a = await renderOnce(job, { initialBatch: 50_000, maxBatch: 50_000, perInvocation: 7 });
-  const b = await renderOnce(job, { initialBatch: 2 ** 20, perInvocation: 64 });
-  check("batch invariance", same(a.lo, b.lo) && same(a.hi, b.hi), `${a.batches} vs ${b.batches} batches`);
+  for (const overrides of [{ splat: "bilinear", weighting: "flux", fluxRef: 8.5 }, { splat: "point", weighting: "flux", fluxRef: 8.5, fluxBits: 31 }]) {
+    const job = testJob(overrides);
+    const a = await renderOnce(job, { initialBatch: 50_000, maxBatch: 50_000, perInvocation: 7 });
+    const b = await renderOnce(job, { initialBatch: 2 ** 20, perInvocation: 64 });
+    check(`batch invariance, flux ${overrides.splat}${overrides.fluxBits ? `, ${overrides.fluxBits} bits` : ""}`, same(a.lo, b.lo) && same(a.hi, b.hi) && a.drawn === b.drawn && a.landed === b.landed, `${a.batches} vs ${b.batches} batches`);
+  }
 }
 
 // ---- 64-bit carry -----------------------------------------------------------
@@ -266,58 +379,60 @@ for (const law of [...LAWS, ...STATELESS_LAWS.map((l) => l.id)]) {
     if (/** @type {Error} */ (e).message !== "stop") throw e;
   }
   const resumed = await renderOnce(job, { initialBatch: 77_777, maxBatch: 77_777 }, 1, { resume: saved });
-  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
+  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed && whole.drawn === resumed.drawn && resumed.gpuEvaluated === whole.gpuEvaluated, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
 }
 
 // ---- trillion kernel behind the same renderer ---------------------------------
-for (const splat of ["point", "bilinear"]) {
-  const job = testJob({ splat });
-  const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
-  const out = await renderOnce(job, { kernel: "trillion" });
-  const sum = accumulationSum(out.lo, out.hi);
-  check(`trillion kernel: conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n}, in frame ${out.landed}`);
-}
-{
-  const job = testJob();
-  job.camera = [{ t: 0, target: [0.4, 0.2, 0], yaw: 0.3, pitch: -0.2, distance: 1.6, fovY: 0.7 }];
-  const a = await renderOnce(job, { kernel: "trillion" });
-  const b = await renderOnce(job);
-  const inGrid = accumulationSum(a.lo, a.hi) / BigInt(ONE);
-  // Different hashing for shutter and splat, so compare counts, not pixels.
-  const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
-  check("trillion kernel: in-frame count matches offline kernel", a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
-}
-{
-  // A src/stateless law through both kernels: same in-frame count.
-  const job = testJob();
-  job.planes = [{ ...job.planes[0], law: "galaxy", params: [...STATELESS_LAWS.find((l) => l.id === "galaxy").defaults] }];
-  const a = await renderOnce(job, { kernel: "trillion" });
-  const b = await renderOnce(job);
-  const rel = Math.abs(Number(a.landed - b.landed)) / Math.max(1, Number(b.landed));
-  check("stateless law (galaxy) on both kernels", b.landed > 0n && rel < 0.01, `${a.landed} vs ${b.landed}`);
-}
-{
-  const job = testJob({ splat: "bilinear" });
-  const x = await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 });
-  const y = await renderOnce(job, { kernel: "trillion", initialBatch: 2 ** 20 });
-  check("trillion kernel: batch invariance", same(x.lo, y.lo) && same(x.hi, y.hi), `${x.batches} vs ${y.batches} batches`);
-  /** @type {any} */
-  let saved = null;
-  const controller = new AbortController();
-  let batches = 0;
-  try {
-    await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, {
-      signal: controller.signal,
-      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
-      onProgress: () => {
-        if (++batches === 7) controller.abort();
-      },
-    });
-  } catch (e) {
-    if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+for (const kernel of ["trillion", "trillion-strata"]) {
+  for (const splat of ["point", "bilinear"]) {
+    const job = testJob({ splat });
+    const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
+    const out = await renderOnce(job, { kernel });
+    const sum = accumulationSum(out.lo, out.hi);
+    check(`${kernel}: conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.drawn === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n}, in frame ${out.landed}, drawn ${out.drawn}`);
   }
-  const resumed = saved ? await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, { resume: saved }) : null;
-  check("trillion kernel: cancel and resume exactly", resumed !== null && same(x.lo, resumed.lo) && same(x.hi, resumed.hi) && resumed.landed === x.landed, saved ? `saved after ${saved.gpuEvaluated}` : "nothing saved");
+  {
+    const job = testJob();
+    job.camera = [{ t: 0, target: [0.4, 0.2, 0], yaw: 0.3, pitch: -0.2, distance: 1.6, fovY: 0.7 }];
+    const a = await renderOnce(job, { kernel });
+    const b = await renderOnce(job);
+    const inGrid = accumulationSum(a.lo, a.hi) / BigInt(ONE);
+    // Different hashing for shutter and splat, so compare counts, not pixels.
+    const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
+    check(`${kernel}: in-frame count matches offline kernel`, a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
+  }
+  {
+    // A src/stateless law through both kernels: same in-frame count.
+    const job = testJob();
+    job.planes = [{ ...job.planes[0], law: "galaxy", params: [...STATELESS_LAWS.find((l) => l.id === "galaxy").defaults] }];
+    const a = await renderOnce(job, { kernel });
+    const b = await renderOnce(job);
+    const rel = Math.abs(Number(a.landed - b.landed)) / Math.max(1, Number(b.landed));
+    check(`${kernel}: stateless law (galaxy) matches offline`, b.landed > 0n && rel < 0.01, `${a.landed} vs ${b.landed}`);
+  }
+  {
+    const job = testJob({ splat: "bilinear" });
+    const x = await renderOnce(job, { kernel, initialBatch: 50_000, maxBatch: 50_000 });
+    const y = await renderOnce(job, { kernel, initialBatch: 2 ** 20 });
+    check(`${kernel}: batch invariance`, same(x.lo, y.lo) && same(x.hi, y.hi), `${x.batches} vs ${y.batches} batches`);
+    /** @type {any} */
+    let saved = null;
+    const controller = new AbortController();
+    let batches = 0;
+    try {
+      await renderOnce(job, { kernel, initialBatch: 50_000, maxBatch: 50_000 }, 1, {
+        signal: controller.signal,
+        checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+        onProgress: () => {
+          if (++batches === 7) controller.abort();
+        },
+      });
+    } catch (e) {
+      if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+    }
+    const resumed = saved ? await renderOnce(job, { kernel, initialBatch: 50_000, maxBatch: 50_000 }, 1, { resume: saved }) : null;
+    check(`${kernel}: cancel and resume exactly`, resumed !== null && same(x.lo, resumed.lo) && same(x.hi, resumed.hi) && resumed.landed === x.landed, saved ? `saved after ${saved.gpuEvaluated}` : "nothing saved");
+  }
 }
 
 // ---- PNG round trip ---------------------------------------------------------

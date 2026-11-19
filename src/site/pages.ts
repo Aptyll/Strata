@@ -49,7 +49,7 @@ export const SITE = {
   author: { name: "Aptyll", url: "https://github.com/Aptyll" },
   license: "https://opensource.org/license/mit",
   locale: "en_US",
-  /** Made by share/make-card.py from docs/record/trillion-key2-f0.png; the numbers on it are that frame's GPU tallies. */
+  /** Made by share/make-card.py from docs/record/trillion-key2-f0.png; the numbers on it are the ones on that frame's own label (./README.md, "The share card"). */
   card: {
     file: "src/site/share/strata-1t.jpg",
     width: 1200,

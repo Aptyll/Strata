@@ -121,16 +121,81 @@ Layout (structure in `menu.js`, styles in `menu-styles.js`):
    the target fps as a dashed line. Below it: particles simulated last frame,
    particles stored (when the governor draws fewer), planes, drawing buffer
    size, theme and lead behavior. Facts with no value are hidden.
-2. **Page tabs** (first navbar): scene, behaviors, look, themes, perf,
-   capture, more. A page with no controls hides its tab.
-3. **Section tabs** (second navbar): when a page holds two or more groups,
-   each group gets a tab and only the selected one is shown.
-4. Footer: reset, stats, keys.
+2. **Page tabs** (first navbar): scene, behaviors, look, color, perf,
+   capture. A page with no controls hides its tab. So does "more", the page
+   for controls no other page claims: it only shows when something is
+   unplaced. Six tabs fill the line at the default width; a seventh wraps.
+3. **Sections.** A page shows its groups as sections, in the order of the
+   page's `groups`.
+   - On a **stacked** page (`stack: true`; in the app, every page but
+     behaviors) the sections sit one under the other, each under a small
+     title, so a setting and the button that uses it are on screen together.
+     A page's first section goes without a title when it is named like the
+     page ("look" on look).
+     A section named in the page's `fold` starts folded behind its title
+     (`+ advanced`). The title is a button; whether it was opened is
+     remembered. In the app every stacked page ends with a folded "advanced"
+     section for controls most people never need.
+   - Otherwise a page with two or more groups gets **section tabs** (second
+     navbar) and shows one group at a time. That suits sections that are
+     alternatives, such as one set of sliders per behavior.
+4. Footer: reset all (every page, not only the open one), stats, keys.
 
-A param lands on a page by its `page` field, else by its `group` through the
-`PAGES` table in `menu.js` (for example `performance` goes to perf, `capture`
-to capture, `theme` to themes), else on "more". The last page and section are
-remembered (`strata.hud.page`). Left/Right/Home/End move between tabs.
+The last page and section, and which folded sections are open, are remembered
+(`strata.hud.page`). Left/Right/Home/End move between tabs.
+
+### Where a control appears, and what it is called
+
+The app keeps the menu's table of contents in one file, `src/app/menu.ts`:
+every page, its sections in order, and one row per control. Read `MENU` top to
+bottom and you have read the menu.
+
+```ts
+{
+  id: "perf", label: "perf",
+  sections: [
+    {
+      group: "performance", label: "frame rate",
+      rows: [
+        { id: "adaptive", hint: "Uses fewer particles when the frame rate falls below the target." },
+        { id: "targetFps", needs: "adaptive", hint: "The frame rate to hold." },
+      ],
+    },
+    { group: "advanced", fold: true, rows: [{ id: "rasterizer", label: "draw with", hint: "..." }] },
+  ],
+}
+```
+
+Controls still register wherever they are built (`hud.registerParam` in the
+module that owns the setting). The table has the last word on four things, by
+control id:
+
+- **where**: the page, the section and the position in the section (`order`,
+  the row's index in the table),
+- **the name** shown (`label`), so a control can be renamed for the menu
+  without touching the module that owns it,
+- **`hint`**: one line in plain words, shown as the row's tooltip and read by
+  screen readers as its description,
+- **`needs`**: the id of a switch the control depends on. While that switch is
+  off the row is dimmed and inert, and its tooltip says which switch to turn
+  on ("target fps" needs "hold frame rate").
+
+`menuLayout()` turns the table into the HUD's `layout` option:
+`createHud({ layout: { pages, params } })`. `layout.pages` replaces the
+default `PAGES` table of `menu.js`; `layout.params[id]` overrides `page`,
+`group`, `label`, `order`, `needs` and `hint` of the control with that id. The
+same six fields can also be given to `registerParam` directly.
+
+A control with no row in the table still shows up. It lands on a page by its
+`page` field, else by its `group` through the page table (for example
+`performance` goes to perf, `capture` to capture, `theme` to color), else on
+"more", and it follows the listed rows of its section. `group: "advanced"`
+with a `page` puts it in that page's folded section. Without a `layout` (the
+demos) every control is placed this way.
+
+Ids are the stable handle. Other code talks to a control by id
+(`hud.setParam`, `hud.getParam`, `data-param` on the row), never by label, so
+renaming or moving a row in the table breaks nothing.
 
 FPS is shown in three places: the summary header (with the graph), the H
 stats line, and an optional readout in the top-left corner ("fps in corner"
@@ -146,7 +211,7 @@ Controls, all built by `registerParam`:
 - **action**: a text button with an arrow.
 
 A dot after a label marks a value that differs from its default. Double-click
-a label to reset that one. `reset` in the footer resets all of them. Values
+a label to reset that one. `reset all` in the footer resets all of them. Values
 persist in `localStorage` (`strata.hud` by default) and are restored when the
 param is registered again, at which point `onChange` fires once so the engine
 picks the value up.
@@ -171,7 +236,9 @@ hud.registerJob({
 ```
 
 - The action sits in its `group` in the Esc menu. Use `group: 'capture'` to
-  join the existing capture section and its resolution and length settings.
+  land on the capture page, under its shared resolution, frame rate and length
+  settings. In the app, give it a row in `src/app/menu.ts` to place and name
+  it exactly: the running label ("cancel ...") follows the name given there.
 - While a job runs, the die gives way to one line of text over a 240 px
   hairline progress bar, and the die and `R` are off, since the world belongs
   to the job.
@@ -256,13 +323,13 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 
 | Call | Purpose |
 | --- | --- |
-| `createHud(options?)` | Build and attach. Options: `parent`, `tokens`, `stats`, `dice`, `onRandomize`, `idleMs`, `hideCursor`, `autoFps`, `announce`, `persist`, `shortcuts`, `panelOpen`, `keyTarget`. |
+| `createHud(options?)` | Build and attach. Options: `parent`, `tokens`, `stats`, `dice`, `onRandomize`, `idleMs`, `hideCursor`, `autoFps`, `announce`, `persist`, `shortcuts`, `panelOpen`, `keyTarget`, `layout` (the menu's table of contents, see "Where a control appears"). |
 | `setStat(key, value)`, `setStats(obj)` | Built-in keys: `particles`, `planes`, `time`, `fps`, `plane`, `behavior`. Unknown keys are added bottom left. `null` hides one. |
 | `defineStat(key, { label, slot, format })` | Add or restyle a stat. |
 | `resetTimer()` | Restart the elapsed timer. |
 | `announce(title, sub?, holdMs?)` | Fade a title in and out above the die. |
 | `message(text \| null)` | Centred message for loading or an unsupported browser. Stays until cleared. |
-| `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
+| `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. Placement fields: `page`, `group`, `order`, `needs`, `hint` (the app sets them from its menu table instead). |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. A silent set is ignored while the person is dragging that slider, so an engine echo never yanks it. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
 | `hintDice(on?)`, `rolled` | Start or stop the die's breathing hint by hand, for an app that schedules its own hints (create the HUD with `diceHintMs: 0`); `rolled` is true once the die has been rolled on this device. |

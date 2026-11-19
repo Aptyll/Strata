@@ -1,7 +1,7 @@
 // TrillionKernel: evaluate stateless particles in batches and count hits
 // per pixel, exactly, with nothing stored per particle. See docs/trillion.md.
 
-import { FOLD_WGSL, LAW_PRELUDE, SLOT_BYTES, WORKGROUP, splatWgsl } from './wgsl';
+import { FOLD_WGSL, LAW_PRELUDE, MAX_ROW, SLOT_BYTES, WORKGROUP, splatWgsl } from './wgsl';
 
 /** A stateless motion law: WGSL defining `fn <fn>(key: Key, t: f32, p: array<f32, 8>) -> vec2f` (Key = vec2u, src/stateless). */
 export interface TrillionLaw {
@@ -31,8 +31,17 @@ export interface TrillionPlane {
    * Sheet [-1, 1]^2 to pixels, 9 numbers row-major:
    * (px*w, py*w, w) = rows * (sx, sy, 1), pixel (0, 0) at the top left.
    * Use `planeHomography()` to build it from a model and a view-projection matrix.
+   * With `homographyDelta`, this is the homography at mid shutter.
    */
   homography: ArrayLike<number>;
+  /**
+   * Camera motion blur: the homography at shutter close minus the one at
+   * shutter open, 9 numbers. Each particle is seen through homography + s *
+   * delta, with s in [-0.5, 0.5) the same per-particle instant that jitters
+   * the law's time (settings.shutter), so position and camera agree. Blurs
+   * even when settings.shutter is 0. Omit (or all zeros) for none.
+   */
+  homographyDelta?: ArrayLike<number>;
   /** Smallest accepted w (the near plane). Default 1e-4. */
   near?: number;
   /** Probability 0..1 that a landed particle is counted (brightness). Default 1. */
@@ -57,7 +66,11 @@ export interface TrillionKernelOptions {
   laws: readonly TrillionLaw[];
   /** Replace the helper WGSL (pcg, u01, tri, draw, TAU). */
   prelude?: string;
-  /** Shared memory counters per workgroup. Default: what the device allows, at most 8192. */
+  /**
+   * Shared memory counters per workgroup, at most what the device allows
+   * and 8192. Default 4096 (16 KB): leaves room for four workgroups per
+   * multiprocessor on 64 KB parts, and 2x2 run merging needs few adds.
+   */
   tileBins?: number;
 }
 
@@ -78,8 +91,9 @@ export interface TrillionFrameSettings {
   cull: boolean;
   /**
    * Bench modes. 'full' (default) renders. 'math' evaluates and projects
-   * every particle but writes no counters (plain path). 'noTile' runs the
-   * strata path with run merging but without the shared memory tile.
+   * every particle but writes no counters (on each law's own path: strata
+   * for coherent laws, else direct). 'noTile' runs the strata path with run
+   * merging but without the shared memory tile.
    */
   mode: 'full' | 'math' | 'noTile';
 }
@@ -116,6 +130,8 @@ export class TrillionKernel {
   width = 0;
   height = 0;
   readonly tileBins: number;
+  /** Fraction bits of the fixed point pixel position: 8 unless the frame is over 32764 pixels. */
+  fixBits = 8;
   /** 32 bit hot counters, one per pixel. Folded into `counts`. */
   acc!: GPUBuffer;
   /** Exact 64 bit counters, CountToneMapper words = 2 layout (lo at 2i, hi at 2i + 1). Valid after `fold`. */
@@ -149,7 +165,7 @@ export class TrillionKernel {
     this.device = device;
     // Each other workgroup variable takes 16 bytes after padding; keep 128 bytes for them.
     const maxBins = Math.floor(device.limits.maxComputeWorkgroupStorageSize / 4) - 32;
-    this.tileBins = Math.max(256, Math.min(opts.tileBins ?? 8192, maxBins, 8192));
+    this.tileBins = Math.max(256, Math.min(opts.tileBins ?? 4096, maxBins, 8192));
     this.layout = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: SLOT_BYTES } },
@@ -183,8 +199,12 @@ export class TrillionKernel {
   /** Reallocates the counters (cleared). */
   resize(width: number, height: number): void {
     if (width === this.width && height === this.height && this.acc) return;
+    if (!(width >= 1 && height >= 1 && width <= 65535 && height <= 65535)) {
+      throw new Error('TrillionKernel: frame sides must be 1 to 65535 pixels');
+    }
     this.width = width;
     this.height = height;
+    this.fixBits = fixBitsFor(width, height);
     this.acc?.destroy();
     this.counts?.destroy();
     const pixels = width * height;
@@ -236,19 +256,24 @@ export class TrillionKernel {
    * none of it can be seen. Conservative: assumes the law stays on the sheet.
    */
   footprint(plane: TrillionPlane): PixelRect | null {
-    const h = plane.homography;
     const near = plane.near ?? 1e-4;
+    const d = blurDelta(plane);
+    // With camera blur, the sheet at shutter open, middle and close.
+    const shots = d ? [-0.5, 0, 0.5] : [0];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     let behind = 0;
-    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      const w = h[6] * sx + h[7] * sy + h[8];
-      if (!(w > near)) { behind++; continue; }
-      const px = (h[0] * sx + h[1] * sy + h[2]) / w;
-      const py = (h[3] * sx + h[4] * sy + h[5]) / w;
-      x0 = Math.min(x0, px); x1 = Math.max(x1, px);
-      y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    for (const s of shots) {
+      const h = Array.from({ length: 9 }, (_, k) => plane.homography[k] + (d ? s * d[k] : 0));
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const w = h[6] * sx + h[7] * sy + h[8];
+        if (!(w > near)) { behind++; continue; }
+        const px = (h[0] * sx + h[1] * sy + h[2]) / w;
+        const py = (h[3] * sx + h[4] * sy + h[5]) / w;
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px);
+        y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+      }
     }
-    if (behind === 4) return null;
+    if (behind === 4 * shots.length) return null;
     // Part of the sheet crosses the near plane: its image is unbounded.
     if (behind > 0) return { x: 0, y: 0, w: this.width, h: this.height };
     // One pixel of margin for the stochastic splat.
@@ -274,7 +299,7 @@ export class TrillionKernel {
     const rect = this.footprint(plane);
     if (!rect && this.settings.cull) { this.culled += end - start; return 0; }
     const math = this.settings.mode === 'math';
-    if (pipes.coherent && !math) return this.encodeStrata(encoder, plane, pipes.strata, start, end);
+    if (pipes.coherent) return this.encodeStrata(encoder, plane, pipes.strata, start, end);
     const tiled = !math && !!rect && rect.w * rect.h <= this.tileBins;
     const pipe = tiled ? pipes.tiled : pipes.direct;
     // Shared memory flushes cost up to tileBins atomics: give each workgroup
@@ -368,6 +393,14 @@ export class TrillionKernel {
     }
     gu = Math.floor(gu);
     gv = Math.floor(gv);
+    // Rows hold at most MAX_ROW ids (run counts are 16 bit): enough patches
+    // that no patch exceeds WORKGROUP * MAX_ROW ids, keeping the aspect.
+    const need = Math.ceil(plane.count / (WORKGROUP * MAX_ROW - 1));
+    if (gu * gv < need) {
+      const f = Math.sqrt(need / (gu * gv));
+      gu = Math.ceil(gu * f);
+      gv = Math.ceil(gv * f);
+    }
     const patches = gu * gv;
     return { gu, gv, patches, base: Math.floor(plane.count / patches), rem: plane.count % patches };
   }
@@ -427,20 +460,44 @@ export class TrillionKernel {
     u[27] = keep >= 1 ? 0x1000000 : Math.max(0, Math.floor(keep * 0x1000000));
     u[28] = this.width;
     u[29] = this.height;
-    u[30] = (this.settings.stochastic ? 1 : 0) | (this.settings.mode === 'math' ? 2 : 0) | (this.settings.mode === 'noTile' ? 4 : 0);
-    u[31] = 0;
-    f[32] = this.settings.time;
-    f[33] = this.settings.shutter;
-    f[34] = 0;
-    f[35] = 0;
+    const s = this.settings;
+    const d = blurDelta(plane);
+    u[30] = (s.stochastic ? 1 : 0) | (s.mode === 'math' ? 2 : 0) | (s.mode === 'noTile' ? 4 : 0)
+      | (s.shutter !== 0 ? 8 : 0) | (d ? 16 : 0);
+    const scale = 2 ** this.fixBits;
+    u[31] = this.fixBits;
+    f[32] = s.time;
+    f[33] = s.shutter;
+    f[34] = (this.width + 3) * scale;
+    f[35] = (this.height + 3) * scale;
     i.set(tile ? [tile.x, tile.y, tile.w, tile.h] : [0, 0, 0, 0], 36);
     u.set([strata[0] >>> 0, strata[1] >>> 0, strata[2] >>> 0, strata[3] >>> 0, strata[4] >>> 0, 0, 0, 0], 40);
+    // Fixed point: n = (q - off + 1) * 2^F with off = 0.5 for the stochastic splat.
+    f.set([scale, (s.stochastic ? 0.5 : 1) * scale, 0, 0], 48);
+    f.set(d ? [d[0], d[1], d[2], 0, d[3], d[4], d[5], 0, d[6], d[7], d[8], 0] : new Array(12).fill(0), 52);
     const offset = this.slot * SLOT_BYTES;
-    this.device.queue.writeBuffer(this.ring, offset, this.scratch, 0, 192);
+    this.device.queue.writeBuffer(this.ring, offset, this.scratch, 0, SLOT_BYTES);
     this.slot = (this.slot + 1) % RING_SLOTS;
     this.slotsSinceSubmit++;
     return offset;
   }
+}
+
+/**
+ * Fraction bits of the fixed point pixel position for a frame: 8, or fewer
+ * above 32764 pixels, so that (size + 3) * 2^F stays below 2^23 and the
+ * rounding through the f32 mantissa in project() is exact.
+ */
+export function fixBitsFor(width: number, height: number): number {
+  return Math.max(1, Math.min(8, Math.floor(Math.log2((2 ** 23 - 1) / (Math.max(width, height) + 3)))));
+}
+
+/** The plane's camera blur delta, or null when it has none (absent or all zeros). */
+function blurDelta(plane: TrillionPlane): ArrayLike<number> | null {
+  const d = plane.homographyDelta;
+  if (!d) return null;
+  for (let k = 0; k < 9; k++) if (d[k] !== 0) return d;
+  return null;
 }
 
 /**

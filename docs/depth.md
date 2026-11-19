@@ -42,7 +42,7 @@ is sharp, blurred or smaller than a pixel.
 | `parallax-camera.ts` | `createParallaxCamera(camera)`: wraps any `CameraController` and adds pointer parallax. |
 | `sprite-pass.ts` | `createDepthSpritePass(gpu)`: a `rasterize` stage `Pass` built on `src/core/contracts.ts`. |
 | `demo/` | Standalone page with its own tiny renderer. |
-| `test/` | Unit tests for the CPU side: `node src/depth/test/run.mjs`. |
+| `test/` | Unit tests for the CPU side: `npm test -- depth`. |
 
 ## Demo
 
@@ -67,9 +67,10 @@ of field moves each particle to a point inside its circle of confusion
 frame, so out-of-focus sheets look spread out without shimmering. It uses the
 same `DepthParams`, `depthSettingsForWorld` and autofocus as the sprites, and
 adds into the integer grid, so dense cores keep counting. It refits fog, size
-and focus when the world's radius moves by more than a quarter. Change it
-live on the pass named `atomic-raster`: `pass.depth`, `pass.subpixel`,
-`pass.params` and `pass.autofocus`. One lens sample per particle is grainy
+and focus when the world's radius moves by more than a quarter. Switch it
+from the Esc menu (look page: "fog and focus", and "sub-pixel smoothing"
+under advanced), or change it live on the pass named `atomic-raster`:
+`pass.depth`, `pass.subpixel`, `pass.params` and `pass.autofocus`. One lens sample per particle is grainy
 where defocused particles are sparse; the sprites draw a real disc instead.
 
 **Depth sprites (`?raster=sprites`, debug).** `src/passes/sprites.pass.ts`

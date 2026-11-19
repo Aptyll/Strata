@@ -25,11 +25,13 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  Per 4K frame on the 2070: 26 to 52 s with flux weighting when the sheets
-  fill part of the frame, 172 to 205 s with flux when they fill it
-  (composition A), about 160 to 193 s with count weighting (exactly one unit
-  per particle in view, the proof shots). Flux draws far particles only on
-  average; the record stills were most likely flux.
+  Per 4K frame on the 2070: about 160 to 193 s with count weighting (exactly
+  one unit per particle in view, the proof shots), 161 to 205 s with flux when
+  the sheets fill the frame (composition A), and 26 to 52 s for the first
+  record stills, most likely flux with 16-bit weights (`fluxBits: 16`, now the
+  "flux, quick" choice), where most far particles add no light, which is why
+  it is quick. Flux jobs built now keep every far particle's light
+  (`fluxBits`), so expect count-like times for them; not yet timed on the 2070.
 
 ## Rules (Noah's, non-negotiable)
 
@@ -50,7 +52,8 @@ Two very different modes, and the wording must keep them apart:
   Noah's GPU.
 - **Honest counting.** Only claim what the GPU actually did. A count shown on
   screen must come from a GPU tally (landed / evaluated), not from a config
-  value. Simulated vs procedural/rendered is always labelled.
+  value. "Every particle drawn" needs the GPU's `drawn` count to equal
+  `landed`. Simulated vs procedural/rendered is always labelled.
 - **Questions to Noah** are tap-to-answer decision cards (2 to 4 options, one
   recommended), never open-ended text. Prefer a stated assumption over a
   question.
@@ -61,7 +64,7 @@ Two very different modes, and the wording must keep them apart:
 | folder | what lives there |
 | --- | --- |
 | `main.ts` | app entry: the boot sequence, read top to bottom; `?challenge` branches off here |
-| `app/` | the app shell main boots from: URL options (`options.ts`), frame graph, scene, HUD entries, keys (`keys.ts`), frame loop and its hooks (`loop.ts`) |
+| `app/` | the app shell main boots from: URL options (`options.ts`), frame graph, scene, HUD entries, keys (`keys.ts`), the Esc menu's table of contents (`menu.ts`), frame loop and its hooks (`loop.ts`) |
 | `core/` | shared contracts (`contracts.ts`), frame graph, particle budget |
 | `gpu/` | device init (`HDR_FORMAT = rgba16float`), shared WGSL prelude |
 | `sim/` | per-plane simulation host that runs behaviors |
@@ -73,19 +76,26 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
+| `hue/` | one color per sheet: a points rasterizer plus a tint pass (`?raster=hue`, off by default) |
 | `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
+| `color-life/` | particle life with color species, simulated on the GPU; standalone page `/src/color-life/demo/` |
 | `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
-| `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
+| `trillion/` | faster trillion splat kernel and laws, with its own demo; the offline renderer can run it (`kernel: "trillion"`), the default is still the offline kernel |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
 | `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
-| `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
+| `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find, ladder, collapse) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
 | `site/` | the published site's wrapper, build-time only: the privacy lock, page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
+
+A new folder under `src/` gets a `README.md` and a row in three maps: this
+table, `src/README.md` and `docs/CODEMAP.md`. `npm run build` ends with a
+warning when a map falls behind or a doc names a path that is gone
+(`npm run check:docs` lists every gap).
 
 Frame stage order: `simulate`, `interplane`, `rasterize`, `depth`, `tonemap`,
 `ui`, `capture`. Exactly one rasterize pass is enabled at a time.
@@ -99,6 +109,7 @@ npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
 npm test             # every *.test.* file under src/: a few seconds, no GPU
 npm run smoke        # after a build: opens every built page headless, fails on errors
+npm run check:docs   # do the maps and the paths named in the docs still match the code
 npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
@@ -108,7 +119,7 @@ npm run record       # render manifests: make, check, reproduce (src/manifest)
 | `/?challenge` | Challenge mode (`C` copies the result JSON) |
 | `/?record` | 1T 4K still from the app; `?record=1e12&size=4k&frames=1` (see `src/record/index.ts`) |
 | `/src/offline/web/` | offline renderer: preset, choose folder, render, export mp4 |
-| `/src/proof/web/` | proof shots (dev only, not in the production build) |
+| `/src/proof/web/` | proof shots (ships in the production build) |
 | `/src/perf/bench/?bench=1` | benchmark sweep 1M to 800M |
 | `/src/verify/` | shader checks in a real browser |
 
@@ -148,6 +159,11 @@ defaults are heavy. Offline Node CLI: `src/offline/README.md`.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
   owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **The Esc menu has a table of contents.** `MENU` in `src/app/menu.ts` lists
+  every control by id: its page, section, position, name and a one line hint.
+  Register the control where it is built, then give it a row there. Rarely
+  needed controls go in the page's folded "advanced" section, and six page
+  tabs is all that fits on one line.
 - **Chrome is styled with the design tokens.** Fonts, sizes, text opacities,
   spacing and timings of anything on screen come from `src/ux/design` as
   `var(--st-*)`; no literal fonts, alphas or durations in new UI. Rules and
