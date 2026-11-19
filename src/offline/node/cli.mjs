@@ -434,7 +434,7 @@ Job overrides: --particles 1T --planes 1024 --width 3840 --height 2160 --fps 60
                --weighting flux|count, --seed 1, --time-scale 1, --shutter 0.5
 Render: --frame N | --range a:b | --shard i/n, --checkpoint 300 (seconds),
         --batch-ms 250, --per-invocation 64, --dawn backend=vulkan
-Look:   --white <particles per pixel>, --contrast 4096, --gamma 1,
+Look:   --white <particles per pixel>, --contrast 256, --gamma 1,
         --percentile 0.995, --headroom 1, --smooth 20, --label "a|b", --no-label
 `;
 
