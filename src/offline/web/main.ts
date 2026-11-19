@@ -28,12 +28,22 @@ const splatEl = $<HTMLSelectElement>("splat");
 const weightingEl = $<HTMLSelectElement>("weighting");
 const kernelEl = $<HTMLSelectElement>("kernel");
 
-/** What each choice of "light" does, shown under the form. */
+/** What each choice of "light" does on the offline kernel, shown under the form. */
 const WEIGHTING_NOTES: Record<string, string> = {
   flux: "flux: far sheets are dimmer, and every particle in view adds light",
   "flux-fast": "flux, quick: far sheets are dimmer, drawn by a random share of their particles (the first stills)",
   count: "count: every particle in view adds exactly one unit, so the grid sum is the count",
 };
+
+/** The note for the chosen light and kernel. */
+function weightingNote(): string {
+  const light = weightingEl.value;
+  // The trillion kernels add whole particles, so under flux a dim sheet keeps a random share of its particles.
+  if (light !== "count" && kernelEl.value !== "offline") {
+    return "flux on this kernel: far sheets are dimmer, drawn by a random share of their particles";
+  }
+  return WEIGHTING_NOTES[light] ?? "";
+}
 const summaryEl = $("summary");
 const statusEl = $("status");
 const folderBtn = $<HTMLButtonElement>("folder");
@@ -103,7 +113,7 @@ function updateSummary(): void {
     const n = totalParticles(job);
     summaryEl.textContent =
       `${withCommas(n)} particles\n${job.frames} frames, ${withCommas(n * job.frames)} particle evaluations\n` +
-      (WEIGHTING_NOTES[weightingEl.value] ?? "");
+      weightingNote();
   } catch (e) {
     summaryEl.textContent = (e as Error).message;
   }
@@ -112,7 +122,7 @@ function updateSummary(): void {
 for (const name of [...Object.keys(PRESETS), ...Object.keys(COMPOSITIONS)]) presetEl.add(new Option(name, name));
 presetEl.value = "preview";
 presetEl.addEventListener("change", () => fillFromPreset(presetEl.value));
-for (const el of [...Object.values(inputs), splatEl, weightingEl]) el.addEventListener("input", updateSummary);
+for (const el of [...Object.values(inputs), splatEl, weightingEl, kernelEl]) el.addEventListener("input", updateSummary);
 fillFromPreset(presetEl.value);
 
 if (!canPickFolder()) {
