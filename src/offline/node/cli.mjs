@@ -20,6 +20,7 @@ import { encodeGrayPng } from "../core/png";
 import { StatelessRenderer } from "../core/renderer";
 import { gradeJob, loadJob, loadStats, renderJob } from "../core/session";
 import { PRESETS, clusterJob } from "../core/world";
+import { COMPOSITIONS } from "../core/compositions";
 import { DEFAULT_LOOK, exposureTrack, withCommas } from "../core/grade";
 import { nodeStore, nodeZlib } from "./platform.mjs";
 
@@ -56,8 +57,9 @@ function parseCount(v) {
 
 function jobFromArgs(args) {
   const presetName = args.preset ?? "smoke";
-  const preset = PRESETS[presetName];
-  if (!preset) throw new Error(`Unknown preset "${presetName}". Choose from: ${Object.keys(PRESETS).join(", ")}`);
+  const composition = COMPOSITIONS[presetName];
+  const preset = composition?.defaults ?? PRESETS[presetName];
+  if (!preset) throw new Error(`Unknown preset "${presetName}". Choose from: ${[...Object.keys(PRESETS), ...Object.keys(COMPOSITIONS)].join(", ")}`);
   const o = { ...preset };
   if (args.name) o.name = String(args.name);
   if (args.width) o.width = parseCount(args.width);
@@ -73,7 +75,7 @@ function jobFromArgs(args) {
   if (args.weighting) o.weighting = args.weighting;
   if (args["time-scale"]) o.timeScale = Number(args["time-scale"]);
   if (args.shutter !== undefined) o.shutter = Number(args.shutter);
-  return clusterJob(o);
+  return composition ? composition.build(o) : clusterJob(o);
 }
 
 const rendererOptions = (args) => ({
@@ -426,12 +428,13 @@ const HELP = `Strata offline runner
           [--exposure locked|auto]               locked: white scales with count
 
 Presets: ${Object.keys(PRESETS).join(", ")}
+Hero compositions (1T 4K stills by default): ${Object.keys(COMPOSITIONS).join(", ")}
 Job overrides: --particles 1T --planes 1024 --width 3840 --height 2160 --fps 60
                --frames 600 | --seconds 10, --ssaa 1, --splat point|bilinear,
                --weighting flux|count, --seed 1, --time-scale 1, --shutter 0.5
 Render: --frame N | --range a:b | --shard i/n, --checkpoint 300 (seconds),
         --batch-ms 250, --per-invocation 64, --dawn backend=vulkan
-Look:   --white <particles per pixel>, --contrast 4096, --gamma 1,
+Look:   --white <particles per pixel>, --contrast 256, --gamma 1,
         --percentile 0.995, --headroom 1, --smooth 20, --label "a|b", --no-label
 `;
 
