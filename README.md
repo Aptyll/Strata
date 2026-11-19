@@ -186,6 +186,17 @@ pieces are new files that register themselves by name:
 Each frame runs its passes in a fixed order: `simulate`, `interplane`,
 `rasterize`, `depth`, `tonemap`, `ui`, `capture`.
 
+## Privacy
+
+Strata has no analytics, no cookies, no ads and no third-party requests. Every
+page carries a Content-Security-Policy that only lets it load from, and send
+to, the site's own address, so your browser enforces this itself: a tracker or
+a font from someone else's server would be refused. Your settings and the
+frames you render stay in your own browser's storage, or in the folder you
+pick. The site is hosted on GitHub Pages, and GitHub, like any web host, sees
+your IP address when it serves you a page. How it is done:
+[src/site](src/site/README.md#the-privacy-lock).
+
 ## License
 
 [MIT](LICENSE)

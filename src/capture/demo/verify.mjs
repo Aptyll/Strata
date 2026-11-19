@@ -60,9 +60,13 @@ try {
     return { width: bmp.width, height: bmp.height, mean: sum / (d.length / 4), lit: lit / (d.length / 4) };
   }`;
 
+  // The helpers go into the page as an inline script. The site's Content-Security-Policy
+  // (src/site) allows inline scripts but not eval, so the strings cannot be eval'ed in there.
+  await page.addScriptTag({ content: `window.__helpers = { toBase64: ${toBase64}, inspectPng: ${inspectPng} };` });
+
   // 1. Offline video: 2 s at 60 fps, 2x supersampled.
   const video = await page.evaluate(
-    async ({ codec, toBase64 }) => {
+    async ({ codec }) => {
       const r = await window.__capture.runOffline({ width: 640, height: 360, seconds: 2, fps: 60, supersample: 2, codec });
       const read = await window.__capture.probe(r.blob);
       return {
@@ -71,10 +75,10 @@ try {
         readWidth: read.width, readHeight: read.height,
         readDuration: read.duration, packets: read.packets, readFps: read.fps,
         canvasAfter: [window.__capture.canvas.width, window.__capture.canvas.height],
-        base64: await eval(toBase64)(r.blob),
+        base64: await window.__helpers.toBase64(r.blob),
       };
     },
-    { codec, toBase64 },
+    { codec },
   );
   console.log(`video: ${video.codec} ${video.mimeType}, ${video.size} bytes, rendered in ${video.elapsed.toFixed(2)} s`);
   check(video.frames === 120 && video.packets === 120, 'video has 120 frames', `${video.packets} packets`);
@@ -87,15 +91,15 @@ try {
   // 2. Determinism: the same render twice gives identical frames going in.
   // (Checked on the PNG path, since encoders are not required to be bit exact.)
   const stills = await page.evaluate(
-    async ({ inspectPng, toBase64 }) => {
-      const inspect = eval(inspectPng);
+    async () => {
+      const inspect = window.__helpers.inspectPng;
       const c = window.__capture;
       c.scene.time = 3; // freeze a known state: stills render synchronously at this time
       const shot = await c.screenshot();
       const one = await c.single(1280, 720);
       const ss = await c.still(1280, 720, 3);
       const tiled = await c.tiled(1280, 720, 500);
-      const b64 = eval(toBase64);
+      const b64 = window.__helpers.toBase64;
       return {
         shot: await inspect(shot), one: await inspect(one), ss: await inspect(ss), tiled: await inspect(tiled),
         files: { 'still-1x.png': await b64(one), 'still-3x.png': await b64(ss), 'still-tiled.png': await b64(tiled) },
@@ -110,7 +114,6 @@ try {
         })(),
       };
     },
-    { inspectPng, toBase64 },
   );
   const fmt = (s) => `${s.width}x${s.height} mean ${s.mean.toFixed(2)} lit ${(s.lit * 100).toFixed(1)}%`;
   check(stills.shot.width === 960 && stills.shot.mean > 0.5, 'screenshot is not blank', fmt(stills.shot));
