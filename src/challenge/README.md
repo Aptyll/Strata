@@ -35,6 +35,20 @@ says "TIER 1 REACHED" when all of this holds:
   it to equal the reported count in every checked frame. A frame the browser
   dropped counts zero, which refuses the tier for the rest of the run.
 
+**A screen at the target frame rate.** A screen that refreshes 30 times a
+second (a phone in low power mode, a browser's energy saver, a 30 Hz monitor)
+can meet 30 fps but never exceed it. "At least 30" then passes or fails on
+measurement noise, and the search used to end far too low on such a screen: on
+a pretend device that holds 40M, it reported between 0.7M and 24M and took up
+to 90 windows. Challenge mode now measures the refresh rate before the run
+(`refresh.ts`). On a screen
+within 5 percent of the target or slower, a window passes at 95 percent of the
+refresh rate (every refresh shown), the climb doubles instead of reading
+headroom the screen hides, the block and the copied sentence say "screen
+capped at 30 Hz", and the JSON carries `refreshHz` and `passFps`. Tier 1 stays
+strict: it needs a measured 30 fps or more. `refresh.test.js` runs the search
+on pretend devices with fast and capped screens.
+
 Procedural mode (key `M`) is reported separately and never as a tier. Its
 particles have no stored state: position is a closed-form function of id and
 time. That is how counts in the billions become possible in realtime, and the

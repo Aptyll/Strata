@@ -9,6 +9,7 @@ const run = (result = {}, facts = {}) => ({
   mismatches: 0,
   memoryLimited: false,
   software: false,
+  screenHz: null,
   lost: null,
   ...facts,
   result: {
@@ -16,6 +17,8 @@ const run = (result = {}, facts = {}) => ({
     particles: 142_606_336,
     fps: 30.4,
     targetFps: 30,
+    passFps: 30,
+    refreshHz: 144,
     sustained: true,
     stoppedBy: "fps",
     width: 1920,
@@ -124,6 +127,17 @@ test("a CPU renderer is named as one, so a small number is not blamed on the gra
   const facts = run({ tier1: false, particles: 3_276_800, gpuName: "SwiftShader Device (Subzero)" }, { software: true });
   assert.equal(viewerText(facts).caption, "running on the CPU: this browser is not using a graphics card");
   assert.match(resultSentence(facts, "x"), /sheets\) on a software renderer \(no graphics card\)\. x$/);
+});
+
+test("on a screen capped at the target, the block and the sentence say whose limit the frame rate is", () => {
+  const capped = { screenHz: 30.02 };
+  const result = { fps: 29.9, passFps: 28.5, refreshHz: 30, tier1: false };
+  assert.equal(viewerText(run({ ...result, sustained: false }, { ...capped, phase: "climb" })).caption, "finding the most this GPU holds at 30 fps, the limit of this screen");
+  const done = viewerText(run(result, capped));
+  assert.equal(done.caption, "the most this GPU holds at 30 fps, the limit of this screen");
+  assert.equal(done.what, "particles simulated every frame at 29.9 fps", "the measured rate, not the target");
+  assert.equal(viewerText(run({ ...result, sustained: false, stoppedBy: "floor" }, capped)).caption, "this GPU cannot hold 30 fps, the limit of this screen here");
+  assert.match(resultSentence(run(result, capped), "x"), /at 29\.9 fps \(1920x1080, 24 sheets, screen capped at 30 Hz\) on /);
 });
 
 test("the sentence for a comment reads as one line with the conditions and the link", () => {

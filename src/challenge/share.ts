@@ -24,6 +24,12 @@ export interface RunFacts {
   memoryLimited: boolean;
   /** The browser is drawing on the CPU (a fallback adapter), not on a graphics card. */
   software: boolean;
+  /**
+   * The screen's refresh rate in Hz when it is at the target frame rate or
+   * under it, so the search held this rate instead (screenLimit in refresh.ts).
+   * Null on a screen faster than the target.
+   */
+  screenHz: number | null;
   /** Message of a lost device, or null while it is alive. */
   lost: string | null;
 }
@@ -64,16 +70,18 @@ export function viewerText(facts: RunFacts): ViewerText {
   const span = facts.lost !== null && !settled ? "in the last frame" : `every frame${at}`;
   const what = `particles ${kind} ${span}${sim ? "" : ", not simulated"}`;
 
+  // On a screen at the target or under it, the rate that was held is the screen's own.
+  const held = facts.screenHz ? `${Math.round(facts.screenHz)} fps, the limit of this screen` : `${r.targetFps} fps`;
   let caption: string;
   if (facts.lost !== null) caption = "the graphics device stopped";
   else if (facts.mismatches > 0) caption = "result invalid: the GPU counted a different number";
   else if (facts.software) caption = "running on the CPU: this browser is not using a graphics card";
   else if (fixed) caption = "fixed count, no search";
-  else if (facts.phase !== "hold") caption = `finding the most this GPU holds at ${r.targetFps} fps`;
-  else if (!r.sustained) caption = `this GPU cannot hold ${r.targetFps} fps here`;
+  else if (facts.phase !== "hold") caption = `finding the most this GPU holds at ${held}`;
+  else if (!r.sustained) caption = `this GPU cannot hold ${held} here`;
   else if (r.stoppedBy === "ceiling") {
     caption = facts.memoryLimited ? "limited by GPU memory, not by frame rate" : "the most this mode can run, not the limit of this GPU";
-  } else caption = `the most this GPU holds at ${r.targetFps} fps`;
+  } else caption = `the most this GPU holds at ${held}`;
   if (r.tier1 && valid) caption += " · tier 1 reached";
 
   const size = `${r.width}x${r.height} · ${r.planes} sheets`;
@@ -103,9 +111,10 @@ export function resultSentence(facts: RunFacts, link: string): string {
   else if (r.stoppedBy === "ceiling") notes.push(facts.memoryLimited ? "limited by GPU memory" : "limited by the mode's cap");
   const head = sim ? "Strata challenge" : "Strata challenge, procedural mode";
   const on = facts.software ? " on a software renderer (no graphics card)" : r.gpuName ? ` on ${r.gpuName}` : "";
+  const screen = facts.screenHz ? `, screen capped at ${Math.round(facts.screenHz)} Hz` : "";
   return (
     `${head}: ${count(r.particles)} particles ${sim ? "simulated" : "rendered"} every frame at ${rate(r.fps)} fps` +
-    `${notes.map((n) => `, ${n}`).join("")} (${r.width}x${r.height}, ${r.planes} sheets)${on}. ${link}`
+    `${notes.map((n) => `, ${n}`).join("")} (${r.width}x${r.height}, ${r.planes} sheets${screen})${on}. ${link}`
   );
 }
 
