@@ -34,6 +34,7 @@ import { mountPanels } from "./ui";
 import { mountAutoCam } from "./ux/autocam";
 import { attachCameraInput, createCamera } from "./ux/camera";
 import { applyMobileBudget, mountMobileControls } from "./ux/mobile";
+import { mountPerfHud } from "./ux/perf-hud";
 import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
@@ -185,6 +186,10 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     if (id === "record") loop.offline = running;
   });
   if (options.record) setTimeout(() => record.start(), 500);
+
+  // ---- live numbers in the Esc menu: frame pacing, GPU time per pass, particles the GPU counted (src/ux/perf-hud) ----
+  // After every other loop hook: its two hooks bracket the frame, so the script time it shows covers them all.
+  mountPerfHud({ hud: ui.hud, gpu, graph, sim, budget, hooks: loop.hooks });
 
   // ---- when the GPU fails later: device lost, or a particle count it cannot hold (src/ux/recovery) ----
   mountRecovery({
