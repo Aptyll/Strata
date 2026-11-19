@@ -15,8 +15,15 @@
  * limits, and are never drawn with vertex buffers or point draw calls.
  */
 
-import type { Behavior, PlaneDesc } from '../core/contracts';
-import { paramNames } from '../gpu/shaderLib';
+import { BRUSH_FLOATS, MAX_BRUSHES, type Behavior, type PlaneDesc } from '../core/contracts';
+import {
+  GLOBALS_BRUSHES_OFFSET,
+  paramNames,
+  PLANE_BRIGHTNESS_OFFSET,
+  PLANE_COUNT_OFFSET,
+  PLANE_PARAMS_OFFSET,
+  PLANE_SEED_OFFSET,
+} from '../gpu/shaderLib';
 import { fromTRS, seededRandom } from '../math';
 import { classifyPlane, DEFAULT_LOD, type LodSettings, type PlaneClass } from './culling';
 import { GpuTimer } from './gpuTimer';
@@ -139,6 +146,11 @@ export class PerfEngine {
   bilinear = false;
   /** Light added per particle per pixel before tonemapping (Scene.render.brightness). */
   brightness = 0.2;
+  /**
+   * Pointer brushes, packed like the core Globals (MAX_BRUSHES x BRUSH_FLOATS
+   * floats). All zero means no brush. Write into it before frame().
+   */
+  readonly brushes = new Float32Array(MAX_BRUSHES * BRUSH_FLOATS);
 
   private readonly planes = new Map<number, PlaneRec>();
   private nextId = 1;
@@ -304,7 +316,7 @@ export class PerfEngine {
     return id;
   }
 
-  /** Call after changing a plane's transform or params. */
+  /** Call after changing a plane's transform, params or brightness. */
   updatePlane(id: number, desc?: PlaneDesc): void {
     const plane = this.planes.get(id);
     if (!plane) return;
@@ -361,8 +373,9 @@ export class PerfEngine {
       mat4Multiply(this.mvp, p.viewProj, plane.model);
       const c = classifyPlane(this.mvp, plane.count, this.width, this.height, lod, this.cls);
 
+      const planeBrightness = plane.desc.brightness ?? 1;
       let drawCount = 0;
-      if (c.visible) {
+      if (c.visible && planeBrightness > 0) {
         visible++;
         drawCount = Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction)));
       }
@@ -376,7 +389,7 @@ export class PerfEngine {
         dt = Math.min(plane.pendingDt, MAX_STEP_DT);
         plane.pendingDt = 0;
       }
-      const weight = drawCount > 0 ? Math.max(1, Math.round((WEIGHT_ONE * plane.count) / drawCount)) : 0;
+      const weight = drawCount > 0 ? Math.max(1, Math.round((WEIGHT_ONE * planeBrightness * plane.count) / drawCount)) : 0;
       const flags = baseFlags | (doSim ? FLAG_SIM : 0) | (drawCount > 0 ? FLAG_DRAW : 0);
       const processed = Math.max(drawCount, simCount);
       this.writeSlot(active.length, plane, p.viewProj, this.mvp, dt, p.time, frame, simCount, drawCount, weight, flags, processed);
@@ -593,12 +606,14 @@ export class PerfEngine {
     f[o + 17] = dt;
     u[o + 18] = frame;
     f[o + 19] = this.brightness;
+    f.set(this.brushes, o + (GLOBALS_BRUSHES_OFFSET >> 2));
     // Plane
     o += BLOCK_ALIGN >> 2;
     f.set(plane.model, o);
-    f.set(plane.params, o + 16);
-    u[o + 24] = processed;
-    f[o + 25] = plane.desc.seed;
+    f.set(plane.params, o + (PLANE_PARAMS_OFFSET >> 2));
+    u[o + (PLANE_COUNT_OFFSET >> 2)] = processed;
+    f[o + (PLANE_SEED_OFFSET >> 2)] = plane.desc.seed;
+    f[o + (PLANE_BRIGHTNESS_OFFSET >> 2)] = plane.desc.brightness ?? 1;
     // Perf
     o += BLOCK_ALIGN >> 2;
     if (mvp) f.set(mvp, o);

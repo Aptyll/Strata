@@ -14,7 +14,7 @@
  */
 
 import type { Behavior } from '../core/contracts';
-import { buildSimShader } from '../gpu/shaderLib';
+import { BRUSH_DISPLACE, buildSimShader, GLOBALS_SIZE, PLANE_UNIFORM_SIZE } from '../gpu/shaderLib';
 
 export const WORKGROUP_SIZE = 256;
 /** Workgroups per dispatch row; planes larger than one row dispatch several rows. */
@@ -29,8 +29,11 @@ export const WEIGHT_ONE = 256;
  */
 export const BLOCK_ALIGN = 256;
 export const SLOT_STRIDE = BLOCK_ALIGN * 3;
-export const GLOBALS_BLOCK_SIZE = 80;
-export const PLANE_BLOCK_SIZE = 112;
+export const GLOBALS_BLOCK_SIZE = GLOBALS_SIZE;
+export const PLANE_BLOCK_SIZE = PLANE_UNIFORM_SIZE;
+if (GLOBALS_BLOCK_SIZE > BLOCK_ALIGN || PLANE_BLOCK_SIZE > BLOCK_ALIGN) {
+  throw new Error('perf: a core uniform outgrew its 256-byte block. Raise BLOCK_ALIGN in src/perf/shaders.ts.');
+}
 export const PERF_BLOCK_SIZE = 96;
 
 export const FLAG_SIM = 1;
@@ -160,6 +163,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   if (doSim) {
     p = update(p, i);
+    // Pointer brushes, applied exactly like the core engine's entry point.
+    let push = brushAccel(p.pos) * globals.dt;
+    p.vel += push;
+    p.pos += push * ${BRUSH_DISPLACE.toFixed(3)};
     perfStore[idx] = perfPack(p, idx ^ (globals.frame * 0x9e3779b9u) ^ bitcast<u32>(plane.seed));
   }
 
