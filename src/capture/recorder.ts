@@ -13,7 +13,7 @@ import {
   type VideoCodec,
   getFirstEncodableVideoCodec,
 } from 'mediabunny';
-import { type AnyCanvas, Resampler, downloadBlob, timestampName } from './util';
+import { type AnyCanvas, FilterStage, Resampler, cssFilterOf, downloadBlob, timestampName } from './util';
 
 export type CaptureCodec = 'avc' | 'hevc' | 'vp9' | 'av1';
 
@@ -66,6 +66,12 @@ export interface RecordingOptions {
   filename?: string;
   /** Colour painted under each frame when resampling. Default black. */
   background?: string;
+  /**
+   * CSS filter baked into every frame. Default: the canvas element's own
+   * computed filter (the app's color themes), read each frame so a theme
+   * change shows up in the video. Null records the raw canvas pixels.
+   */
+  filter?: string | null;
 }
 
 /** Anything a 2D canvas can draw that knows its own pixel size. */
@@ -212,8 +218,10 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
 
   // Frames that already have the output size are encoded directly. Anything
   // else (supersampled or resized canvases) goes through a 2D canvas that
-  // box filters it down, created on first use.
+  // box filters it down, created on first use. A CSS filter on the canvas is
+  // baked in last, after the downsample.
   let resampler: Resampler | null = null;
+  let filterStage: FilterStage | null = null;
   const source = new VideoSampleSource({
     codec,
     bitrate,
@@ -281,13 +289,15 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
       try {
         const src = image ?? canvas;
         const [sw, sh] = imageSize(src);
-        if (sw === width && sh === height) {
-          sample = new VideoSample(src, { timestamp, duration: frameDuration });
-        } else {
+        let frame: FrameImage = src;
+        if (sw !== width || sh !== height) {
           resampler ??= new Resampler(width, height, opts.background ?? '#000');
           resampler.draw(src, sw, sh);
-          sample = new VideoSample(resampler.canvas, { timestamp, duration: frameDuration });
+          frame = resampler.canvas;
         }
+        const filter = opts.filter === undefined ? cssFilterOf(canvas) : opts.filter;
+        if (filter) frame = (filterStage ??= new FilterStage()).draw(frame, width, height, filter);
+        sample = new VideoSample(frame, { timestamp, duration: frameDuration });
       } catch (err) {
         closeInput();
         return Promise.reject(err);

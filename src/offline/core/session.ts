@@ -154,9 +154,17 @@ export async function renderJob(
       const resume = partialFile ? (unpackPartial(job, frame, partialFile) ?? undefined) : undefined;
 
       let rate = 0;
-      const result = await renderer.renderFrame(frame, {
+      // shouldStop is checked after every batch, not only between frames: it
+      // aborts this frame's controller, which saves a checkpoint and stops.
+      const inner = new AbortController();
+      const forward = () => inner.abort();
+      opts.signal?.addEventListener("abort", forward);
+      if (opts.signal?.aborted) inner.abort();
+      let result;
+      try {
+      result = await renderer.renderFrame(frame, {
         resume,
-        signal: opts.signal,
+        signal: inner.signal,
         onPartial: opts.onPartial
           ? { everyMs: (opts.previewSeconds ?? 15) * 1000, show: (acc, done, total) => opts.onPartial!(frame, acc, done, total) }
           : undefined,
@@ -171,8 +179,19 @@ export async function renderJob(
           const r = batchSize / Math.max(batchMs / 1000, 1e-6);
           rate = rate === 0 ? r : rate * 0.9 + r * 0.1;
           opts.onProgress?.({ frame, done, total, rate, batchSize, batchMs });
+          if (opts.shouldStop?.()) inner.abort();
         },
       });
+      } catch (e) {
+        // A stop requested through shouldStop ends the run cleanly; an aborted signal rejects.
+        if ((e as DOMException).name === "AbortError" && !opts.signal?.aborted && opts.shouldStop?.()) {
+          stopped = true;
+          break;
+        }
+        throw e;
+      } finally {
+        opts.signal?.removeEventListener("abort", forward);
+      }
 
       // The GPU's own count must match the world, or the frame is not what it claims.
       if (result.gpuEvaluated !== BigInt(renderer.total)) {
@@ -181,6 +200,7 @@ export async function renderJob(
       const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
       const stats = frameStats(frame, result, developed, {
         evaluated: result.gpuEvaluated,
+        evaluatedBy: renderer.evaluatedBy,
         seconds: result.seconds,
         batches: result.batches,
       });

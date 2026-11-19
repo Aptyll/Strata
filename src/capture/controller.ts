@@ -7,7 +7,7 @@
  */
 import { type FrameImage, type Recorder, type RecordingOptions, type RecordingResult, startRecording } from './recorder';
 import { capturePNG } from './still';
-import { type AnyCanvas, downloadBlob, timestampName } from './util';
+import { type AnyCanvas, cssFilterOf, downloadBlob, timestampName } from './util';
 
 export interface CaptureControllerOptions {
   /** Key that saves a PNG. Default 'p'. Null disables. */
@@ -64,8 +64,10 @@ export function createCaptureController(
       if (screenshotPending) {
         screenshotPending = false;
         const name = timestampName(prefix, 'png');
+        // Taken from the canvas element even when `capture` supplies the pixels.
+        const filter = cssFilterOf(canvas);
         Promise.resolve(opts.capture ? opts.capture() : canvas)
-          .then((image) => capturePNG(image))
+          .then((image) => capturePNG(image, { filter }))
           .then(
             (blob) => {
               deliver(blob, name);

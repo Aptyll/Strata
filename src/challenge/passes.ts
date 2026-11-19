@@ -22,11 +22,18 @@ export interface ChallengePassOptions {
   clear?: boolean;
 }
 
-export const createChallengePasses = (engine: ChallengeEngine, options: ChallengePassOptions = {}): Pass[] => [
+export const createChallengePasses = (engine: ChallengeEngine, options: ChallengePassOptions = {}): Pass[] => {
+  let encodedBefore = false;
+  return [
   {
     name: "challenge-kernel",
     stage: "simulate",
     execute(frame) {
+      // A Pass has no post-submit hook. The previous frame's encoder has been
+      // submitted by now, so collect its GPU time and GPU particle count here,
+      // before this frame's encode resets the count.
+      if (encodedBefore) engine.afterSubmit();
+      encodedBefore = true;
       engine.setSize(frame.width, frame.height);
       engine.encode(frame.encoder, {
         viewProj: frame.camera.viewProjection(frame.width / frame.height),
@@ -53,3 +60,4 @@ export const createChallengePasses = (engine: ChallengeEngine, options: Challeng
     },
   },
 ];
+};

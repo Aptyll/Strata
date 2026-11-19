@@ -25,6 +25,7 @@ const presetEl = $<HTMLSelectElement>("preset");
 const fields = ["particles", "planes", "width", "height", "fps", "seconds", "seed"] as const;
 const inputs = Object.fromEntries(fields.map((f) => [f, $<HTMLInputElement>(f)])) as Record<(typeof fields)[number], HTMLInputElement>;
 const splatEl = $<HTMLSelectElement>("splat");
+const kernelEl = $<HTMLSelectElement>("kernel");
 const summaryEl = $("summary");
 const statusEl = $("status");
 const folderBtn = $<HTMLButtonElement>("folder");
@@ -195,6 +196,7 @@ renderBtn.addEventListener("click", async () => {
     const r = await renderJob(device, job, store, browserZlib, {
       // Browsers reset the GPU if one submission runs for about 2 s. Keep batches short.
       targetBatchMs: 120,
+      kernel: kernelEl.value === "trillion" ? "trillion" : "offline",
       checkpointSeconds: canPickFolder() ? 300 : 0,
       shouldStop: () => stopRequested,
       signal: abort.signal,

@@ -17,6 +17,7 @@ import type { DepthSpritePass } from "../depth";
 import { createInterplane } from "../interplane/interplane.pass";
 import { createPasses } from "../passes";
 import { createAtomicRasterPass } from "../perf/atomicRasterPass";
+import { createSheetHuePasses } from "../hue/sheetHue";
 import { createDensitySplatPass } from "../render/passes";
 import { Simulation } from "../sim/simulation";
 
@@ -26,6 +27,7 @@ export const RASTERIZERS = [
   { url: "points", pass: "points", label: "points" },
   { url: "splat", pass: "density-splat", label: "sub-pixel splats" },
   { url: "sprites", pass: "depth-sprites", label: "depth sprites (fog, focus)" },
+  { url: "hue", pass: "sheet-hue", label: "points, one hue per sheet" },
 ] as const;
 const DEFAULT_RASTERIZER = "atomic-raster";
 
@@ -64,6 +66,7 @@ export function createRenderGraph(gpu: GpuContext, options: RenderGraphOptions):
     ...createPasses(gpu), // src/passes/*.pass.ts in filename order: points, depth sprites, tonemap
     createAtomicRasterPass(gpu), // rasterize: compute rasterizer, the default (src/perf)
     createDensitySplatPass({ energy: options.brightness }), // rasterize: sub-pixel splats (src/render)
+    ...createSheetHuePasses(gpu), // rasterize + ui tint: one hue per sheet, ?raster=hue (src/hue)
   );
 
   const rasterizer = choosePass(graph, "rasterize");
