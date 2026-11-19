@@ -95,7 +95,7 @@ Three levels of force (`force-brush.ts`):
 | Move over a sheet | A faint wake: particles part around the moving pointer. Zero when the pointer is still. |
 | Hold still, then drag freely | An attract well. It starts at 35% and deepens over 1.6 s, widening as it charges. |
 | Release | An outward burst scaled by the charge. "Gather, then let go" is one complete gesture. |
-| Right button, or Shift/Alt + hold | Repel: a pressure bubble. |
+| Right button, or Shift/Alt + hold | Repel: a pressure bubble. In the app a right drag pans the camera, so the right button also waits for the hold there. |
 
 Details that matter for feel:
 
@@ -123,7 +123,7 @@ thin Pointer Events binding.
 | Turn the world | Press and move | One finger, drag | Arrows |
 | Dive in / out | Wheel, trackpad pinch | Two-finger pinch | `+` `-` |
 | Pull particles | Press, stay still 170 ms, then drag | Press, stay still 230 ms, then drag | |
-| Push particles | Right button, or Shift/Alt + hold | (see open questions) | |
+| Push particles | Right button, or Shift/Alt + hold (in the app, right button + hold, since right drag pans) | (see open questions) | |
 | Face a sheet | Double click it | Double tap it | `[` `]` |
 | Back to wide shot | Double click empty space | Double tap empty space | Home |
 

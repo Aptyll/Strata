@@ -212,13 +212,13 @@ test('brushes pack to 8 floats with -1 marking empty slots', () => {
   assert.equal(out[8 + 6], -1);
 });
 
-function recorder() {
+function recorder(opts) {
   const log = [];
   const h = {};
   for (const n of ['onOrbit', 'onZoom', 'onHoldStart', 'onHoldMove', 'onHoldEnd', 'onTap', 'onDoubleTap']) {
     h[n] = (...a) => log.push([n, ...a]);
   }
-  return { log, core: new GestureCore(h), names: () => log.map((l) => l[0]) };
+  return { log, core: new GestureCore(h, opts), names: () => log.map((l) => l[0]) };
 }
 
 test('press and move is a camera drag', () => {
@@ -252,6 +252,23 @@ test('secondary button and shift repel', () => {
   s.core.down({ id: 1, x: 0, y: 0, button: 0, shift: true }, 0);
   s.core.tick(200);
   assert.equal(s.log[0][4], 'repel');
+});
+
+test('with holdSecondary, a right drag stays a drag and a right hold still repels', () => {
+  // The app's camera pans on a right drag, so engine-brushes sets holdSecondary.
+  const drag = recorder({ holdSecondary: 170 });
+  drag.core.down({ id: 1, x: 0, y: 0, button: 2 }, 0);
+  drag.core.move({ id: 1, x: 30, y: 0 }, 16);
+  drag.core.tick(400);
+  drag.core.up({ id: 1, x: 30, y: 0 }, 420);
+  assert.deepEqual(drag.names(), ['onOrbit'], 'no push swallows the pan');
+  const hold = recorder({ holdSecondary: 170 });
+  hold.core.down({ id: 1, x: 0, y: 0, button: 2 }, 0);
+  hold.core.tick(100);
+  assert.deepEqual(hold.names(), []);
+  hold.core.tick(180);
+  assert.deepEqual(hold.names(), ['onHoldStart']);
+  assert.equal(hold.log[0][4], 'repel');
 });
 
 test('tap and double tap', () => {
