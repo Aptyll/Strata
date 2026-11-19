@@ -37,6 +37,7 @@ import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
+import { mountRecovery, reportBootFailure } from "./ux/recovery";
 import { startStreamingWorld } from "./world";
 
 const options = applyMobileBudget(readOptions(location.search), location.search); // phones get a smaller budget (src/ux/mobile)
@@ -45,7 +46,8 @@ const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 if (options.challenge) {
   void import("./challenge/main").then((m) => m.startChallenge(canvas));
 } else {
-  void startApp(canvas, options);
+  // A throw during boot would otherwise leave a black page with no reason on it.
+  startApp(canvas, options).catch((err) => reportBootFailure(err, { particles: options.particles }));
 }
 
 async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise<void> {
@@ -57,7 +59,10 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     console.warn(err);
     canvas.remove();
     const cap = await detectCapability();
-    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap);
+    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap, {
+      fullCount: options.particles,
+      sheets: options.planes,
+    });
     return;
   }
 
@@ -163,6 +168,15 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     if (id === "record") loop.offline = running;
   });
   if (options.record) setTimeout(() => record.start(), 500);
+
+  // ---- when the GPU fails later: device lost, or a particle count it cannot hold (src/ux/recovery) ----
+  mountRecovery({
+    device: gpu.device,
+    scenes,
+    notify: (text) => ui.hud.status(text, 8000),
+    onLost: () => (loop.offline = true),
+    busy: () => ui.hud.busy,
+  });
 
   loop.start();
 }
