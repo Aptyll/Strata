@@ -142,6 +142,8 @@ export class PerfEngine {
 
   /** Advance the simulation. When false, particles are only drawn. */
   simulate = true;
+  /** Rasterize particles. When false, particles are only simulated (for profiling). */
+  draw = true;
   /** 2x2 bilinear splats: smoother motion, about 4x the framebuffer writes. */
   bilinear = false;
   /** Light added per particle per pixel before tonemapping (Scene.render.brightness). */
@@ -375,7 +377,7 @@ export class PerfEngine {
 
       const planeBrightness = plane.desc.brightness ?? 1;
       let drawCount = 0;
-      if (c.visible && planeBrightness > 0) {
+      if (this.draw && c.visible && planeBrightness > 0) {
         visible++;
         drawCount = Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction)));
       }
