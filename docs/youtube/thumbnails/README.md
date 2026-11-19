@@ -10,6 +10,11 @@ trillion particles rendered but not a trillion distinct ones (see "Keys"
 below). The one-pixel loupe is a 1T render of the far opener's world made in
 the cloud.
 
+**Lead thumbnail: [05 old-record](candidates/05-old-record.jpg)**, Noah's pick
+(decision card, 2026-11-19). Noah also chose to keep the far opener and key1
+as they are rather than re-render them on 64-bit keys, so 01, 04, 06 and 07
+keep those frames and say "rendered", never "distinct".
+
 - [contact-sheet.jpg](contact-sheet.jpg): all nine side by side
 - [feed-dark.jpg](feed-dark.jpg) and [feed-light.jpg](feed-light.jpg): each
   candidate at 480, 320 and 168 px wide on YouTube's dark (#0F0F0F) and light
@@ -97,9 +102,10 @@ candidate at 168 px. It says the title's number again in words.
 ## Titles and pairings
 
 Lead title (Noah's pick): **I Rendered 1,000,000,000,000**. Noah asked for the
-thumbnails to be centered on that number, so seven of the nine carry it. The
-packaging plan's rule for Test & Compare is that thumbnail text should not
-repeat the title, so the trio I would test against the lead title is:
+thumbnails to be centered on that number, so seven of the nine carry it. Lead
+thumbnail (Noah's pick): **05 old-record**. The packaging plan's rule for Test &
+Compare is that thumbnail text should not repeat the title, so the trio I would
+test against the lead title is the lead plus two challengers:
 
 1. **05 old-record**: the number, plus the jump from 4,000,000 that the title
    does not say.
