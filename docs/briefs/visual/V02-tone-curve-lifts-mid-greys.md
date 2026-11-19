@@ -11,6 +11,7 @@ Lines are as of main `793eefc`.
 - The app's density look (exposure 2, white 128, log, soft shoulder, sRGB encode) maps 1 / 2 / 4 / 8 / 16 / 32 / 64 hits on a pixel to 131 / 156 / 179 / 201 / 221 / 236 / 244. One particle is already 51% grey, and six doublings share the top 113 levels. This is arithmetic from the shader.
 - `render/density-demo-1M.png` (project files): lit pixels have a median of 175, a 95th percentile of 233, and 27% of them are at 200 or above. Dense cores read as a milky wash.
 - `render/counts-auto-exposure.png`: the middle of the disc uses only 205 to 245 (see V03).
+- `media/videos/challenge-ramp-sim_sw-gpu-852k-720p-realtime.mp4` (Challenge, software GPU): once the ramp passes about 1M particles, 16 to 27% of lit pixels sit at 250 or above (HUD rows excluded), so the centre of the sheet stack is solid white. The `pow` lift adds to this. The Challenge exposure may too, so check both.
 - `engine/first-render.png` (basic curve, brightness 0.2): 1 hit gives 117, 2 hits give 154, and 5 hits are already near white.
 
 ## What is wrong
