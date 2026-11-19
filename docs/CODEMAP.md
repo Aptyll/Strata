@@ -83,7 +83,7 @@ adding another.
 | stateless "proc" mode | `src/challenge` | none: position from `(id, time)` | same accumulation buffer as above | `/?challenge`, key `M` |
 | `TrillionKernel` | `src/trillion` | none: stateless laws keyed by particle | exact hit counts per pixel (u32 hot counters folded into 64 bits), batched submits | trillion demo; the offline renderer with `--kernel trillion` |
 | offline renderer | `src/offline` (+ `src/record`, `src/proof`) | none: 64-bit keys from `src/stateless` | 64-bit integer accumulation grid, developed to 16-bit log PNG, encoded to MP4 | offline page, Node CLI, `?record` |
-| behavior preview | `src/behaviors/preview` | 16 bytes, like the engine | point list | preview page |
+| behavior preview | `src/behaviors/preview` | 16 bytes: the engine's own `buildSimShader` and uniforms on one sheet | point list | preview page |
 
 Contract behaviors (`src/behaviors/*.behavior.ts`) run unchanged on
 `Simulation` and `PerfEngine`, because both build their shader from the same
@@ -244,7 +244,7 @@ belongs to one page or path.
 | --- | --- | --- | --- |
 | `DensityPost`: trails, bloom, then `ToneMap` (log, power or linear curve, display shoulder, dither) | `src/render/post.ts`, `tonemap.ts` | any float density texture, red channel | the app's default tonemap pass (`src/passes/tonemap.pass.ts` calls `createDensityTonemapPass`), the render demo |
 | `CountToneMapper` | `src/render/counts.ts` | u32 counters, or 64-bit ones with `words: 2` (lo at 2i, hi at 2i + 1); resolves them to `r32float` and runs `DensityPost`; `measureAndExpose` sets exposure from a histogram of lit pixels | the render counts demo, the trillion demo |
-| `basicTone`: `pow(1 - exp(-x), 1/2.2)` | `src/gpu/wgsl.ts` | linear light | `?tonemap=basic`, the `PerfEngine` resolve, the depth demo; the behaviors preview has its own copy |
+| `basicTone`: `pow(1 - exp(-x), 1/2.2)` | `src/gpu/wgsl.ts` | linear light | `?tonemap=basic`, the `PerfEngine` resolve, the depth demo, the behaviors preview |
 | challenge `fs_canvas`: `log(1 + v c) / log(1 + c)` | `src/challenge/shaders.ts` | its u32 buffer | `/?challenge` |
 | offline develop and grade (CPU) | `src/offline/core/develop.ts`, `grade.ts` | the 64-bit grid, stored as 16-bit log PNGs; percentile exposure smoothed over time, log curve with a toe, dither, label | the offline page, the Node CLI, `?record`, the proof shots |
 
