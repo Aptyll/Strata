@@ -31,6 +31,19 @@ export { formatCount, formatExact, formatValue, formatTime };
  * @property {boolean} [shortcuts=true]   Install the built-in keyboard shortcuts.
  * @property {boolean} [panelOpen=false]  Start with the settings panel open.
  * @property {EventTarget} [keyTarget]    Where to listen for keys. Default window.
+ * @property {MenuLayout} [layout]        Where each control sits in the menu. See MenuLayout.
+ *
+ * @typedef {Object} MenuLayout  The menu's table of contents, kept by the app in one place.
+ * @property {import('./menu.js').PageDef[]} [pages]  Pages, their sections in order, which are stacked. Default PAGES in menu.js.
+ * @property {Record<string, ParamPlacement>} [params]  By control id. Wins over what the control registered with.
+ *
+ * @typedef {Object} ParamPlacement
+ * @property {string} [page]              Page id.
+ * @property {string} [group]             Section on that page.
+ * @property {string} [label]             The name shown.
+ * @property {number} [order]             Position in its section. Lower first; rows without one follow in the order they registered.
+ * @property {string} [needs]             Id of a switch this control depends on. It is dimmed and inert while that switch is off.
+ * @property {string} [hint]              One line shown as the row's tooltip.
  *
  * @typedef {Object} HudTokens  Structural match for TOKENS in src/core/contracts.ts. Every field is optional.
  * @property {{background?: string, foreground?: string}} [color]
@@ -46,7 +59,11 @@ export { formatCount, formatExact, formatValue, formatTime };
  * @property {string} id
  * @property {string} [label]             Defaults to id.
  * @property {'range'|'toggle'|'select'|'action'} [type]  Inferred from value/options/run when omitted.
- * @property {string} [group]             Section heading. Params without one go first.
+ * @property {string} [group]             Section on its page. Params without one go first.
+ * @property {string} [page]              Page id. Defaults from the group (see PAGES in menu.js).
+ * @property {number} [order]             Position in its section. Lower first; rows without one follow in the order they registered.
+ * @property {string} [needs]             Id of a switch this control depends on. It is dimmed and inert while that switch is off.
+ * @property {string} [hint]              One line shown as the row's tooltip.
  * @property {number|boolean|string} [value]
  * @property {number} [min]
  * @property {number} [max]
@@ -138,8 +155,10 @@ export function createHud(options = {}) {
   panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', 'Settings');
   const foot = el('div', 'sh-foot');
-  const resetBtn = el('button', null, 'reset');
+  // It resets every page, not just the one showing, so it says so.
+  const resetBtn = el('button', null, 'reset all');
   resetBtn.type = 'button';
+  resetBtn.title = 'Put every setting on every page back to its default. Double-click a name to reset just that one.';
   const statsBtn = el('button', null, 'stats');
   statsBtn.type = 'button';
   statsBtn.setAttribute('aria-pressed', 'false');
@@ -155,6 +174,7 @@ export function createHud(options = {}) {
       return c && c.width ? [c.width, c.height] : null;
     },
     persist: opt.persist,
+    pages: opt.layout?.pages,
   });
   panel.append(...menu.nodes, foot);
   const dot = el('button', 'sh-dot');
@@ -298,7 +318,7 @@ export function createHud(options = {}) {
    * Throw to report a failure; an AbortError is shown as "cancelled".
    */
   const registerJob = (spec) => {
-    const label = spec.label || spec.id;
+    let label = spec.label || spec.id;
     const start = () => {
       if (activeJob) {
         if (activeJob.id === spec.id) activeJob.abort.abort();
@@ -339,6 +359,7 @@ export function createHud(options = {}) {
         );
     };
     registerParam({ id: spec.id, label, group: spec.group, page: spec.page, type: 'action', run: start });
+    label = params.get(spec.id).label; // the menu layout may have renamed it
     return { id: spec.id, start, cancel: () => { if (activeJob?.id === spec.id) activeJob.abort.abort(); }, remove: () => removeParam(spec.id) };
   };
 
@@ -377,17 +398,60 @@ export function createHud(options = {}) {
   // ---- params ------------------------------------------------------------
   /** @type {Map<string, any>} */
   const params = new Map();
+  /** The fields of ParamPlacement: what a menu layout may set on a control. */
+  const PLACEMENT = ['page', 'group', 'label', 'order', 'needs', 'hint'];
+  // One element per section, keyed by page and group name, so two pages can each have an "advanced".
   const groups = new Map();
   const groupEl = (name = '', page) => {
-    let g = groups.get(name);
+    const pageId = menu.pageOf(name, page);
+    const key = pageId + '/' + name;
+    let g = groups.get(key);
     if (!g) {
       g = el('div', 'sh-group');
+      g.dataset.page = pageId;
+      g.dataset.group = name;
       if (name) g.append(el('div', 'sh-group-title', name));
-      groups.set(name, g);
-      // menu.js puts the group on its page (by `page`, else by group name) as a section.
-      menu.place(g, name, page);
+      groups.set(key, g);
+      // menu.js puts the group on its page as a section.
+      menu.place(g, name, pageId);
     }
     return g;
+  };
+  /**
+   * Put a row (or any block) into its section. Those with an `order` lead, lowest first; the
+   * rest follow in the order they arrived. The order rides on the element, so it works for
+   * anything placed this way.
+   */
+  const placeInGroup = (g, node, order) => {
+    const mine = order ?? Infinity;
+    if (order != null) node.dataset.order = String(order);
+    for (const other of g.children) {
+      if (other.classList.contains('sh-group-title')) continue;
+      if ((other.dataset.order === undefined ? Infinity : Number(other.dataset.order)) > mine) {
+        g.insertBefore(node, other);
+        return;
+      }
+    }
+    g.append(node);
+  };
+  // A control that `needs` a switch does nothing while that switch is off: show that, instead
+  // of a live-looking slider that changes nothing.
+  const syncNeeds = () => {
+    for (const p of params.values()) {
+      if (!p.needs) continue;
+      const need = params.get(p.needs);
+      const off = !!need && !need.value;
+      if (off === p.off) continue;
+      p.off = off;
+      p.row.classList.toggle('is-off', off);
+      p.input.disabled = off;
+      describe(p, off ? `Turn on "${need.label}" to use this` : p.hint);
+    }
+  };
+  /** A row's one-line explanation: its tooltip, and the control's description for screen readers. */
+  const describe = (p, text) => {
+    p.row.title = text || '';
+    if (text) p.input.setAttribute('aria-description', text); else p.input.removeAttribute('aria-description');
   };
 
   const clampRange = (p, v) => {
@@ -441,6 +505,7 @@ export function createHud(options = {}) {
     if (!notify) { p.pending = true; return v; } // dragging a non-live range
     p.pending = false;
     save();
+    if (p.type === 'toggle') syncNeeds();
     if (!silent) {
       if (p.onChange) { try { p.onChange(v, p.id); } catch (e) { console.error(e); } }
       emit('change', p.id, v);
@@ -459,9 +524,14 @@ export function createHud(options = {}) {
     const type = spec.type
       || (spec.run ? 'action' : spec.options ? 'select' : typeof spec.value === 'boolean' ? 'toggle' : 'range');
     const p = { label: spec.id, live: true, ...spec, type };
+    // The app's menu layout has the last word on where a control sits and what it is called,
+    // and no say in what it does.
+    const placed = opt.layout?.params?.[spec.id];
+    if (placed) for (const key of PLACEMENT) if (placed[key] !== undefined) p[key] = placed[key];
     const row = el(type === 'action' ? 'div' : 'label', 'sh-row sh-' + type);
     row.dataset.param = p.id;
     p.row = row;
+    p.off = false;
 
     if (type === 'range') {
       p.min = p.min ?? 0;
@@ -522,12 +592,14 @@ export function createHud(options = {}) {
       row.firstChild.addEventListener('dblclick', (e) => { e.preventDefault(); commit(p, p.initial); });
     }
 
-    groupEl(p.group, p.page).append(row);
+    if (p.hint) describe(p, p.hint);
+    placeInGroup(groupEl(p.group, p.page), row, p.order);
     params.set(p.id, p);
     paint(p);
     if (p.persist !== false && type !== 'action' && Object.prototype.hasOwnProperty.call(saved, p.id)) {
       commit(p, saved[p.id]);
     }
+    syncNeeds();
     return {
       id: p.id,
       get: () => p.value,
@@ -546,7 +618,12 @@ export function createHud(options = {}) {
     const g = p.row.parentNode;
     p.row.remove();
     params.delete(id);
-    if (g && !g.querySelector('.sh-row')) { g.remove(); groups.delete(p.group || ''); menu.unplace(p.group || ''); }
+    if (g && !g.querySelector('.sh-row')) {
+      g.remove();
+      groups.delete(g.dataset.page + '/' + g.dataset.group);
+      menu.unplace(g.dataset.group, g.dataset.page);
+    }
+    syncNeeds();
   };
   const getParam = (id) => params.get(id)?.value;
   /**
