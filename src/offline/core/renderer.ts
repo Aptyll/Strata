@@ -12,8 +12,8 @@ import { ONE, totalParticles, unitsPerParticle, validateJob, type LawId, type Of
 import { cameraBasis, planeHomography, type CameraBasis } from "./math";
 import { BATCH_UNIFORM_BYTES, WORKGROUP_SIZE, accumulateShader } from "./shaders";
 import { TrillionKernel, type TrillionPlane } from "../../trillion/kernel";
-import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
-import { STATELESS_LAWS } from "../../stateless/laws";
+import { OFFLINE_LAWS, STRATIFIED_OFFLINE_LAWS } from "../../trillion/offlineLaws";
+import { STATELESS_LAWS, strataVariant } from "../../stateless/laws";
 
 /**
  * Which kernel adds particles to the grid.
@@ -23,13 +23,16 @@ import { STATELESS_LAWS } from "../../stateless/laws";
  *   trillion  src/trillion's splat kernel: fire-and-forget u32 atomics folded
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
- *             depth. Evaluated and landed are both counted on the GPU.
- *             Camera motion blur is offline only: the trillion kernel projects
- *             every particle with the mid-shutter camera, so an A/B with a
- *             moving camera compares blurred against unblurred camera moves.
- * Both give exact integer grids. Run `bench --kernel both` to compare.
+ *             depth. Evaluated and landed are both counted on the GPU, and
+ *             camera moves blur the same way (homography delta over the
+ *             shutter), though from the kernel's own per-particle sample.
+ *   trillion-strata  the same kernel with stratified laws: neighbouring ids
+ *             land near each other, so hits merge before the global atomics
+ *             (the run-merge fast path, src/trillion #171). Laws that take
+ *             choices from q.z stay on the plain path. Not yet timed on the 2070.
+ * All give exact integer grids. Run `bench --kernel all` to compare.
  */
-export type KernelChoice = "offline" | "trillion";
+export type KernelChoice = "offline" | "trillion" | "trillion-strata";
 
 export interface RendererOptions {
   /** Particles evaluated by one shader invocation in a loop. */
@@ -215,13 +218,16 @@ export class StatelessRenderer {
   static async create(device: GPUDevice, job: OfflineJob, opts: RendererOptions = {}): Promise<StatelessRenderer> {
     validateJob(job);
     const r = new StatelessRenderer(device, job, opts);
-    if (job.select && r.kernel === "trillion") throw new Error("job.select needs the offline kernel");
-    if (r.kernel === "trillion") {
+    if (job.select && r.kernel !== "offline") throw new Error("job.select needs the offline kernel");
+    if (r.kernel !== "offline") {
       // Only the laws this job uses, so no pipeline is compiled for nothing.
       const used = new Set<string>(job.planes.map((p) => p.law));
+      const strata = r.kernel === "trillion-strata";
       const laws = [
-        ...OFFLINE_LAWS.filter((l) => used.has(l.id)),
-        ...STATELESS_LAWS.filter((l) => used.has(l.id)).map((l) => ({ id: l.id, fn: l.fn, wgsl: l.wgsl })),
+        ...(strata ? STRATIFIED_OFFLINE_LAWS : OFFLINE_LAWS).filter((l) => used.has(l.id)),
+        ...STATELESS_LAWS.filter((l) => used.has(l.id)).map((l) =>
+          strata && l.coherent ? strataVariant(l) : { id: l.id, fn: l.fn, wgsl: l.wgsl },
+        ),
       ];
       r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws });
       r.tkRead = device.createBuffer({
@@ -293,7 +299,10 @@ export class StatelessRenderer {
     if (tk) {
       tk.settings.time = time;
       tk.settings.shutter = shutterSpan;
-      tk.settings.salt = frame >>> 0;
+      // Constant: the salt re-rolls each particle's sub-pixel corner, shutter
+      // instant and keep decision, so a per-frame salt makes single dots
+      // flicker in close-ups. The offline kernel fixes draws 6 and 7 the same way.
+      tk.settings.salt = 0;
       tk.settings.stochastic = job.splat === "bilinear";
       tk.settings.cull = false;
       const enc = device.createCommandEncoder();
@@ -361,7 +370,10 @@ export class StatelessRenderer {
       const h = this.homography(cam, plane);
       if (tk) {
         const enc = device.createCommandEncoder();
-        tk.encodeBatch(enc, { plane: this.trillionPlane(plane, h), start: cursor.offset, count });
+        const ho = this.homography(camOpen, plane);
+        const hc = this.homography(camClose, plane);
+        const d = hc.map((v, i) => v - ho[i]);
+        tk.encodeBatch(enc, { plane: this.trillionPlane(plane, h, d), start: cursor.offset, count });
         const tb = now();
         device.queue.submit([enc.finish()]);
         tk.submitted();
@@ -457,13 +469,16 @@ export class StatelessRenderer {
   }
 
   /** One of this job's planes as the trillion kernel sees it this frame. */
-  private trillionPlane(plane: OfflineJob["planes"][number], h: number[]): TrillionPlane {
+  private trillionPlane(plane: OfflineJob["planes"][number], h: number[], d: number[]): TrillionPlane {
     // Columns (c0, c1, c2) to rows: (px*w, py*w, w) = rows * (x, y, 1).
-    const homography = [h[0], h[3], h[6], h[1], h[4], h[7], h[2], h[5], h[8]];
+    const rows = (m: number[]) => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+    const homography = rows(h);
+    // Camera motion over the shutter, close minus open; h is mid-shutter.
+    const homographyDelta = rows(d);
     // Flux: a per-sheet keep probability from the depth of the sheet's center.
     const depth = h[8];
     const keep = this.job.weighting === "flux" ? (depth > 0 ? Math.min(1, (this.job.fluxRef / depth) ** 2) : 1) : 1;
-    return { law: plane.law, count: plane.particleCount, seed: plane.seed, params: plane.params, homography, near: this.job.near, keep };
+    return { law: plane.law, count: plane.particleCount, seed: plane.seed, params: plane.params, homography, homographyDelta, near: this.job.near, keep };
   }
 
   /** Load a checkpoint into the trillion kernel's u64 counts and tally. */
