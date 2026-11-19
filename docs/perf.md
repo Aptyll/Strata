@@ -20,7 +20,7 @@ npm run dev
 | --- | --- |
 | `?n=50M&planes=64` | Live view of the real behaviors on a scatter layout. Drag to orbit, wheel to zoom, `[` `]` brightness. |
 | `?bench=1` | Automated sweep from 1M to 100M, with and without culling and LOD. Prints ms per frame. |
-| `?selftest=1` | 26 correctness checks on the real GPU device, including every registered behavior. |
+| `?selftest=1` | 27 correctness checks on the real GPU device, including every registered behavior. |
 
 More switches (`behaviors`, `seed`, `brightness`, `cull`, `lod`, `hidden`, `bilinear`, `density`, `sim`, `res`,
 `offscreen`, `timer`, `counts`, `batch`) are listed at the top of
