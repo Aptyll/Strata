@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Strata camera demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; outline: none; }
+  canvas:active { cursor: grabbing; }
+  #hud, #help { position: fixed; left: 12px; color: #fff; white-space: pre; pointer-events: none; transition: opacity 600ms; }
+  #hud { top: 10px; }
+  #help { bottom: 10px; }
+</style>
+<canvas id="c" tabindex="0"></canvas>
+<div id="hud"></div>
+<div id="help"></div>
+<script type="module" src="./main.ts"></script>

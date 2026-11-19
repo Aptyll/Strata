@@ -34,8 +34,8 @@ Every input writes to a **goal pose**. The pose on screen chases the goal with a
 | Fly | | | | W A S D or arrows, Q down, E up, Shift to go faster |
 | Look around in place | Alt + left drag (or any drag while flying) | | | |
 | Focus a sheet | Double click it | Double click it | Double tap it | F for the one nearest the center of view |
-| Next / previous sheet | | | | `]` and `[` (also `.` and `,`) |
-| Home view | | | | H, Home or Esc |
+| Next / previous sheet | | | | `.` and `,` |
+| Home view | | | | H or Home |
 | Toggle idle drift | | | | Space |
 
 Decisions behind the table:
@@ -112,7 +112,7 @@ On `camera.rig`:
 
 The rig has no dependencies and never touches the DOM. `input.ts` is the only file that does, and it can be replaced.
 
-Files: `math.ts` (vectors, quaternions, matrices), `rig.ts` (the camera rig), `input.ts` (DOM bindings), `engine.ts` (adapter to the shared contracts), `selftest.ts` (63 checks).
+Files: `math.ts` (vectors, quaternions, matrices), `rig.ts` (the camera rig), `input.ts` (DOM bindings), `engine.ts` (adapter to the shared contracts), `selftest.ts` (64 checks), `demo/` (standalone page).
 
 Run the checks with `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module`. There is no test runner in the repo yet, so they are not part of `npm run build`.
 
@@ -120,7 +120,11 @@ Run the checks with `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm
 
 Verified by the self-test: matrices agree with the screen rays, orbit keeps distance and a level horizon, smoothing is frame-rate independent, flicks coast and settle, a held stop leaves no drift, pan and zoom keep the grabbed point under the pointer, look-around does not move the eye, focus frames a sheet inside the viewport with no jumps along the way, interruption and drift takeover do not jump, tour visits every sheet, reduced motion removes animation, bad frame times do not produce NaN.
 
-Not verified: anything about feel. Nobody has held this yet. The input bindings have been type checked but not exercised in a browser, since there was no engine to render into when this was written. `npm run typecheck` passes.
+The engine in `src/main.ts` uses this camera. `[`, `]` and Esc are left alone because the engine and the HUD use them. In `CameraState`, pitch is the pitch of the view direction: negative looks down.
+
+A standalone demo runs without the engine or WebGPU: `npm run dev`, then open `/src/ux/camera/demo/`. It draws stand-in sheets of dots on the CPU. Add `?tour=1` for the idle tour or `?free=1` for the trackball.
+
+Not verified: anything about feel. Nobody has held this yet. The demo was driven once in headless Chromium (drag, flick, wheel, right-drag pan, keys, double click, idle drift) and behaved as designed with no console errors. Touch and trackpad input are untested. The engine swap is type checked only and has not been run on a GPU.
 
 ## Open questions
 

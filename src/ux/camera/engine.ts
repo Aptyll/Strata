@@ -21,7 +21,11 @@ import { quatFromAxisAngle, quatMul, quatRotate } from "./math";
 import { CameraRig } from "./rig";
 import type { CameraOptionsInput, CameraPose, PlaneTarget } from "./rig";
 
-/** Orientation for a yaw around +Y followed by a pitch around the camera's X. */
+/**
+ * Orientation for a CameraState yaw and pitch. Yaw turns around +Y. Pitch is
+ * the pitch of the view direction: negative looks down, with the eye above
+ * the target. This is the convention scenes on main use.
+ */
 export const orientationFromYawPitch = (yaw: number, pitch: number): Quat =>
   quatMul(quatFromAxisAngle([0, 1, 0], yaw), quatFromAxisAngle([1, 0, 0], pitch));
 

@@ -267,17 +267,14 @@ export function attachCameraInput(
       case "KeyF":
         camera.focusNearest();
         break;
-      case "BracketRight":
       case "Period":
         camera.focusNext(1);
         break;
-      case "BracketLeft":
       case "Comma":
         camera.focusNext(-1);
         break;
       case "KeyH":
       case "Home":
-      case "Escape":
         camera.flyHome();
         break;
       case "Space":
