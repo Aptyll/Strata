@@ -273,9 +273,9 @@ What already fits the shared contracts in `src/core/contracts.ts`:
 - Ignition needs no new GPU state: scale each plane's `activeCount`. One
   active particle on the first plane is the opening spark.
 - Exposure is a multiplier on `RenderSettings.brightness`.
-- Hints and the fallback use the monochrome palette. They predate `TOKENS`
-  and use their own letter-spacing; they should be moved onto `TOKENS` when
-  the UI threads settle the look.
+- Hints and the no-WebGPU note are styled from the design tokens
+  (`src/ux/design`, `docs/ux/design.md`): the caption role with the halo for
+  a hint, a caption, a body line and the shared button for the note.
 
 Pointer forces on the GPU (added in the follow-up PR): `Globals` ends with
 four `Brush` slots, and the engine adds `brushAccel(p.pos)` to every particle
