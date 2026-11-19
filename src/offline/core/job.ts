@@ -12,7 +12,11 @@ import type { Quat, Vec2, Vec3 } from "../../core/contracts";
  * a pure function of (plane seed, particle index, time), re-evaluated from
  * scratch every frame. See laws.ts for the equations.
  */
-export type LawId = "kepler" | "vortex" | "lissajous";
+export type CoreLawId = "kepler" | "vortex" | "lissajous";
+/** Laws from src/stateless/laws, by their id there. */
+export type StatelessLawId = "veil" | "galaxy" | "web" | "ribbons";
+export type LawId = CoreLawId | StatelessLawId;
+export const LAW_IDS: readonly LawId[] = ["kepler", "vortex", "lissajous", "veil", "galaxy", "web", "ribbons"];
 
 /** Each law reads up to 8 floats. Same cap as MAX_BEHAVIOR_PARAMS. */
 export const LAW_PARAM_COUNT = 8;
@@ -139,7 +143,7 @@ export function validateJob(job: OfflineJob): void {
       fail(`plane ${i}: particleCount must be an integer in [0, 2^32 - 1]`);
     if (!Number.isInteger(p.seed) || p.seed < 0 || p.seed > 0xffffffff) fail(`plane ${i}: seed must be a u32`);
     if (p.params.length !== LAW_PARAM_COUNT) fail(`plane ${i}: params must have ${LAW_PARAM_COUNT} entries`);
-    if (p.law !== "kepler" && p.law !== "vortex" && p.law !== "lissajous") fail(`plane ${i}: unknown law ${p.law}`);
+    if (!LAW_IDS.includes(p.law)) fail(`plane ${i}: unknown law ${p.law}`);
   });
   // Distinct seeds give every sheet its own particle identities.
   const seeds = new Set(job.planes.map((p) => p.seed));

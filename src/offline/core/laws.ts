@@ -23,12 +23,33 @@
  *   vortex:    [bands, fill, circulation, coreRadius, extent, _, _, _]
  *   lissajous: [freqX, freqY, shells, thickness, rateX, rateY, shellPhase, extent]
  */
-import { STATELESS_RNG_WGSL, draw, pcg, particleKey, tri, u01, type Key } from "../../stateless/rng";
-import type { LawId } from "./job";
+import { STATELESS_RNG_WGSL, draw, pcg, particleKey, qFromKey, tri, u01, type Key } from "../../stateless/rng";
+import { lawById, type StatelessLaw } from "../../stateless/laws";
+import type { CoreLawId, LawId } from "./job";
 
 export { draw, pcg, particleKey, tri, u01, type Key };
 
-export const LAW_INDEX: Record<LawId, number> = { kepler: 0, vortex: 1, lissajous: 2 };
+export const LAW_INDEX: Record<CoreLawId, number> = { kepler: 0, vortex: 1, lissajous: 2 };
+
+const CORE_FN: Record<CoreLawId, string> = { kepler: "lawKepler", vortex: "lawVortex", lissajous: "lawLissajous" };
+
+/** The src/stateless law behind a LawId, or undefined for the three laws defined here. */
+export function statelessLaw(law: LawId): StatelessLaw | undefined {
+  if (law in CORE_FN) return undefined;
+  const found = lawById(law);
+  if (!found) throw new Error(`unknown law ${law}`);
+  return found;
+}
+
+/**
+ * The WGSL function a shader calls for this law, and the source that defines
+ * it (to put after WGSL_COMMON). The three core laws live in WGSL_LAWS; the
+ * others come from src/stateless/laws.
+ */
+export function lawSource(law: LawId): { fn: string; wgsl: string } {
+  const s = statelessLaw(law);
+  return s ? { fn: s.fn, wgsl: `${WGSL_LAWS}\n${s.wgsl}` } : { fn: CORE_FN[law as CoreLawId], wgsl: WGSL_LAWS };
+}
 
 /**
  * Shared by every shader in this folder. The particle identity and random
@@ -110,6 +131,8 @@ const wrapAngle = (a: number): number => a - TAU * Math.round(a / TAU);
 const clamp = (x: number, lo: number, hi: number): number => Math.min(Math.max(x, lo), hi);
 
 export function lawPosition(law: LawId, key: Key, t: number, p: number[]): [number, number] {
+  const stateless = statelessLaw(law);
+  if (stateless) return stateless.mirror(qFromKey(key), t, p);
   switch (law) {
     case "kepler": {
       const ecc = clamp(p[0] + p[6] * tri(draw(key, 3)), 0, 0.6);
@@ -152,4 +175,5 @@ export function lawPosition(law: LawId, key: Key, t: number, p: number[]): [numb
       return [amp * Math.sin(ax), amp * Math.sin(ay)];
     }
   }
+  throw new Error(`unknown law ${law}`);
 }

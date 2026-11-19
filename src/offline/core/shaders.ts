@@ -8,7 +8,7 @@
  * across an interrupted and resumed render.
  */
 import type { LawId, SplatMode } from "./job";
-import { WGSL_COMMON, WGSL_LAWS } from "./laws";
+import { WGSL_COMMON, lawSource } from "./laws";
 
 /** Size of the Batch uniform in bytes. Layout must match the struct below. */
 export const BATCH_UNIFORM_BYTES = 176;
@@ -16,12 +16,11 @@ export const BATCH_UNIFORM_BYTES = 176;
 /** Invocations per workgroup. */
 export const WORKGROUP_SIZE = 64;
 
-const LAW_FN: Record<LawId, string> = { kepler: "lawKepler", vortex: "lawVortex", lissajous: "lawLissajous" };
-
 export function accumulateShader(law: LawId, splat: SplatMode): string {
+  const source = lawSource(law);
   return /* wgsl */ `
 ${WGSL_COMMON}
-${WGSL_LAWS}
+${source.wgsl}
 
 struct Batch {
   // Homography columns: (px * depth, py * depth, depth) = c0 * x + c1 * y + c2.
@@ -189,7 +188,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
     // The camera moves with the same instant, so camera moves blur too.
     let s = u01(draw(key, 6u)) - 0.5;
     let t = B.time + B.shutterSpan * s;
-    if (splat(${LAW_FN[law]}(key, t, p), key, s)) { landed++; }
+    if (splat(${source.fn}(key, t, p), key, s)) { landed++; }
   }
   // Point splats leave their last run of light in registers until here.
   flushRun();
