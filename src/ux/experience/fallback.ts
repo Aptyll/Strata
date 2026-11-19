@@ -32,8 +32,10 @@ font-size:11px;letter-spacing:.24em;text-transform:uppercase;cursor:pointer;opac
 export interface FallbackOptions {
   /** Particles in the single CPU plane. */
   particles?: number;
-  /** What the full experience shows, for the caption. */
+  /** Particles the full world opens with, for the caption. Pass the app's real number. */
   fullCount?: number;
+  /** Sheets the full world opens with, for the caption. */
+  sheets?: number;
   /** Link offered for opening on another device. Defaults to the current page. */
   url?: string;
 }
@@ -47,7 +49,13 @@ export function mountFallback(
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
   const count = opts.particles ?? (cap.touch ? 9000 : 24000);
-  const fullCount = opts.fullCount ?? 64_000_000;
+  // The caption only states numbers it was given: what the app would have opened with on this device.
+  const fullCount = opts.fullCount;
+  const million = (n: number) => `${Math.round(n / 1e5) / 10} million`;
+  const full =
+    fullCount && opts.sheets
+      ? `The full world opens on ${opts.sheets} sheets and ${fullCount >= 1e6 ? million(fullCount) : fullCount.toLocaleString('en-US')} particles, and the count can be raised from there.`
+      : 'The full world is many sheets and millions of particles.';
 
   if (!doc.getElementById('strata-fallback-style')) {
     const style = doc.createElement('style');
@@ -71,9 +79,7 @@ export function mountFallback(
   lede.textContent = `One sheet. ${count.toLocaleString('en-US')} particles.`;
   const body = doc.createElement('p');
   body.className = 'body';
-  body.textContent =
-    `The full world is hundreds of sheets and ${Math.round(fullCount / 1e6)} million particles. ` +
-    `${reason} ${action}`;
+  body.textContent = `${full} ${reason} ${action}`;
   note.append(lede, body);
 
   // Most people who land here are on a phone and will want to open the link

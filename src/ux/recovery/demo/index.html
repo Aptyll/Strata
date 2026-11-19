@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Strata recovery demo</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #000; color: #fff; }
+      body { font: 13px/1.6 ui-sans-serif, system-ui, sans-serif; padding: 24px; box-sizing: border-box; }
+      h1 { font-size: 11px; font-weight: 400; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.7; }
+      p { max-width: 46em; opacity: 0.7; }
+      button { background: none; color: #fff; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 999px;
+        padding: 8px 16px; margin: 4px 6px 4px 0; font: inherit; cursor: pointer; }
+      #log { margin-top: 20px; white-space: pre-wrap; font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <h1>Recovery</h1>
+    <p>
+      What a visitor sees when the GPU fails. No WebGPU is used here: a stand-in device is "lost" on
+      demand, and restarts are logged below instead of reloading the page.
+    </p>
+    <div id="buttons"></div>
+    <div id="log"></div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>
