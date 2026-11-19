@@ -6,8 +6,8 @@
 //
 //   +--------------------------------------+
 //   |  60 fps   16.7 ms         /\_/\__/\  |  summary header (#strata-menu-summary)
-//   |  4.19M simulating  8M stored  32 pl  |
-//   |  1920x1080  theme red  boids         |
+//   |  4.19M simulated  8M stored          |
+//   |  32 sheets  1920x1080  theme red     |
 //   |  scene behaviors look color perf ..  |  page tabs   (role=tablist)
 //   |  curl flow  galaxy                   |  section tabs (role=tablist, 2+ sections), or
 //   |  world                               |  on a stacked page a small title per section
@@ -124,24 +124,28 @@ export function createMenu(src) {
   graph.setAttribute('aria-label', 'Frame rate over the last 30 seconds');
   top.append(fpsBox, graph);
   const facts = el('dl', 'sm-facts');
-  /** @type {Map<string, {dt: HTMLElement, dd: HTMLElement, shown: string}>} */
+  /** @type {Map<string, {dt: HTMLElement, dd: HTMLElement, label: HTMLElement, shown: string}>} */
   const factEls = new Map();
-  const fact = (key, label, title) => {
+  // `after` names the fact a new one follows; left out, the new fact goes last.
+  const fact = (key, label, title, after) => {
     const dd = el('dd');
     const dt = el('dt', null, label);
     const wrap = el('div', 'sm-fact');
     wrap.dataset.fact = key;
     if (title) wrap.title = title;
     wrap.append(dd, dt);
-    facts.append(wrap);
-    factEls.set(key, { dt: wrap, dd, shown: '' });
+    const anchor = after == null ? null : factEls.get(after);
+    if (anchor) anchor.dt.after(wrap); else facts.append(wrap);
+    factEls.set(key, { dt: wrap, dd, label: dt, shown: '' });
   };
-  fact('particles', 'simulating', 'Particles the GPU stepped and drew last frame (realtime, stored state)');
+  // Words match the rest of the app: "simulated" and "stored" for the two counts, "sheets" for planes.
+  // The lead behavior is not here: it names the world's most common behavior, which reads as if it
+  // were the one on screen.
+  fact('particles', 'simulated', 'Particles stepped last frame, each with stored state (realtime)');
   fact('total', 'stored', 'Particles held in GPU memory; the frame-rate governor may draw fewer');
-  fact('planes', 'planes');
+  fact('planes', 'sheets');
   fact('resolution', 'pixels', 'Drawing buffer size');
   fact('theme', 'theme');
-  fact('behavior', 'behavior');
   summary.append(top, facts);
 
   // ---- page tabs and pages ----------------------------------------------
@@ -344,12 +348,49 @@ export function createMenu(src) {
   let lastSample = 0;
   let open = false;
 
-  const setFact = (key, text) => {
+  const writeFact = (key, text) => {
     const f = factEls.get(key);
     if (!f) return;
     const t = text == null || text === '' ? '' : String(text);
     f.dt.hidden = !t;
     if (t !== f.shown) { f.shown = t; f.dd.textContent = t; }
+  };
+  // Facts another module writes (hud.setFact). The menu leaves these alone.
+  /** @type {Map<string, { label: string, title: string } | null>} */
+  const taken = new Map(); // key -> what the menu's own fact said, or null for a fact that was added
+  const setFact = (key, text) => { if (!taken.has(key)) writeFact(key, text); };
+
+  /**
+   * Write a fact in the header from outside the menu: a new one, or one of the
+   * menu's own, which the menu then stops writing. `null` or '' hides the fact
+   * and keeps it taken. `undefined` gives it back: one of the menu's own goes
+   * back to the menu, an added one is removed.
+   * @param {string} key
+   * @param {string | null | undefined} text
+   * @param {{ label?: string, title?: string, after?: string }} [o]
+   */
+  const setFactFrom = (key, text, o = {}) => {
+    let f = factEls.get(key);
+    if (text === undefined) {
+      if (!f || !taken.has(key)) return;
+      const own = taken.get(key);
+      taken.delete(key);
+      if (!own) { f.dt.remove(); factEls.delete(key); return; }
+      f.label.textContent = own.label;
+      f.dt.title = own.title;
+      if (open) paintSummary();
+      return;
+    }
+    if (!f) {
+      fact(key, o.label ?? key, o.title, o.after);
+      f = factEls.get(key);
+      taken.set(key, null);
+    } else if (!taken.has(key)) {
+      taken.set(key, { label: f.label.textContent, title: f.dt.title });
+    }
+    if (o.label != null && f.label.textContent !== o.label) f.label.textContent = o.label;
+    if (o.title != null && f.dt.title !== o.title) f.dt.title = o.title;
+    writeFact(key, text);
   };
 
   const drawGraph = () => {
@@ -396,15 +437,13 @@ export function createMenu(src) {
     const particles = n('particles');
     const total = n('total');
     setFact('particles', particles == null ? '' : formatCount(particles));
-    factEls.get('particles').dt.title = particles == null ? '' : formatExact(particles) + ' particles simulated last frame';
+    if (!taken.has('particles')) factEls.get('particles').dt.title = particles == null ? '' : formatExact(particles) + ' particles simulated last frame';
     setFact('total', total == null || total === particles ? '' : formatCount(total));
     setFact('planes', n('planes') == null ? '' : String(n('planes')));
     const res = src.resolution?.();
     setFact('resolution', res ? `${res[0]}×${res[1]}` : '');
     const theme = src.param('theme');
     setFact('theme', theme == null ? '' : String(theme));
-    const behavior = src.stat('behavior');
-    setFact('behavior', behavior == null ? '' : String(behavior));
     drawGraph();
   };
 
@@ -459,6 +498,7 @@ export function createMenu(src) {
     update,
     setOpen,
     setCorner,
+    setFact: setFactFrom,
     showPage: choosePage,
     /** Id of the page a group lands on (its `page`, else the page that lists the group, else the last page). */
     pageOf: pageFor,

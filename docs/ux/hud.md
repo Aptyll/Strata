@@ -119,8 +119,10 @@ Layout (structure in `menu.js`, styles in `menu-styles.js`):
 1. **Summary header** (`#strata-menu-summary`): live fps in large type, frame
    time in ms (derived from the measured fps), and a 30 second fps graph with
    the target fps as a dashed line. Below it: particles simulated last frame,
-   particles stored (when the governor draws fewer), planes, drawing buffer
-   size, theme and lead behavior. Facts with no value are hidden.
+   particles stored (when the governor draws fewer), sheets, drawing buffer
+   size and theme, in the words the rest of the app uses. Facts with no value
+   are hidden. Other modules add facts, or take one of these over, with
+   `hud.setFact`.
 2. **Page tabs** (first navbar): scene, behaviors, look, color, perf,
    capture. A page with no controls hides its tab. So does "more", the page
    for controls no other page claims: it only shows when something is
@@ -331,6 +333,8 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `message(text \| null)` | Centred message for loading or an unsupported browser. Stays until cleared. |
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. Placement fields: `page`, `group`, `order`, `needs`, `hint` (the app sets them from its menu table instead). |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. A silent set is ignored while the person is dragging that slider, so an engine echo never yanks it. |
+| `registerView({ id, group, page, order, node })`, `removeView(id)` | Put a block of your own DOM in a menu section, where a param with the same group, page and order would sit: a read-out that is not a control (a table of timings, a chart). A row for its id in the menu's table of contents places it, as it does a control. The HUD only places it; content, styles and updates are yours. |
+| `setFact(key, text, { label, title, after })` | Write a fact in the summary header. A new key adds one (after the fact named by `after`); one of the menu's own keys (`particles`, `total`, `planes`, `resolution`, `theme`) takes that fact over until it is given back. `null` hides it, `undefined` gives it back. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
 | `hintDice(on?)`, `rolled` | Start or stop the die's breathing hint by hand, for an app that schedules its own hints (create the HUD with `diceHintMs: 0`); `rolled` is true once the die has been rolled on this device. |
 | `registerJob({ id, label, group, run })`, `status(text, holdMs?)`, `busy` | Long jobs and the status line. See above. |
