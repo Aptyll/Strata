@@ -121,3 +121,31 @@ test("a different plane count falls back to a plain load", () => {
   assert.equal(app.loads, 1);
   assert.ok(tr.done && tr.update(0.016));
 });
+
+test("the engine's own setPlaneBehavior is used when present, and can be turned off", () => {
+  const start = scene(["drift", "orbit"]);
+  const target = structuredClone(start);
+  target.planes[0] = { ...target.planes[0], behaviorId: "bloom", params: { rate: 1 }, seed: 0.5 };
+  const app = fakeApp(start);
+  const calls = [];
+  app.setPlaneBehavior = (plane, change) => { calls.push(change); plane.desc.behaviorId = change.behaviorId; plane.behavior = byId[change.behaviorId]; };
+  const tr = startRoll(app, target, { duration: 0.3 });
+  while (!tr.update(1 / 60));
+  assert.equal(app.loads, 0);
+  assert.deepEqual(calls, [{ behaviorId: "bloom", params: { rate: 1 }, seed: 0.5 }]);
+
+  const off = fakeApp(start);
+  off.setPlaneBehavior = () => assert.fail("must not be called");
+  startRoll(off, target, { swapBehavior: false });
+  assert.equal(off.loads, 1);
+});
+
+test("author hints on a param are honoured: randomize false and randomRange", () => {
+  const b = behavior("hinted", { fixed: { default: 3, min: 0, max: 10, randomize: false }, narrow: { default: 5, min: 0, max: 10, randomRange: [8, 9] } });
+  const r = seededRandom(9);
+  for (let i = 0; i < 100; i++) {
+    const p = rollParams(b, r);
+    assert.equal(p.fixed, 3);
+    assert.ok(p.narrow >= 8 && p.narrow <= 9);
+  }
+});
