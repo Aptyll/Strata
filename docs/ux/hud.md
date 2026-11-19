@@ -106,9 +106,32 @@ activate that control instead of a shortcut.
 
 ## Settings menu
 
-A 264 px column, 78% black with a background blur and a hairline border, so
-the simulation stays visible while tuning. It sits on the right rather than
-centred for the same reason. While it is open nothing fades.
+A 30em column (330 px at the default type size), 78% black with a background
+blur and a hairline border, so the simulation stays visible while tuning. It
+sits on the right rather than centred for the same reason. While it is open
+nothing fades.
+
+Layout (structure in `menu.js`, styles in `menu-styles.js`):
+
+1. **Summary header** (`#strata-menu-summary`): live fps in large type, frame
+   time in ms (derived from the measured fps), and a 30 second fps graph with
+   the target fps as a dashed line. Below it: particles simulated last frame,
+   particles stored (when the governor draws fewer), planes, drawing buffer
+   size, theme and lead behavior. Facts with no value are hidden.
+2. **Page tabs** (first navbar): scene, behaviors, look, themes, perf,
+   capture, more. A page with no controls hides its tab.
+3. **Section tabs** (second navbar): when a page holds two or more groups,
+   each group gets a tab and only the selected one is shown.
+4. Footer: reset, stats, keys.
+
+A param lands on a page by its `page` field, else by its `group` through the
+`PAGES` table in `menu.js` (for example `performance` goes to perf, `capture`
+to capture, `theme` to themes), else on "more". The last page and section are
+remembered (`strata.hud.page`). Left/Right/Home/End move between tabs.
+
+FPS is shown in three places: the summary header (with the graph), the H
+stats line, and an optional readout in the top-left corner ("fps in corner"
+on the perf page, off by default and remembered).
 
 Controls, all built by `registerParam`:
 

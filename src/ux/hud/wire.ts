@@ -112,7 +112,7 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
         const id = paramId(b, name);
         shown.push(id);
         hud.registerParam({
-          id, group: labelOf(b), label: spec.label ?? name, persist: false,
+          id, group: labelOf(b), page: "behaviors", label: spec.label ?? name, persist: false,
           min: spec.min, max: spec.max, step: spec.step, value: first ? paramOf(first, name) : spec.default,
           onChange: (v: number) => {
             roll = null; // a hand on a slider outranks a roll still gliding
