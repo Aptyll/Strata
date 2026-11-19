@@ -60,6 +60,18 @@ command with no arguments for the full list of options.
 Run `bench` first. It prints how long one trillion-particle frame takes on the
 machine, and from that how long a clip will take. Pick the clip length to fit.
 
+## Running it (browser)
+
+`npm run dev` at the repo root, then open
+`http://localhost:5173/src/offline/web/`. Pick a preset, **choose folder**
+(Chrome or Edge: frames go to disk and a render resumes after a reload), then
+**render**, and **export mp4** when the frames are done. Export encodes in the
+browser with WebCodecs through `src/capture`, so it needs no ffmpeg.
+
+Use the Node runner for renders that take hours. A browser tab can be
+throttled in the background, and browsers reset the GPU if one submission runs
+too long, so the page keeps batches short (about 120 ms) at some cost in speed.
+
 ## Checks
 
 ```sh
@@ -83,7 +95,8 @@ core/grade.ts     exposure, tone curve, dither, label
 core/session.ts   resumable frame loop and grading loop
 core/world.ts     world and camera shot generator, presets
 core/camera.ts    keyframed camera path
-node/             runner for Node (Dawn + ffmpeg)
+node/             runner for Node (Dawn + ffmpeg) and the self-checks
+web/              browser page (WebGPU + WebCodecs)
 ```
 
 `core/` has no dependency on Node or the DOM. It takes a `GPUDevice` from
