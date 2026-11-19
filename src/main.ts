@@ -10,7 +10,8 @@ import { createInterplane } from "./interplane/interplane.pass";
 import { createPasses } from "./passes";
 import { createAtomicRasterPass } from "./perf/atomicRasterPass";
 import { PerfBudget } from "./perf/budget";
-import { createDensitySplatPass, createDensityTonemapPass } from "./render/passes";
+import type { DensitySettings } from "./render";
+import { createDensitySplatPass } from "./render/passes";
 import { Simulation } from "./sim/simulation";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
@@ -21,11 +22,11 @@ import { startStreamingWorld, type StreamingWorld } from "./world";
 import { scatterLayout, scatterRadius } from "./world/layout";
 
 // URL options:
-//   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=0.2&seed=1
+//   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=1&seed=1
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
 //   &raster=sprites  draw depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
 //   &raster=splat    sub-pixel splats
-//   &look=density    density tone mapping with bloom and trails
+//   &tonemap=basic   plain exponential tone map instead of the density look (bloom, trails)
 //   &interplane=0    no particles crossing between planes
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
@@ -83,7 +84,6 @@ async function start(): Promise<void> {
     ...createPasses(gpu),
     createAtomicRasterPass(gpu),
     createDensitySplatPass({ energy: () => scene.render.brightness }),
-    createDensityTonemapPass(),
   );
   /** Of several passes that do the same job, run only the named one. */
   const chooser = (stage: PassStage) => {
@@ -94,14 +94,11 @@ async function start(): Promise<void> {
       current: () => options.find((p) => p.enabled !== false)?.name,
     };
   };
-  // Exactly one rasterize pass draws the particles (each one clears the HDR target),
-  // and exactly one tonemap pass writes the canvas.
+  // Exactly one rasterize pass draws the particles (each one clears the HDR target).
   const rasterizer = chooser("rasterize");
-  const tonemapper = chooser("tonemap");
   const RASTER_NAMES: Record<string, string> = { points: "points", sprites: "depth-sprites", splat: "density-splat" };
   const wanted = query.get("depth") === "1" ? "sprites" : query.get("raster") ?? "";
   rasterizer.set(RASTER_NAMES[wanted] ?? "atomic-raster");
-  tonemapper.set(query.get("look") === "density" ? "density-tonemap" : "tonemap");
 
   // Particles crossing between neighbouring planes. Its rasterize pass adds onto the HDR
   // target, so it is registered after the choosers and runs after whichever rasterizer is on.
@@ -126,7 +123,9 @@ async function start(): Promise<void> {
   // ---- scene -------------------------------------------------------------
   let planeCount = Math.round(num("planes", 32));
   let total = 0;
-  let scene = buildScene(Math.round(num("particles", 2_000_000)), planeCount, num("brightness", 0.2));
+  // The density look is tuned for one unit of light per particle; the plain tone map saturates far sooner.
+  const defaultBrightness = query.get("tonemap") === "basic" ? 0.2 : 1;
+  let scene = buildScene(Math.round(num("particles", 2_000_000)), planeCount, num("brightness", defaultBrightness));
   // With ?world the planes come from the streamer, so the scene itself starts empty.
   const worldSeed = query.get("world");
   if (worldSeed !== null) scene = { ...scene, planes: [], camera: { ...scene.camera, target: [6, 6, 6], distance: 10 } };
@@ -234,14 +233,22 @@ async function start(): Promise<void> {
     ],
     onChange: rasterizer.set,
   });
-  hud.registerParam({
-    id: "look", type: "select", group: "look", value: tonemapper.current(),
-    options: [
-      { value: "tonemap", label: "plain" },
-      { value: "density-tonemap", label: "density (bloom, trails)" },
-    ],
-    onChange: tonemapper.set,
-  });
+  // The tonemap pass (src/passes/tonemap.pass.ts) publishes its density look settings when it is in use.
+  const look = (globalThis as { strataLook?: DensitySettings }).strataLook;
+  if (look) {
+    hud.registerParam({
+      id: "bloom", type: "toggle", group: "look", value: look.bloom.enabled,
+      onChange: (on) => (look.bloom.enabled = on),
+    });
+    hud.registerParam({
+      id: "trails", type: "toggle", group: "look", value: look.trails.enabled,
+      onChange: (on) => (look.trails.enabled = on),
+    });
+    hud.registerParam({
+      id: "white", label: "white point", type: "range", scale: "log", group: "look", min: 1, max: 100_000,
+      value: look.tone.white, onChange: (v) => (look.tone.white = v),
+    });
+  }
   hud.registerParam({
     id: "interplane", label: "plane crossings", type: "toggle", group: "look",
     value: interplane.passes[0].enabled !== false, onChange: setInterplane,
