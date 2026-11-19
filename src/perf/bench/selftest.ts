@@ -10,7 +10,7 @@
  */
 
 import type { FrameContext, GpuContext, PlaneInstance } from '../../core/contracts';
-import { createAtomicRasterPass } from '../atomicRasterPass';
+import { createAtomicRasterPass, LIGHT_ONE } from '../atomicRasterPass';
 import { PerfBudget } from '../budget';
 import {
   classifyPlane,
@@ -235,6 +235,7 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     const planeData = new ArrayBuffer(112);
     new Float32Array(planeData).set(mat4Identity());
     new Uint32Array(planeData)[24] = M / 2; // count: only half are active
+    new Float32Array(planeData)[26] = 1; // brightness
     const planeUniform = device.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(planeUniform, 0, planeData);
     const pd = new Float32Array(M * 4);
@@ -274,7 +275,7 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     await staging.mapAsync(GPUMapMode.READ);
     const s = sum(new Uint32Array(staging.getMappedRange()));
     staging.unmap();
-    check('contract raster pass counts every active particle', s === M / 2, `${s} vs ${M / 2}`);
+    check('contract raster pass counts every active particle', s === (M / 2) * LIGHT_ONE, `${s / LIGHT_ONE} vs ${M / 2}`);
     pass.dispose?.();
   }
 

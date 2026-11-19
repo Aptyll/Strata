@@ -21,6 +21,8 @@ export type {
 } from './streamer';
 export { toPlaneDesc, selectPlanes, createWorldScene } from './scene';
 export type { PlaneDescOptions, WorldSceneOptions } from './scene';
+export { createWorldDriver, startStreamingWorld } from './driver';
+export type { WorldDriver, WorldDriverOptions, StreamingWorld, StreamingWorldOptions } from './driver';
 export { ARRANGEMENTS, ARRANGEMENT_NAMES, localPlane } from './arrangements';
 export type { Arrangement, ArrangementParams, LocalPlane } from './arrangements';
 export { Rng, hash32, seedFrom } from './rng';
