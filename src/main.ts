@@ -292,7 +292,7 @@ async function start(): Promise<void> {
     streaming?.tick(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
     // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
-    const brushes = pointerBrushes.update(dt, now);
+    const brushes = pointerBrushes.update(dt, performance.now());
     writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness, brushes });
 
     // Offline renders are not in a hurry, so they always draw every particle.
