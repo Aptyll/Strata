@@ -17,8 +17,9 @@ with Vite, no framework.
 
 ## Pages
 
-`npm run dev` serves all of them. The first six also ship in the production
-build (`vite.config.ts`).
+`npm run dev` serves all of them. Nine also ship in the production build
+(the list in `vite.config.ts`): the app, challenge, offline, proof, bench,
+verify, color life, the stateless laws demo and the design specimen.
 
 | page | entry | what it is |
 | --- | --- | --- |
@@ -34,6 +35,7 @@ build (`vite.config.ts`).
 | `/src/interplane/demo/` | `src/interplane/demo/demo.ts` | particles crossing between sheets |
 | `/src/capture/demo/` | `src/capture/demo/main.ts` | stills and video capture |
 | `/src/audio/demo/` | `src/audio/demo/main.ts` | the soundtrack on its own: a pretend scene with sliders, offline render to WAV, no WebGPU |
+| `/src/stateless/demo/` | `src/stateless/demo/demo.ts` | stateless motion laws on one sheet (`?law=`, `?n=`) |
 | `/src/trillion/demo/` | `src/trillion/demo/demo.ts` | trillion splat kernel demo |
 | `/src/proof/web/` | `src/proof/web/` | trillion proof shots (count-up, loupe, dive, ...) |
 | `/src/world/demo/` | `src/world/demo/index.html` | world layouts and streaming |
@@ -68,6 +70,7 @@ build (`vite.config.ts`).
 | `src/trillion` | trillion particle splat kernel: exact per-pixel counts, nothing stored | `index.ts` |
 | `src/offline` | offline renderer (browser and Node): stateless particles into a 64-bit grid, frame by frame, to MP4 | `README.md` |
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
+| `src/manifest` | one JSON manifest per offline render: GPU tallies, job hash, grid hash; `npm run record` makes, checks and reproduces them | `README.md` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
 | `src/site` | the published site's wrapper (build-time, nothing runs in the app): the privacy lock on every page, titles, descriptions and link previews for every shipped page from one table, the share card, `sitemap.xml`, the standalone `docs/explainers` pages, the landing page's load budget | `README.md`, then `pages.ts` |
@@ -154,9 +157,17 @@ CPU twins for the perf format are in `src/perf/packing.ts`.
   count. That reaches the u32 limit of 4.29 billion particles.
 - **Light is additive and order independent.** Rasterizers add fixed-point
   integers with `atomicAdd` or add floats with blending; nothing sorts.
-- **Checks.** `npx tsc --noEmit`, `npm run build`, and `npm run verify`
-  (about a second, compiles and lints every registered shader). Speed is only
+- **Checks.** `npx tsc --noEmit`, `npm run build`, `npm test` (every
+  `*.test.*` file under `src/`, a few seconds, no GPU), `npm run verify`
+  (about a second, compiles and lints every registered shader) and
+  `npm run smoke` (opens every built page headless). CI runs all of them on
+  every PR and on every push to `main`, and never blocks a merge. Speed is only
   measured on a real GPU (`docs/perf.md` has RTX 2070 numbers).
+- **Maps.** A new folder under `src/` gets a `README.md` and a row in three
+  maps: `CLAUDE.md`, `src/README.md` and "Folders" above. A page added to
+  `vite.config.ts` gets a row in "Pages". `npm run build` ends with a warning
+  when one falls behind or a doc names a path that is gone;
+  `npm run check:docs` lists every gap.
 - **Git.** Readable branch names (`feat/...`, `fix/...`, `refactor/...`,
   `docs/...`), one small PR per change, rebased on `main` before merging.
 
