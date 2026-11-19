@@ -174,12 +174,18 @@ export function createHud(options = {}) {
   const help = el('div', 'sh-help');
   const helpList = el('dl');
   help.append(helpList);
+  const jobEl = el('div', 'sh-job');
+  jobEl.setAttribute('role', 'status');
+  const jobText = el('div', 'sh-job-text');
+  const jobBar = el('div', 'sh-job-bar');
+  jobBar.append(el('i'));
+  jobEl.append(jobText, jobBar);
   const messageEl = el('div', 'sh-message');
   messageEl.setAttribute('role', 'status');
-  root.append(left, right, announceEl, messageEl, panel, dot, dice, help);
+  root.append(left, right, announceEl, jobEl, messageEl, panel, dot, dice, help);
   parent.appendChild(root);
 
-  const listeners = { change: new Set(), panel: new Set(), stats: new Set(), randomize: new Set() };
+  const listeners = { change: new Set(), panel: new Set(), stats: new Set(), randomize: new Set(), job: new Set() };
   const emit = (type, ...args) => listeners[type].forEach((fn) => { try { fn(...args); } catch (e) { console.error(e); } });
   const disposers = [];
   const listen = (target, type, fn, o) => { target.addEventListener(type, fn, o); disposers.push(() => target.removeEventListener(type, fn, o)); };
@@ -246,6 +252,82 @@ export function createHud(options = {}) {
   const message = (text) => {
     messageEl.textContent = text == null ? '' : String(text);
     root.classList.toggle('has-message', !!messageEl.textContent);
+  };
+
+  // ---- status line and jobs (long renders, exports) ---------------------------
+  let statusTimer = 0;
+  /**
+   * One quiet line at the bottom centre, in place of the die. Pass holdMs to
+   * have it fade by itself, or status(null) to clear it.
+   */
+  const status = (text, holdMs = 0) => {
+    clearTimeout(statusTimer);
+    const on = text != null && text !== '';
+    if (on) jobText.textContent = String(text);
+    root.classList.toggle('has-status', on);
+    if (on && holdMs > 0) statusTimer = setTimeout(() => status(null), holdMs);
+  };
+  const setProgress = (fraction) => {
+    const show = typeof fraction === 'number' && Number.isFinite(fraction);
+    root.classList.toggle('has-progress', show);
+    if (show) jobBar.firstChild.style.transform = `scaleX(${Math.min(1, Math.max(0, fraction))})`;
+  };
+
+  /** @type {{ id: string, abort: AbortController } | null} */
+  let activeJob = null;
+  /**
+   * Add a menu action that launches a long-running job, such as an offline
+   * render. One job runs at a time. While it runs the die gives way to a
+   * progress line, the action reads "cancel ...", and pressing it (or
+   * Escape with the menu closed) aborts the job's signal.
+   *
+   * run({ signal, progress }) does the work. Call progress(fraction, text)
+   * as often as you like. Resolve with a string to show it as the closing line.
+   * Throw to report a failure; an AbortError is shown as "cancelled".
+   */
+  const registerJob = (spec) => {
+    const label = spec.label || spec.id;
+    const start = () => {
+      if (activeJob) {
+        if (activeJob.id === spec.id) activeJob.abort.abort();
+        else status('another job is running', 2500);
+        return;
+      }
+      const abort = new AbortController();
+      activeJob = { id: spec.id, abort };
+      const button = params.get(spec.id)?.input;
+      if (button) button.textContent = 'cancel ' + label;
+      root.classList.add('has-job');
+      status(label);
+      setProgress(0);
+      emit('job', spec.id, true);
+      const progress = (fraction, text) => {
+        if (activeJob?.abort !== abort) return;
+        setProgress(fraction);
+        if (text != null) status(text);
+      };
+      const finish = (text) => {
+        activeJob = null;
+        root.classList.remove('has-job');
+        setProgress(null);
+        const b = params.get(spec.id)?.input;
+        if (b) b.textContent = label;
+        status(text, 5000);
+        emit('job', spec.id, false);
+      };
+      Promise.resolve()
+        .then(() => spec.run({ signal: abort.signal, progress }))
+        .then(
+          (result) => finish(typeof result === 'string' ? result : label + ' done'),
+          (err) => {
+            if (abort.signal.aborted || err?.name === 'AbortError') return finish(label + ' cancelled');
+            console.error(err);
+            finish(`${label} failed: ${err?.message ?? err}`);
+          },
+        );
+    };
+    registerParam({ id: spec.id, label, group: spec.group, type: 'action', run: start });
+    return { id: spec.id, start, cancel: () => { if (activeJob?.id === spec.id) activeJob.abort.abort(); }, remove: () => removeParam(spec.id) };
   };
 
   // ---- announce ----------------------------------------------------------
@@ -524,6 +606,7 @@ export function createHud(options = {}) {
   }
 
   const randomize = (seed) => {
+    if (activeJob) return { seed: 0, face: shownFace }; // the world belongs to the job until it ends
     stopHint();
     if (seed == null) seed = (Math.random() * 0x100000000) >>> 0;
     seed >>>= 0;
@@ -610,7 +693,13 @@ export function createHud(options = {}) {
     registerShortcut({ key: 'h', label: 'stats', run: () => setStats(!state.stats) });
     registerShortcut({
       key: 'escape', label: 'settings',
-      run: () => { if (state.help) setHelp(false); else setPanel(!state.panel); },
+      run: () => {
+        if (state.help) setHelp(false);
+        else if (state.panel) setPanel(false);
+        // With nothing else to close, Escape cancels a running job rather than opening the menu over it.
+        else if (activeJob) activeJob.abort.abort();
+        else setPanel(true);
+      },
     });
     registerShortcut({ key: 'f', label: 'fullscreen', run: toggleFullscreen });
     registerShortcut({ key: '?', label: 'keys', run: () => setHelp(!state.help) });
@@ -678,6 +767,10 @@ export function createHud(options = {}) {
     defineStat: (key, def) => { defineStat(key, def); },
     announce,
     message,
+    status,
+    registerJob,
+    /** True while a job started through registerJob is running. */
+    get busy() { return !!activeJob; },
     registerParam,
     registerParams,
     removeParam,
@@ -694,7 +787,7 @@ export function createHud(options = {}) {
      */
     onRandomize: (fn) => { listeners.randomize.add(fn); return () => listeners.randomize.delete(fn); },
     resetTimer,
-    /** Subscribe to 'change' (id, value), 'panel' (open), 'stats' (on) or 'randomize' (roll). Returns an unsubscribe function. */
+    /** Subscribe to 'change' (id, value), 'panel' (open), 'stats' (on), 'randomize' (roll) or 'job' (id, running). Returns an unsubscribe function. */
     on: (type, fn) => { listeners[type].add(fn); return () => listeners[type].delete(fn); },
     openPanel: () => setPanel(true),
     closePanel: () => setPanel(false),
@@ -709,7 +802,8 @@ export function createHud(options = {}) {
     get idle() { return state.idle; },
     destroy() {
       cancelAnimationFrame(raf);
-      clearTimeout(idleTimer); clearTimeout(announceTimer); clearTimeout(saveTimer); clearInterval(rollTimer); clearTimeout(hintTimer);
+      clearTimeout(idleTimer); clearTimeout(announceTimer); clearTimeout(saveTimer); clearInterval(rollTimer); clearTimeout(hintTimer); clearTimeout(statusTimer);
+      activeJob?.abort.abort();
       disposers.forEach((d) => d());
       parent.classList.remove('strata-hud-idle');
       root.remove();

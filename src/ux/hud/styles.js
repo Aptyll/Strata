@@ -88,6 +88,20 @@ export const CSS = `
   color: rgba(var(--hud-fg), var(--hud-a-dim));
 }
 
+/* ---- status line and job progress ---------------------------------------- */
+.sh-job {
+  position: absolute; left: 0; right: 0; bottom: var(--hud-edge);
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--hud-unit) * 2);
+  text-align: center; text-transform: none; white-space: pre-line;
+  opacity: 0;
+}
+.strata-hud.has-status > .sh-job { opacity: 1; }
+/* The die steps aside while the line is up, and a job keeps the line through idle. */
+.strata-hud.has-status > .sh-dice { opacity: 0; pointer-events: none; }
+.sh-job-bar { width: 240px; max-width: 60%; height: 1px; background: rgba(var(--hud-fg), var(--hud-a-line)); display: none; }
+.strata-hud.has-progress .sh-job-bar { display: block; }
+.sh-job-bar i { display: block; height: 100%; background: rgb(var(--hud-fg)); transform-origin: 0 50%; transform: scaleX(0); transition: transform 200ms linear; }
+
 /* ---- message --------------------------------------------------------- */
 .sh-message {
   position: absolute; inset: 0;

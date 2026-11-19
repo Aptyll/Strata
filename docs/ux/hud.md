@@ -94,7 +94,7 @@ nothing.
 | --- | --- |
 | `R` | randomize (roll the die) |
 | `H` | show or hide stats |
-| `Esc` | open or close settings (closes the keys sheet first) |
+| `Esc` | open or close settings (closes the keys sheet first; cancels a running job when the menu is closed) |
 | `F` | fullscreen |
 | `?` | keys sheet |
 
@@ -124,6 +124,37 @@ a label to reset that one. `reset` in the footer resets all of them. Values
 persist in `localStorage` (`strata.hud` by default) and are restored when the
 param is registered again, at which point `onChange` fires once so the engine
 picks the value up.
+
+## Long jobs: offline renders and exports
+
+Anything that takes over the frame loop for a while launches from the menu
+with `registerJob`. The HUD owns the chrome so every job looks the same:
+
+```ts
+hud.registerJob({
+  id: 'offline.render', group: 'capture', label: 'render offline video',
+  async run({ signal, progress }) {
+    for (let f = 0; f < frames; f++) {
+      if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+      await renderFrame(f);
+      progress((f + 1) / frames, `frame ${f + 1} of ${frames}`);
+    }
+    return 'saved strata.mp4';      // optional closing line
+  },
+});
+```
+
+- The action sits in its `group` in the Esc menu. Use `group: 'capture'` to
+  join the existing capture section and its resolution and length settings.
+- While a job runs, the die gives way to one line of text over a 240 px
+  hairline progress bar, and the die and `R` are off, since the world belongs
+  to the job.
+- The action reads `cancel ...` while running. Pressing it, or `Esc` with the
+  menu closed, aborts `signal`.
+- One job at a time. `hud.busy` and the `job` event (`id`, `running`) tell
+  other code to stand down, for example to stop the realtime loop.
+- `hud.status(text, holdMs?)` shows the same line without a job, for one-off
+  notices such as "saved screenshot".
 
 ## Wiring it to the engine
 
@@ -201,6 +232,7 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
+| `registerJob({ id, label, group, run })`, `status(text, holdMs?)`, `busy` | Long jobs and the status line. See above. |
 | `registerShortcut({ key, label, run })` | Add a key. Returns a remover. |
 | `on('change' \| 'panel' \| 'stats' \| 'randomize', fn)` | Events. Returns an unsubscribe function. |
 | `openPanel()`, `closePanel()`, `togglePanel()`, `showStats()`, `hideStats()`, `toggleStats()`, `toggleHelp()`, `wake()` | Programmatic control. |
