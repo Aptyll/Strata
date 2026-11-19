@@ -17,7 +17,7 @@ import { DEFAULT_LOOK, drawLabel, exposureTrack, gradeFrame, toneTable, withComm
 import { totalParticles, type OfflineJob } from "./job";
 import { pcg } from "./laws";
 import { decodeGrayPng16, encodeGrayPng, type Zlib } from "./png";
-import { StatelessRenderer, type Accumulation, type FrameCursor, type FrameProgress, type RendererOptions } from "./renderer";
+import { StatelessRenderer, type Accumulation, type FrameCursor, type FrameProgress, type RendererOptions, type SavedAccumulation } from "./renderer";
 
 /** A directory of files. Implemented over node:fs and over the browser's File System Access API. */
 export interface FileStore {
@@ -44,20 +44,22 @@ export function jobFingerprint(job: OfflineJob): number {
   return h >>> 0;
 }
 
-// Version 4: landed tally in header words 6 and 7, GPU evaluated count in 8
-// and 9, and the work spent so far in 10 to 12 (milliseconds, dispatches,
-// resumes), so a continued frame reports its whole time. A checkpoint from an
-// older version has a shorter header, fails the length check below and the
-// frame starts over.
+// Version 5: landed tally in header words 6 and 7, GPU evaluated count in 8
+// and 9, the work spent so far in 10 to 12 (milliseconds, dispatches,
+// resumes), so a continued frame reports its whole time, and the drawn tally
+// in 13 and 14. A checkpoint from an older version has a shorter header, fails
+// the length check below and the frame starts over. The grid is in the units
+// of the renderer that saved it, which the job (pinned by the fingerprint) and
+// the kernel fix.
 const PARTIAL_MAGIC = 0x53545243;
-const PARTIAL_HEADER_WORDS = 13;
+const PARTIAL_HEADER_WORDS = 15;
 const U32_MAX = 0xffffffff;
 
 function packPartial(
   job: OfflineJob,
   frame: number,
   cursor: FrameCursor,
-  { lo, hi, landed, gpuEvaluated }: Accumulation,
+  { lo, hi, landed, gpuEvaluated, drawn }: SavedAccumulation,
   progress: FrameProgress,
 ): Uint8Array {
   const out = new Uint32Array(PARTIAL_HEADER_WORDS + lo.length + hi.length);
@@ -75,6 +77,7 @@ function packPartial(
     u32(progress.seconds * 1000),
     u32(progress.batches),
     u32(progress.resumes),
+    ...split(drawn),
   ]);
   out.set(lo, PARTIAL_HEADER_WORDS);
   out.set(hi, PARTIAL_HEADER_WORDS + lo.length);
@@ -85,7 +88,7 @@ function unpackPartial(
   job: OfflineJob,
   frame: number,
   file: Uint8Array,
-): ({ cursor: FrameCursor } & Accumulation & FrameProgress) | null {
+): ({ cursor: FrameCursor } & SavedAccumulation & FrameProgress) | null {
   if (file.byteLength < PARTIAL_HEADER_WORDS * 4 || file.byteLength % 4) return null;
   const words = new Uint32Array(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
   const cells = job.width * job.height * job.ssaa * job.ssaa;
@@ -97,6 +100,7 @@ function unpackPartial(
     hi: words.slice(PARTIAL_HEADER_WORDS + cells),
     landed: BigInt(words[6]) + (BigInt(words[7]) << 32n),
     gpuEvaluated: BigInt(words[8]) + (BigInt(words[9]) << 32n),
+    drawn: BigInt(words[13]) + (BigInt(words[14]) << 32n),
     seconds: words[10] / 1000,
     batches: words[11],
     resumes: words[12],
@@ -231,7 +235,7 @@ export async function renderJob(
         const who = renderer.evaluatedBy === "gpu" ? "the GPU evaluated" : "the dispatches covered";
         throw new Error(`Frame ${frame}: ${who} ${result.gpuEvaluated} particles, expected ${renderer.total}`);
       }
-      const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
+      const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa, result.unitsPerParticle);
       const stats = frameStats(frame, result, developed, {
         evaluated: result.gpuEvaluated,
         evaluatedBy: renderer.evaluatedBy,
@@ -267,13 +271,18 @@ export function defaultLabel(stats: FrameStats, job: OfflineJob): string[] {
   const lines: string[] = [
     `${withCommas(totalParticles(job))} particles, every one ${verb} every frame`,
     "Stateless: closed-form motion, nothing stored per particle",
-    // Flux weighting rounds each weight at random, so a faint far particle is
-    // drawn only in expectation. Say so instead of implying one unit each.
-    job.weighting === "count"
-      ? "Each particle in frame adds exactly one unit of light"
-      : "Far particles dimmed by random rounding: drawn on average, not each",
   ];
-  return [...lines, `In frame: ${withCommas(stats.landed)}`];
+  const inFrame = `In frame: ${withCommas(stats.landed)}`;
+  if (job.weighting === "count") return [...lines, "Each particle in frame adds exactly one unit of light", inFrame];
+  // Flux: far particles are dimmer. Whether each one added light is the GPU's
+  // count (stats.drawn), never an assumption. When some did not (weights
+  // rounded to nothing, or the trillion kernel keeping a share of a dim
+  // sheet), the picture is right on average only, and the label gives both
+  // counts. Frames from before the count existed make no claim either way.
+  const onAverage = "Far particles dimmed by random rounding: drawn on average, not each";
+  if (stats.drawn === undefined) return [...lines, onAverage, inFrame];
+  if (stats.drawn === stats.landed) return [...lines, "Far particles are dimmer. Every particle in frame added light", inFrame];
+  return [...lines, onAverage, `${inFrame}. Added light: ${withCommas(stats.drawn)}`];
 }
 
 /** Stats of every completed frame from frame 0 up to the first missing one. */

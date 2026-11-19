@@ -29,7 +29,7 @@ Measured on one RTX 2070 (8 GB, 2018) on 2026-11-19.
 | --- | ---: | --- | --- |
 | Realtime, simulated | 100,000,000 | stepped and drawn every frame | 111 fps |
 | Realtime, simulated | 800,000,000 | stepped and drawn every frame | 15 fps, or 54 fps with culling and LOD |
-| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a randomly rounded, often zero, weight with flux weighting) | 26 to 52 s per 4K frame with flux weighting (the record stills); about 160 to 193 s with count weighting |
+| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a share of a unit that falls with distance with flux weighting) | 26 to 52 s per 4K frame for the record stills (flux weighting with its first, coarse rounding, where most far particles added nothing); about 160 to 193 s with count weighting |
 
 The realtime rows come from the benchmark page at 1920x1080 without vsync, and
 the full table is in [docs/perf.md](docs/perf.md). The brute force path moves
@@ -51,12 +51,16 @@ the ones that fall off screen or behind the camera, only that final add is
 skipped. Nothing about any particle is kept for the next frame. They follow
 their laws exactly, but they do not interact with each other.
 
-A 4K frame takes 26 to 52 seconds on the RTX 2070 with flux weighting, depending
-on how spread out the hits are. The record stills were rendered that way: far
-particles get a randomly rounded weight, often zero, so they are drawn on
-average rather than one by one. With count weighting, where every particle in
-view adds exactly one unit (the proof shots), a 4K frame takes about 160 to
-193 seconds.
+The record stills took 26 to 52 seconds per 4K frame on the RTX 2070, depending
+on how spread out the hits are. They used flux weighting as it first was: a far
+particle's weight was rounded at random to one unit of 1/65536 or to nothing,
+usually nothing, so those frames were drawn by a random share of the particles
+in view. With count weighting, where every particle in view adds exactly one
+unit (the proof shots), a 4K frame takes about 160 to 193 seconds. Flux
+weighting now stores weights finely enough that every particle in view adds
+light, and the frame's label says so from a GPU count. That costs an atomic
+add per particle, as count weighting does, so expect its frames to take nearer
+to the count times; it has not been timed on the 2070 yet.
 
 ![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/trillion-key2-f0.png)
 

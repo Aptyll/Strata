@@ -25,7 +25,15 @@ const presetEl = $<HTMLSelectElement>("preset");
 const fields = ["particles", "planes", "width", "height", "fps", "seconds", "seed"] as const;
 const inputs = Object.fromEntries(fields.map((f) => [f, $<HTMLInputElement>(f)])) as Record<(typeof fields)[number], HTMLInputElement>;
 const splatEl = $<HTMLSelectElement>("splat");
+const weightingEl = $<HTMLSelectElement>("weighting");
 const kernelEl = $<HTMLSelectElement>("kernel");
+
+/** What each choice of "light" does, shown under the form. */
+const WEIGHTING_NOTES: Record<string, string> = {
+  flux: "flux: far sheets are dimmer, and every particle in view adds light",
+  "flux-fast": "flux, quick: far sheets are dimmer, drawn by a random share of their particles (the first stills)",
+  count: "count: every particle in view adds exactly one unit, so the grid sum is the count",
+};
 const summaryEl = $("summary");
 const statusEl = $("status");
 const folderBtn = $<HTMLButtonElement>("folder");
@@ -66,6 +74,7 @@ function fillFromPreset(name: string): void {
   inputs.seconds.value = String(+(p.frames / p.fps).toFixed(3));
   inputs.seed.value = String(p.seed ?? 1);
   splatEl.value = p.particles > 2e10 ? "point" : "bilinear";
+  weightingEl.value = p.weighting === "count" ? "count" : p.fluxBits === 16 ? "flux-fast" : "flux";
   updateSummary();
 }
 
@@ -81,6 +90,9 @@ function currentJob(): OfflineJob {
     frames: Math.max(1, Math.round(Number(inputs.seconds.value) * fps)),
     seed: parseCount(inputs.seed.value),
     splat: splatEl.value as SplatMode,
+    weighting: weightingEl.value === "count" ? "count" : "flux",
+    // "flux, quick" is the first renders' 16-bit weights. Otherwise the builder picks the finest.
+    fluxBits: weightingEl.value === "flux-fast" ? 16 : undefined,
   };
   return buildJob(presetEl.value, o);
 }
@@ -89,7 +101,9 @@ function updateSummary(): void {
   try {
     const job = currentJob();
     const n = totalParticles(job);
-    summaryEl.textContent = `${withCommas(n)} particles\n${job.frames} frames, ${withCommas(n * job.frames)} particle evaluations`;
+    summaryEl.textContent =
+      `${withCommas(n)} particles\n${job.frames} frames, ${withCommas(n * job.frames)} particle evaluations\n` +
+      (WEIGHTING_NOTES[weightingEl.value] ?? "");
   } catch (e) {
     summaryEl.textContent = (e as Error).message;
   }
@@ -98,7 +112,7 @@ function updateSummary(): void {
 for (const name of [...Object.keys(PRESETS), ...Object.keys(COMPOSITIONS)]) presetEl.add(new Option(name, name));
 presetEl.value = "preview";
 presetEl.addEventListener("change", () => fillFromPreset(presetEl.value));
-for (const el of [...Object.values(inputs), splatEl]) el.addEventListener("input", updateSummary);
+for (const el of [...Object.values(inputs), splatEl, weightingEl]) el.addEventListener("input", updateSummary);
 fillFromPreset(presetEl.value);
 
 if (!canPickFolder()) {
@@ -164,7 +178,7 @@ function setBusy(b: boolean): void {
   busy = b;
   renderBtn.disabled = exportBtn.disabled = folderBtn.disabled = b || (folderBtn.disabled && !canPickFolder());
   stopBtn.disabled = !b;
-  for (const el of [presetEl, splatEl, ...Object.values(inputs)]) el.disabled = b;
+  for (const el of [presetEl, splatEl, weightingEl, ...Object.values(inputs)]) el.disabled = b;
 }
 
 async function openDevice(job: OfflineJob): Promise<GPUDevice> {

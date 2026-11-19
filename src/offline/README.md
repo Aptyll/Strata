@@ -97,7 +97,9 @@ batch; the same command continues.
 ## Running it (browser)
 
 `npm run dev` at the repo root, then open
-`http://localhost:5173/src/offline/web/`. Pick a preset, **choose folder**
+`http://localhost:5173/src/offline/web/`. Pick a preset and the **light**
+(`flux`: far sheets dimmer, every particle in view adds light; `flux, quick`:
+the first stills' coarse weights; `count`: one unit each), **choose folder**
 (Chrome or Edge: frames go to disk and a render resumes after a reload), then
 **render**, and **export mp4** when the frames are done. Export encodes in the
 browser with WebCodecs through `src/capture`, so it needs no ffmpeg.
@@ -109,8 +111,8 @@ too long, so the page keeps batches short (about 120 ms) at some cost in speed.
 ## Two kernels
 
 `--kernel offline` (default) is this folder's accumulate shader: returning
-64-bit atomics, exact per-particle flux weights, and evaluated and in-frame
-counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
+64-bit atomics, per-particle flux weights as fine as the 64-bit grid allows,
+and evaluated, in-frame and drawn counts all counted on the GPU. `--kernel trillion` runs `src/trillion`'s
 splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
 u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
 flux weighting becomes a per-sheet keep probability from the sheet center's
@@ -134,15 +136,39 @@ to the identical result.
 
 ## The tally
 
-Every frame's stats JSON holds `evaluated` (always the whole world) and
-`landed`, the exact number of particles whose position fell inside the frame,
-counted on the GPU with one atomic per workgroup. `evaluated - landed` were
-behind the camera or off frame. In `count` weighting with `point` splat, the
-grid sum divided by 65536 equals `landed` exactly, which the checks verify.
-In `flux` weighting it does not: a far particle's weight is randomly rounded
-(unbiased) and is often 0, so `landed` counts it but it adds no light. Such a
-frame is drawn correctly on average, not particle by particle; say "evaluated"
-and "in frame", never "every particle drawn", for flux renders.
+Every frame's stats JSON holds `evaluated` (always the whole world), `landed`,
+the exact number of particles whose position fell inside the frame, and
+`drawn`, the exact number of those that added at least one unit of light. All
+three are counted on the GPU with one atomic per workgroup.
+`evaluated - landed` were behind the camera or off frame. In `count` weighting
+`drawn` equals `landed`, and with `point` splat the grid sum divided by 65536
+equals `landed` exactly, which the checks verify.
+
+In `flux` weighting a particle adds min(1, (fluxRef / depth)^2) of a
+particle's light, as a whole number of grid units with the fraction rounded at
+random (unbiased). How fine a grid unit is decides whether a far particle adds
+anything at all:
+
+- A job with `fluxBits` (every job the builders make now) uses the finest unit
+  the 64-bit grid can hold for its particle count: 2^-31 of a particle up to 4
+  billion particles, 2^-23 for a trillion (`fluxBitsUsed()` in `core/job.ts`).
+  A particle then always adds light while its weight is at least one unit,
+  which for a trillion means up to about 2,900 times farther than `fluxRef`.
+  The default label says "Every particle in frame added light" when the GPU's
+  `drawn` equals `landed`, and prints both counts when it does not.
+- A job without `fluxBits` (every flux frame from before 2026-11-19, the first
+  record stills among them) uses units of 1/65536. A dimmer particle is
+  rounded to one unit or to nothing, so in a wide shot most particles in frame
+  add no light, and the picture is drawn by a random share of them. That is
+  quicker, because a particle that adds nothing skips its atomic add:
+  `--flux-bits 16`, or "flux, quick" on the page. The self-checks render a far
+  sheet both ways: about 1% of its particles are drawn at 16 bits, all of
+  them at 31.
+
+Say "every particle drawn" for a flux render only when its `drawn` equals its
+`landed`. Stored frames are in units of 1/65536 of a particle in every mode
+(`develop` scales a finer grid down as a real number); the grid's own units
+are in the stats as `unitsPerParticle` when they are not 65536.
 
 ## Layout
 

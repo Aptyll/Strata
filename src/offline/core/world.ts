@@ -7,7 +7,7 @@
  * numbers. The expanded job (all planes, all camera keys) is plain JSON.
  */
 import type { Quat, Vec3 } from "../../core/contracts";
-import type { CameraKey, LawId, OfflineJob, OfflinePlane, SplatMode, Weighting } from "./job";
+import { MAX_FLUX_BITS, type CameraKey, type LawId, type OfflineJob, type OfflinePlane, type SplatMode, type Weighting } from "./job";
 import { pcg } from "./laws";
 
 export interface ClusterOptions {
@@ -23,8 +23,19 @@ export interface ClusterOptions {
   ssaa?: number;
   splat?: SplatMode;
   weighting?: Weighting;
+  /**
+   * Flux weighting only: OfflineJob.fluxBits. Default MAX_FLUX_BITS, the
+   * finest the grid can hold, so far particles keep their light. 16 gives the
+   * first renders' quicker behaviour, where most far particles add nothing.
+   */
+  fluxBits?: number;
   timeScale?: number;
   shutter?: number;
+}
+
+/** The fluxBits field of a new job: only flux jobs carry one, so count jobs stay as they were. */
+export function fluxBitsField(o: Pick<ClusterOptions, "weighting" | "fluxBits">): { fluxBits?: number } {
+  return (o.weighting ?? "flux") === "flux" ? { fluxBits: o.fluxBits ?? MAX_FLUX_BITS } : {};
 }
 
 /** Small deterministic generator for world layout (not used per particle). */
@@ -143,6 +154,7 @@ export function clusterJob(o: ClusterOptions): OfflineJob {
     weighting: o.weighting ?? "flux",
     // Full weight once the camera is within a few times the final distance.
     fluxRef: close * 4,
+    ...fluxBitsField(o),
     shutter: o.shutter ?? 0.5,
     near: close * 0.02,
     planes,
