@@ -50,9 +50,14 @@ function snap(spec: ParamSpec, v: number): number {
   return clamp(v, spec.min, spec.max);
 }
 
+/** Optional hints a behavior author may put on a param (see RichParamSpec in src/behaviors/core). */
+type RollHints = { randomize?: boolean; randomRange?: [number, number] };
+
 /** The window of a param a roll may land in. */
-function window(behaviorId: string, name: string, spec: ParamSpec, opts: RollOptions): [number, number] {
-  const tuned = opts.ranges?.[behaviorId]?.[name];
+function window(behaviorId: string, name: string, spec: ParamSpec & RollHints, opts: RollOptions): [number, number] {
+  if (spec.randomize === false) return [spec.default, spec.default];
+  // Caller-supplied ranges win, then the author's own randomRange, then a band around the default.
+  const tuned = opts.ranges?.[behaviorId]?.[name] ?? spec.randomRange;
   if (tuned) return [clamp(Math.min(tuned[0], tuned[1]), spec.min, spec.max), clamp(Math.max(tuned[0], tuned[1]), spec.min, spec.max)];
   const reach = (opts.spread ?? 0.3) * (spec.max - spec.min);
   return [Math.max(spec.min, spec.default - reach), Math.min(spec.max, spec.default + reach)];
@@ -130,12 +135,12 @@ export interface RollTransitionOptions {
   stagger?: number;
   /**
    * Swap a live plane's behavior while keeping its particles where they are.
-   * The shared contracts do not offer this yet. When supplied, each plane
-   * switches at its turn in the sweep and its particles simply start obeying
-   * the new rule from wherever they were, which is the smooth path. Without it,
-   * planes whose behavior changes go through one AppContext.loadScene.
+   * Defaults to AppContext.setPlaneBehavior when the engine provides it. Each
+   * plane then switches at its turn in the sweep and its particles simply start
+   * obeying the new rule from wherever they were, which is the smooth path.
+   * Pass `false` to force the fallback: one AppContext.loadScene, a hard cut.
    */
-  swapBehavior?: (plane: PlaneInstance, target: PlaneDesc) => void;
+  swapBehavior?: ((plane: PlaneInstance, target: PlaneDesc) => void) | false;
 }
 
 export interface RollTransition {
@@ -158,8 +163,8 @@ function effectiveParams(behavior: Behavior, desc: PlaneDesc): Record<string, nu
  *
  * Planes that keep their behavior glide: params are interpolated every frame
  * and pushed with app.updatePlane, a few floats per plane.
- * Planes that change behavior use `swapBehavior` when given, else a single
- * loadScene at the start.
+ * Planes that change behavior are swapped in place (particles kept) when the
+ * engine has setPlaneBehavior, else they go through a single loadScene at the start.
  *
  * Starting a new roll while one is in flight is fine: drop the old transition
  * and start another, it picks up from whatever the planes hold at that moment.
@@ -171,10 +176,18 @@ export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOp
   const comparable = current.planes.length === target.planes.length && app.planes.length === target.planes.length;
   const changes = (i: number) => current.planes[i].behaviorId !== target.planes[i].behaviorId;
   const from = comparable ? app.planes.map((p) => effectiveParams(p.behavior, p.desc)) : [];
+  const swap =
+    opts.swapBehavior === false
+      ? null
+      : (opts.swapBehavior ??
+        (app.setPlaneBehavior
+          ? (plane: PlaneInstance, goal: PlaneDesc) =>
+              app.setPlaneBehavior!(plane, { behaviorId: goal.behaviorId, params: goal.params, seed: goal.seed })
+          : null));
 
   if (!comparable) {
     app.loadScene(target);
-  } else if (!opts.swapBehavior && target.planes.some((_, i) => changes(i))) {
+  } else if (!swap && target.planes.some((_, i) => changes(i))) {
     // Changed planes cut over now; kept planes are loaded at their current values and glide from there.
     app.loadScene({ ...target, planes: target.planes.map((p, i) => (changes(i) ? p : { ...p, params: from[i] })) });
   }
@@ -194,11 +207,11 @@ export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOp
         const goal = target.planes[i];
         const u = clamp((time - i * stagger) / duration, 0, 1);
         if (changes(i)) {
-          if (opts.swapBehavior && u > 0 && !swapped.has(i)) {
+          if (swap && u > 0 && !swapped.has(i)) {
             swapped.add(i);
-            opts.swapBehavior(plane, goal);
+            swap(plane, goal);
           }
-          if (!opts.swapBehavior || u > 0) landed++;
+          if (!swap || u > 0) landed++;
           return;
         }
         const k = ease(u);
