@@ -102,6 +102,18 @@ Use the Node runner for renders that take hours. A browser tab can be
 throttled in the background, and browsers reset the GPU if one submission runs
 too long, so the page keeps batches short (about 120 ms) at some cost in speed.
 
+## Two kernels
+
+`--kernel offline` (default) is this folder's accumulate shader: returning
+64-bit atomics, exact per-particle flux weights, and evaluated and in-frame
+counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
+splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
+u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
+flux weighting becomes a per-sheet keep probability from the sheet center's
+depth, and `evaluated` is summed by the host from dispatch sizes (the stats
+JSON says `"evaluatedBy": "host"`). `bench --kernel both` compares them on one
+machine. The page has the same choice.
+
 ## Checks
 
 ```sh

@@ -82,6 +82,7 @@ const rendererOptions = (args) => ({
   perInvocation: args["per-invocation"] ? parseCount(args["per-invocation"]) : undefined,
   targetBatchMs: args["batch-ms"] ? Number(args["batch-ms"]) : undefined,
   maxBatch: args["max-batch"] ? parseCount(args["max-batch"]) : undefined,
+  kernel: args.kernel === "trillion" ? "trillion" : undefined,
 });
 
 // ------------------------------------------------------------------- gpu ----
@@ -124,6 +125,9 @@ async function bench(args) {
   console.log(`Adapter: ${name}`);
   console.log(`Grid: ${base.width * base.ssaa} x ${base.height * base.ssaa}. Measuring about ${seconds} s per case.\n`);
   const results = [];
+  // --kernel both runs every case on both kernels, for an A/B on one machine.
+  const kernels = args.kernel === "both" ? ["offline", "trillion"] : [args.kernel === "trillion" ? "trillion" : "offline"];
+  for (const kernel of kernels)
   for (const splat of ["point", "bilinear"]) {
     for (const law of ["kepler", "vortex", "lissajous"]) {
       // One sheet facing the camera, big enough to keep the GPU busy.
@@ -137,7 +141,7 @@ async function bench(args) {
         fluxRef: 1,
         near: 0.01,
       };
-      const renderer = await StatelessRenderer.create(device, /** @type {any} */ (job), rendererOptions(args));
+      const renderer = await StatelessRenderer.create(device, /** @type {any} */ (job), { ...rendererOptions(args), kernel });
       // Stop the frame by throwing from the progress hook once time is up.
       const start = performance.now();
       let done = 0;
@@ -161,8 +165,8 @@ async function bench(args) {
       }
       const rate = (done - warm) / ((performance.now() - warmAt) / 1000);
       renderer.dispose();
-      results.push({ law, splat, rate });
-      console.log(`${law.padEnd(10)} ${splat.padEnd(9)} ${fmtRate(rate).padStart(12)}   1T frame: ${fmtDuration(1e12 / rate)}   1B frame: ${fmtDuration(1e9 / rate)}`);
+      results.push({ law, splat, rate, kernel });
+      console.log(`${kernel.padEnd(9)} ${law.padEnd(10)} ${splat.padEnd(9)} ${fmtRate(rate).padStart(12)}   1T frame: ${fmtDuration(1e12 / rate)}   1B frame: ${fmtDuration(1e9 / rate)}`);
     }
   }
   const point = results.filter((r) => r.splat === "point");

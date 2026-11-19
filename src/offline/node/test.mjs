@@ -219,6 +219,48 @@ for (const law of LAWS) {
   check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
 }
 
+// ---- trillion kernel behind the same renderer ---------------------------------
+for (const splat of ["point", "bilinear"]) {
+  const job = testJob({ splat });
+  const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
+  const out = await renderOnce(job, { kernel: "trillion" });
+  const sum = accumulationSum(out.lo, out.hi);
+  check(`trillion kernel: conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n}, in frame ${out.landed}`);
+}
+{
+  const job = testJob();
+  job.camera = [{ t: 0, target: [0.4, 0.2, 0], yaw: 0.3, pitch: -0.2, distance: 1.6, fovY: 0.7 }];
+  const a = await renderOnce(job, { kernel: "trillion" });
+  const b = await renderOnce(job);
+  const inGrid = accumulationSum(a.lo, a.hi) / BigInt(ONE);
+  // Different hashing for shutter and splat, so compare counts, not pixels.
+  const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
+  check("trillion kernel: in-frame count matches offline kernel", a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
+}
+{
+  const job = testJob({ splat: "bilinear" });
+  const x = await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 });
+  const y = await renderOnce(job, { kernel: "trillion", initialBatch: 2 ** 20 });
+  check("trillion kernel: batch invariance", same(x.lo, y.lo) && same(x.hi, y.hi), `${x.batches} vs ${y.batches} batches`);
+  /** @type {any} */
+  let saved = null;
+  const controller = new AbortController();
+  let batches = 0;
+  try {
+    await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, {
+      signal: controller.signal,
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      onProgress: () => {
+        if (++batches === 7) controller.abort();
+      },
+    });
+  } catch (e) {
+    if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+  }
+  const resumed = saved ? await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, { resume: saved }) : null;
+  check("trillion kernel: cancel and resume exactly", resumed !== null && same(x.lo, resumed.lo) && same(x.hi, resumed.hi) && resumed.landed === x.landed, saved ? `saved after ${saved.gpuEvaluated}` : "nothing saved");
+}
+
 // ---- PNG round trip ---------------------------------------------------------
 {
   const samples = new Uint16Array(64 * 48).map((_, i) => (i * 2654435761) >>> 16);
