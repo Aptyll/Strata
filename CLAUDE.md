@@ -96,6 +96,7 @@ npm run dev          # every page, including dev-only demos
 npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
 npm test             # every *.test.* file under src/: a few seconds, no GPU
+npm run smoke        # after a build: opens every built page headless, fails on errors
 npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
@@ -115,7 +116,11 @@ description and link preview come from there, not from tags in its HTML.
 Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
 `*.test.ts` file under `src/` (drop one next to your code and it is picked up
 by name), and `npm run verify` runs the headless shader checks (about a second,
-needs Playwright). Offline Node CLI: `src/offline/README.md`.
+needs Playwright). `npm run smoke` opens every page of the built site on the
+software GPU and fails if one throws, logs an error, raises a WebGPU error or
+stops drawing frames (half a minute, after `npm run build`). A new page is
+covered automatically; give it a light URL in `scripts/smoke.mjs` if its
+defaults are heavy. Offline Node CLI: `src/offline/README.md`.
 
 ## Gotchas
 
@@ -150,6 +155,7 @@ needs Playwright). Offline Node CLI: `src/offline/README.md`.
   accumulation in the offline path.
 - **Re-fetch main right before merging.** Many threads merge per hour.
 - **CI is a safety net, not a gate.** `.github/workflows/ci.yml` runs
-  `npm run build` and `npm test` on every PR and on every push to main. It never blocks a
-  merge. A red X on a `main` commit means that merge broke the build: fix it
-  first with a small `fix/` PR.
+  `npm run build`, `npm test`, `npm run verify` and `npm run smoke` on every PR
+  and on every push to main. It never blocks a merge. A red X on a `main`
+  commit means that merge broke the build, a shader or a page's startup: fix
+  it first with a small `fix/` PR.
