@@ -214,6 +214,8 @@ export function createExperience(opts: ExperienceOptions) {
     onHoverEnd(id) {
       if (pointers.has(id)) dropPointer(id);
     },
+    // A still press over nothing has nothing to touch: it stays a camera press.
+    canHold: (x, y) => hitAt(x, y) !== null,
     onHoldStart(x, y, id, mode) {
       const p = pointerFor(id, x, y);
       if (!p) return;
@@ -223,10 +225,15 @@ export function createExperience(opts: ExperienceOptions) {
     onHoldMove(x, y, id) {
       pointerFor(id, x, y);
     },
-    onHoldEnd(id) {
+    onHoldEnd(id, calledOff) {
       const p = pointers.get(id);
       if (!p) return;
       p.held = false;
+      if (calledOff) {
+        // The press was a camera drag that began with a pause: let go without the burst.
+        p.brush.cancel();
+        return;
+      }
       // Only count it as learned if it did something to a sheet.
       if (p.brush.charge > 0.2 && p.brush.plane >= 0) learn('hold');
       p.brush.release();

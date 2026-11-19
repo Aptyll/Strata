@@ -213,10 +213,10 @@ test('brushes pack to 8 floats with -1 marking empty slots', () => {
   assert.equal(out[8 + 6], -1);
 });
 
-function recorder(opts) {
+function recorder(opts, extra = {}) {
   const log = [];
-  const h = {};
-  for (const n of ['onOrbit', 'onZoom', 'onHoldStart', 'onHoldMove', 'onHoldEnd', 'onTap', 'onDoubleTap']) {
+  const h = { ...extra };
+  for (const n of ['onOrbit', 'onZoom', 'onHoldStart', 'onHoldSettle', 'onHoldMove', 'onHoldEnd', 'onTap', 'onDoubleTap']) {
     h[n] = (...a) => log.push([n, ...a]);
   }
   return { log, core: new GestureCore(h, opts), names: () => log.map((l) => l[0]) };
@@ -239,10 +239,64 @@ test('press and stay still is a hold that can then be dragged', () => {
   r.core.tick(100);
   assert.deepEqual(r.names(), []);
   r.core.tick(180);
-  r.core.move({ id: 1, x: 200, y: 100 }, 300);
-  r.core.up({ id: 1, x: 200, y: 100 }, 400);
-  assert.deepEqual(r.names(), ['onHoldStart', 'onHoldMove', 'onHoldEnd']);
+  assert.deepEqual(r.names(), ['onHoldStart'], 'the force begins at once');
+  r.core.tick(410);
+  r.core.move({ id: 1, x: 200, y: 100 }, 500);
+  r.core.up({ id: 1, x: 200, y: 100 }, 600);
+  assert.deepEqual(r.names(), ['onHoldStart', 'onHoldSettle', 'onHoldMove', 'onHoldEnd']);
   assert.equal(r.log[0][4], 'attract');
+  assert.notEqual(r.log[3][2], true, 'a hold that ends on release was not called off');
+});
+
+test('a hold settles on the move itself when no tick came in between', () => {
+  const r = recorder();
+  r.core.down({ id: 1, x: 100, y: 100, button: 0 }, 0);
+  r.core.tick(180);
+  r.core.move({ id: 1, x: 200, y: 100 }, 500);
+  assert.deepEqual(r.names(), ['onHoldStart', 'onHoldSettle', 'onHoldMove']);
+});
+
+test('a press that pauses and then travels is still a camera drag', () => {
+  // Press, hesitate 300 ms, drag: the hold that began at 180 ms is called off.
+  const r = recorder();
+  r.core.down({ id: 1, x: 100, y: 100, button: 0 }, 0);
+  r.core.tick(180);
+  r.core.move({ id: 1, x: 102, y: 100 }, 250);
+  r.core.move({ id: 1, x: 140, y: 100 }, 300);
+  r.core.move({ id: 1, x: 150, y: 100 }, 316);
+  r.core.tick(600);
+  r.core.up({ id: 1, x: 150, y: 100 }, 700);
+  assert.deepEqual(r.names(), ['onHoldStart', 'onHoldMove', 'onHoldEnd', 'onOrbit', 'onOrbit']);
+  assert.equal(r.log[2][2], true, 'the hold is called off, not released');
+  assert.equal(r.log[3][1], 40, 'the camera gets all the travel since the press');
+});
+
+test('with holdSettle 0 a hold can be dragged at once', () => {
+  const r = recorder({ holdSettle: 0 });
+  r.core.down({ id: 1, x: 100, y: 100, button: 0 }, 0);
+  r.core.tick(180);
+  r.core.move({ id: 1, x: 200, y: 100 }, 200);
+  assert.deepEqual(r.names(), ['onHoldStart', 'onHoldSettle', 'onHoldMove']);
+});
+
+test('a still press with nothing to touch stays a camera press', () => {
+  let sheet = false;
+  const r = recorder({}, { canHold: () => sheet });
+  r.core.down({ id: 1, x: 100, y: 100, button: 0 }, 0);
+  r.core.tick(180);
+  r.core.tick(900);
+  assert.deepEqual(r.names(), [], 'no hold over open space');
+  r.core.move({ id: 1, x: 160, y: 100 }, 1000);
+  assert.deepEqual(r.names(), ['onOrbit'], 'however long the pause, the drag turns the camera');
+  r.core.up({ id: 1, x: 160, y: 100 }, 1100);
+
+  // Asked again while the press stays put: a sheet that comes under it can be touched.
+  const late = recorder({}, { canHold: () => sheet });
+  late.core.down({ id: 1, x: 100, y: 100, button: 0 }, 0);
+  late.core.tick(500);
+  sheet = true;
+  late.core.tick(520);
+  assert.deepEqual(late.names(), ['onHoldStart']);
 });
 
 test('secondary button and shift repel', () => {

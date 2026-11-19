@@ -5,8 +5,11 @@
 // no camera: it reads the view from the CameraController it is given.
 //
 // The rule is the same as in the standalone demo: a press that travels is the
-// camera's, a press that stays still becomes a force. Once a hold has begun,
-// this module swallows that pointer's moves so the camera does not also turn.
+// camera's, a press that stays still on a sheet becomes a force. Once the hold
+// has settled (see holdSettle in gestures.ts), this module swallows that
+// pointer's moves so the camera does not also turn, and the cursor becomes a
+// ring. A still press over open space has nothing to touch, so it never
+// becomes a hold, and a press that pauses and then travels turns the camera.
 
 import { BRUSH_FLOATS, MAX_BRUSHES, type CameraController, type PlaneInstance } from '../../core/contracts';
 import { planeFromDesc, type Plane } from './camera-rig';
@@ -23,8 +26,21 @@ export interface EngineBrushes {
    * @param now milliseconds, as given to requestAnimationFrame
    */
   update(dt: number, now: number): Float32Array;
+  /**
+   * True when a sheet with particles is under this point of the page (client
+   * pixels): a still press there becomes a force. Pass it to anything that
+   * classifies presses the same way (mountAppHints).
+   */
+  touches(x: number, y: number): boolean;
   dispose(): void;
 }
+
+/** The cursor while a settled hold drags a force: a ring, readable on a dark or a light theme. */
+const RING_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">' +
+    '<circle cx="16" cy="16" r="9" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="3.5"/>' +
+    '<circle cx="16" cy="16" r="9" fill="none" stroke="#fff" stroke-width="1.5"/></svg>',
+)}") 16 16, crosshair`;
 
 interface Entry {
   x: number;
@@ -76,17 +92,40 @@ export function attachBrushes(
     e.ttl = BRUSH_DEFAULTS.burstSeconds + 0.1;
   };
 
+  const visible = (i: number): boolean => {
+    const list = getPlanes();
+    return list[i].activeCount > 0 && !list[i].paused;
+  };
+  const touches = (x: number, y: number): boolean => {
+    const rect = canvas.getBoundingClientRect();
+    const inv = m4.invert(camera.viewProjection(rect.width / Math.max(1, rect.height)));
+    if (!inv) return false;
+    const [nx, ny] = clientToNdc(x, y, rect);
+    return pickPlane(screenToRay(nx, ny, inv), currentPlanes(), { visible }) !== null;
+  };
+  /** The ring is this module's; any other cursor on the canvas is someone else's to restore. */
+  const showRing = (on: boolean): void => {
+    if (on) canvas.style.cursor = RING_CURSOR;
+    else if (holding.size === 0 && canvas.style.cursor.includes('svg')) canvas.style.cursor = '';
+  };
+
   const core = new GestureCore({
     onHover: (x, y, id) => { entryFor(id, x, y); },
     onHoverEnd: (id) => retire(id),
-    onHoldStart: (x, y, id, mode) => {
+    canHold: (x, y) => touches(x, y),
+    onHoldStart: (x, y, id, mode) => { entryFor(id, x, y)?.brush.press(mode); },
+    onHoldSettle: (id) => {
       holding.add(id);
-      entryFor(id, x, y)?.brush.press(mode);
+      showRing(true);
     },
     onHoldMove: (x, y, id) => { entryFor(id, x, y); },
-    onHoldEnd: (id) => {
+    onHoldEnd: (id, calledOff) => {
       holding.delete(id);
-      entries.get(id)?.brush.release();
+      showRing(false);
+      // A hold called off was a camera drag all along: let go without the burst.
+      const brush = entries.get(id)?.brush;
+      if (calledOff) brush?.cancel();
+      else brush?.release();
     },
   }, {
     // The app camera pans on a right drag (src/ux/camera/input.ts). A push that
@@ -103,7 +142,7 @@ export function attachBrushes(
   const onMove = (e: PointerEvent) => {
     if (e.target !== canvas && !core.pointers.has(e.pointerId)) return;
     core.move(sample(e), e.timeStamp);
-    // This pointer is a force now. Keep the camera from reading it as a drag.
+    // This pointer is a settled force now. Keep the camera from reading it as a drag.
     if (holding.has(e.pointerId)) e.stopImmediatePropagation();
   };
   const onUp = (e: PointerEvent) => core.up(sample(e), e.timeStamp);
@@ -137,9 +176,7 @@ export function attachBrushes(
       let hit = null;
       if (live && inv) {
         const [nx, ny] = clientToNdc(e.x, e.y, rect);
-        hit = pickPlane(screenToRay(nx, ny, inv), geo, {
-          visible: (i) => list[i].activeCount > 0 && !list[i].paused,
-        });
+        hit = pickPlane(screenToRay(nx, ny, inv), geo, { visible });
       }
       let radius = 0;
       if (hit) {
@@ -169,7 +206,10 @@ export function attachBrushes(
 
   return {
     update,
+    touches,
     dispose() {
+      holding.clear();
+      showRing(false);
       win.removeEventListener('pointerdown', onDown, true);
       win.removeEventListener('pointermove', onMove, true);
       win.removeEventListener('pointerup', onUp, true);
