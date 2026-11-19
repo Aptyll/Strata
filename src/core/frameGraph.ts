@@ -1,11 +1,31 @@
 import { PASS_ORDER, type FrameContext, type GpuContext, type Pass } from "./contracts";
 
 /**
+ * Watches every frame the graph runs without touching the passes: GPU timing
+ * (src/ux/perf-hud), debugging, counting. All members are optional. Push one
+ * onto `FrameGraph.observers`.
+ */
+export interface FrameObserver {
+  /**
+   * Before each enabled pass. Returns the context that pass draws with:
+   * `frame` itself, or a copy whose encoder adds something to the GPU passes
+   * the pass begins (timestamp queries, for example).
+   */
+  beforePass?(pass: Pass, frame: FrameContext): FrameContext;
+  /** After the last pass, while the frame's encoder is still open. */
+  beforeSubmit?(frame: FrameContext): void;
+  /** Right after the frame's commands were submitted. */
+  afterSubmit?(frame: FrameContext): void;
+}
+
+/**
  * Runs passes stage by stage in PASS_ORDER and owns the HDR target that
  * rasterize passes add into and the tonemap pass reads from.
  */
 export class FrameGraph {
   readonly passes: Pass[] = [];
+  /** Called around every frame, in order. Empty by default, which costs nothing. */
+  readonly observers: FrameObserver[] = [];
   width = 0;
   height = 0;
   /**
@@ -64,9 +84,15 @@ export class FrameGraph {
       hdrView: this.hdrView,
       canvasView: context.getCurrentTexture().createView(),
     };
+    const { observers } = this;
     for (const pass of this.passes) {
-      if (pass.enabled !== false) pass.execute(ctx);
+      if (pass.enabled === false) continue;
+      let passCtx = ctx;
+      for (const o of observers) if (o.beforePass) passCtx = o.beforePass(pass, passCtx);
+      pass.execute(passCtx);
     }
+    for (const o of observers) o.beforeSubmit?.(ctx);
     device.queue.submit([encoder.finish()]);
+    for (const o of observers) o.afterSubmit?.(ctx);
   }
 }
