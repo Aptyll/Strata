@@ -220,6 +220,45 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
+    // A sim-only frame (draw off) still simulates what a drawn frame would.
+    const e = make({ lod: true, pixelDensity: 1e-12, minFraction: 0.25, simulateHidden: false });
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
+    e.draw = false;
+    let drawn = 0;
+    let simulated = 0;
+    let visible = 0;
+    for (let i = 0; i < 4; i++) {
+      const st = frame(e); // the rate LOD may skip some frames
+      drawn += st.drawnParticles;
+      simulated = Math.max(simulated, st.simulatedParticles);
+      visible = Math.max(visible, st.visiblePlanes);
+    }
+    check(
+      'draw off still simulates the LOD prefix',
+      drawn === 0 && simulated === N / 4 && visible === 1,
+      `drawn ${drawn}, simulated ${simulated}, visible ${visible}`,
+    );
+    e.destroy();
+  }
+
+  {
+    // Planes added between encode() and submit, as streaming can do: seeding
+    // uses its own slot, and the 64th plane grows the uniform buffer, whose old
+    // copy the encoded frame still needs. The frame must come out intact.
+    const e = make();
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
+    e.simulate = false;
+    const encoder = device.createCommandEncoder();
+    e.encode(encoder, { viewProj: fitViewProj(), dt: 1 / 60, time: 0, target });
+    for (let i = 0; i < 64; i++) e.addPlane(sheet(DRIFT.id, 1024), DRIFT);
+    device.queue.submit([encoder.finish()]);
+    e.afterSubmit();
+    const s = sum(await e.readFramebuffer());
+    check('planes added mid-frame leave the frame intact', s === N * LIGHT_ONE, `${s} vs ${N * LIGHT_ONE}`);
+    e.destroy();
+  }
+
+  {
     const e = make({ culledSimInterval: 0 });
     e.addPlane(sheet(DRIFT.id, N), DRIFT);
     const st = frame(e, fitViewProj(5));

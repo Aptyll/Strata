@@ -15,8 +15,11 @@ export type LabelLevel = "short" | "full";
 
 export interface SheetLabel {
   readonly el: HTMLElement;
-  show(facts: SheetFacts, level: LabelLevel): void;
+  /** Show these facts. Returns how many characters of text are now on screen. */
+  show(facts: SheetFacts, level: LabelLevel): number;
   hide(): void;
+  /** While held, the label stays up even when the rest of the HUD fades for idleness. */
+  hold(on: boolean): void;
 }
 
 export function createSheetLabel(root: HTMLElement): SheetLabel {
@@ -42,17 +45,22 @@ export function createSheetLabel(root: HTMLElement): SheetLabel {
   return {
     el,
     show(facts, level) {
+      const line = `${sheetNumberLine(facts)} · ${sheetCountLine(facts)}`;
       el.dataset.level = level;
       set(name, facts.name);
       set(text, facts.description);
-      set(meta, `${sheetNumberLine(facts)} · ${sheetCountLine(facts)}`);
+      set(meta, line);
       el.classList.add("is-on");
       el.setAttribute("aria-hidden", "false");
+      return facts.name.length + line.length + (level === "full" ? facts.description.length : 0);
     },
     hide() {
       // The text stays so the caption can fade out instead of blinking off.
-      el.classList.remove("is-on");
+      el.classList.remove("is-on", "is-held");
       el.setAttribute("aria-hidden", "true");
+    },
+    hold(on) {
+      el.classList.toggle("is-held", on);
     },
   };
 }

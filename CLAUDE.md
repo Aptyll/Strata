@@ -25,8 +25,9 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  26 to 52 seconds per 4K frame on the 2070, depending on how spread out the
-  hits are.
+  26 to 52 seconds per 4K frame on the 2070 with flux weighting (the record
+  stills: far particles drawn on average), about 160 to 193 s with count
+  weighting (exactly one unit per particle in view, the proof shots).
 
 ## Rules (Noah's, non-negotiable)
 
@@ -69,9 +70,10 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
+| `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
 | `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
@@ -133,8 +135,16 @@ needs Playwright). Offline Node CLI: `src/offline/README.md`.
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
-  owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
+  owner (HUD, app, capture, theme, autocam, info, sound, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **Words on screen have one vocabulary.** Viewers read "sheet" (never
+  "plane"), and a particle count always carries "simulated", "stored" or
+  "rendered". The words, their definitions and the count formats live in
+  `src/ux/info/words.ts`; rules for new text: `docs/ux/information.md`.
+- **Chrome is styled with the design tokens.** Fonts, sizes, text opacities,
+  spacing and timings of anything on screen come from `src/ux/design` as
+  `var(--st-*)`; no literal fonts, alphas or durations in new UI. Rules and
+  the six text roles: `docs/ux/design.md`. Specimen: `/src/ux/design/demo/`.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.

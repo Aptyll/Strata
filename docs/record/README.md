@@ -5,7 +5,12 @@ rendered on one RTX 2070 (8 GB) on 2026-11-19. Each is 3840x2160 with
 1,000,000,000,000 stateless particles: the position of every one of them is
 computed for the frame, and the ones that land in view are added into a 64-bit
 accumulation grid. The label in the bottom left is burned in by the renderer
-and reports how many particles landed in view. A frame takes 26 to 52 seconds
+and reports how many particles landed in view. These stills were rendered with flux weighting (the default of
+`/src/offline/web/`, which has no weighting control; their 26 to 52 s frame
+times match flux speed, and each frame's job.json on the desktop can confirm it): a far particle gets a randomly rounded weight,
+often zero, so it counts as in view but is drawn only on average. The
+in-view numbers are exact GPU counts of positions inside the frame, not of
+units of light added. A frame takes 26 to 52 seconds
 on this card, depending on how spread out the hits are.
 
 | frame | view | particles in view |

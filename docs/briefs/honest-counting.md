@@ -24,7 +24,11 @@ seed, code and measured speed.
    written every frame (`src/challenge/README.md`, "What counts").
 2. **What the number means.** The claim is *evaluated per frame*: every id
    from 0 to N - 1 went through the kernel exactly once in that frame. Also
-   report *landed*: how many passed the clip test and were added to the grid.
+   report *landed*: how many passed the clip test (position inside the frame).
+   Under `count` weighting every landed particle adds exactly one unit, so
+   grid sum / 65536 = landed. Under `flux` weighting a far particle's weight
+   is randomly rounded and often 0, so it is landed but drawn only in
+   expectation; never call a flux render "every particle drawn".
 3. **Weight one.** For the claim, every particle counts as exactly one. No
    level-of-detail multiplier (`PerfEngine` brightens a thinned plane by
    `count / k`, so it may never feed a record), no instancing, no copies (see

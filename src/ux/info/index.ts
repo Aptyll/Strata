@@ -1,14 +1,16 @@
 /**
  * The information layer: what the words on screen tell a viewer about what
  * they are looking at. It adds no controls to the world, only meaning to what
- * is already there. Design notes and the vocabulary: docs/ux/information.md.
+ * is already there. The vocabulary and the rules: docs/ux/information.md.
  *
  *   const info = mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
  *
  * What it does, all through the HUD it is given:
  *
  *   stats line (H)   every count says what it counts: "1.21M simulated
- *                    2.00M stored  32 sheets". The HUD itself is generic and
+ *                    2.00M stored  32 sheets". The second count shows only
+ *                    while some sheets rest; when both would read the same,
+ *                    one number says it all. The HUD itself is generic and
  *                    knows nothing about Strata; this is where its numbers get
  *                    Strata's words (./words.ts).
  *   sheet label      bottom right: the name of the sheet the camera faces, the
@@ -25,13 +27,14 @@
  * when the text changed.
  */
 import type { AppContext } from "../../core/contracts";
+import { installTokens } from "../design";
 import type { Hud } from "../hud/index.js";
 import { createAbout, type About } from "./about";
 import { controlSections } from "./controls";
 import { createSheetLabel, type LabelLevel } from "./label";
-import { findSheet, sheetFacts, totals } from "./sheets";
+import { countsDiffer, findSheet, sheetFacts, totals } from "./sheets";
 import { INFO_CSS } from "./styles";
-import { TERMS, exactCount, shortCount } from "./words";
+import { TERMS, exactCount, readingMs, shortCount } from "./words";
 
 export * from "./controls";
 export * from "./sheets";
@@ -74,6 +77,9 @@ export interface Info {
 
 const STYLE_ID = "strata-info-style";
 
+/** Keys that scroll a page. While the about card is open they scroll the card instead of flying the camera. */
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+
 export function mountInfo(opts: InfoOptions): Info {
   const { hud, app, canvas, rig } = opts;
   const root = hud.el;
@@ -82,6 +88,7 @@ export function mountInfo(opts: InfoOptions): Info {
   const touch = opts.touch ?? win.matchMedia?.("(pointer: coarse)").matches ?? false;
   const cleanups: Array<() => void> = [];
 
+  installTokens(doc);
   if (!doc.getElementById(STYLE_ID)) {
     const style = doc.createElement("style");
     style.id = STYLE_ID;
@@ -139,6 +146,9 @@ export function mountInfo(opts: InfoOptions): Info {
     const hit = rig.pick(((px - r.left) / r.width) * 2 - 1, 1 - ((py - r.top) / r.height) * 2);
     return hit ? findSheet(app.planes, hit.center) : null;
   };
+  /** The sheet the full label last arrived for, and until when it stays up so it can be read. */
+  let announced = "";
+  let holdUntil = 0;
 
   // ---- keys sheet: the controls the HUD does not know about ---------------------------
   const help = root.querySelector(".sh-help");
@@ -196,16 +206,24 @@ export function mountInfo(opts: InfoOptions): Info {
   cleanups.push(hud.on("panel", (open) => open && about.close()));
   cleanups.push(hud.on("job", (_id, running) => running && about.close()));
 
-  // Escape closes the card instead of opening the menu behind it, and ? swaps it for the keys sheet.
-  // Capture phase, so this runs before the HUD's own key handler sees the event.
+  // While the card is open, the keys in its footer do what the footer says, and the keys that
+  // scroll a page scroll the card. Capture phase, so this runs before the HUD's own key handler
+  // and before the camera's key router (src/app/keys.ts) see the event.
   const onKey = (e: KeyboardEvent) => {
     if (!about.isOpen || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "Escape") {
+      // Close the card instead of opening the menu behind it.
       about.close();
       e.preventDefault();
       e.stopPropagation();
     } else if (e.key === "?") {
+      about.close(); // the HUD then opens the keys sheet
+    } else if (e.key === "h" || e.key === "H") {
       about.close();
+      // The HUD's H toggles the stats line. If it is already on, leave it on.
+      if (hud.statsVisible) e.stopPropagation();
+    } else if (SCROLL_KEYS.has(e.key)) {
+      e.stopPropagation(); // the browser still scrolls the card
     }
   };
   win.addEventListener("keydown", onKey, true);
@@ -217,7 +235,7 @@ export function mountInfo(opts: InfoOptions): Info {
     const button = doc.createElement("button");
     button.type = "button";
     button.className = "si-about-link";
-    button.textContent = touch ? "about" : "i about";
+    button.textContent = touch ? "about" : `${opts.key?.key ?? "i"} about`;
     button.addEventListener("click", () => about.open());
     foot.append(button);
     cleanups.push(() => button.remove());
@@ -229,7 +247,11 @@ export function mountInfo(opts: InfoOptions): Info {
   // ---- refresh ------------------------------------------------------------------------------
   function update(): void {
     const sheets = app.planes;
-    nameSheets(totals(sheets).sheets);
+    const t = totals(sheets);
+    nameSheets(t.sheets);
+    // Both counts come from one reading of the world, so they never disagree on screen.
+    hud.setStat("particles", t.simulated);
+    hud.setStat("total", countsDiffer(t) ? t.stored : null);
 
     const quiet = about.isOpen || hud.busy || opts.quiet?.() === true;
     let level: LabelLevel = "full";
@@ -239,8 +261,22 @@ export function mountInfo(opts: InfoOptions): Info {
       level = "short";
     }
     const facts = sheet ? sheetFacts(sheets, sheet) : null;
-    if (facts) label.show(facts, level);
-    else label.hide();
+    const now = win.performance.now();
+    if (facts) {
+      const characters = label.show(facts, level);
+      // A label that arrives for a sheet the camera now faces stays long enough to be read,
+      // even if the person lets go of the mouse and the rest of the HUD fades.
+      const arrival = level === "full" ? `${facts.number}/${facts.of} ${facts.name}` : "";
+      if (arrival !== announced) {
+        announced = arrival;
+        holdUntil = arrival ? now + readingMs(characters) : 0;
+      }
+      label.hold(now < holdUntil);
+    } else {
+      label.hide();
+      announced = "";
+      holdUntil = 0;
+    }
 
     if (about.isOpen) {
       about.refresh();

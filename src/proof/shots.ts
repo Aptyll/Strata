@@ -18,12 +18,13 @@ import type { FrameStats } from "../offline/core/develop";
 import { withCommas } from "../offline/core/grade";
 import { totalParticles, type CameraKey, type OfflineJob } from "../offline/core/job";
 import { lawPosition, particleKey, pcg } from "../offline/core/laws";
-import { add, cameraBasis, quatNormalize, quatRotate, scale, type CameraBasis } from "../offline/core/math";
+import { add, cameraBasis, quatNormalize, quatRotate, scale, sub, type CameraBasis } from "../offline/core/math";
+import { DEFAULT_RUNGS, scaleParticles, shortCount } from "../offline/core/ladder";
 import { CameraPath } from "../offline/core/camera";
 import { clusterJob, type ClusterOptions } from "../offline/core/world";
 import type { Vec3 } from "../core/contracts";
 
-export type ShotId = "countUp" | "loupe" | "dive" | "find";
+export type ShotId = "countUp" | "pullBack" | "loupe" | "dive" | "find" | "ladder" | "collapse";
 
 export interface ShotOptions {
   /** Particles in the world. 1e12 for the real thing, less for a quick look. */
@@ -105,6 +106,13 @@ export interface Pass {
   job: OfflineJob;
   /** Frames of video this pass's frame is held for (count-up, loupe). 1 means play through. */
   hold: number;
+  /**
+   * Lock the exposure to another pass: grade with the automatic white point of
+   * pass `key`'s first frame times `scale`, instead of exposing this pass on
+   * its own. The ladder scales by count (same exposure per particle); the
+   * collapse keeps the first frame's white so the final pixel clips to white.
+   */
+  lock?: { key: string; scale: number };
 }
 
 export function countUpPasses(o: ShotOptions): Pass[] {
@@ -117,31 +125,76 @@ export function countUpPasses(o: ShotOptions): Pass[] {
   }));
 }
 
-export function countUpLabel(s: FrameStats, job: OfflineJob, seconds: number): string[] {
+/**
+ * `s.seconds` is this pass's own GPU time (the final pass is the full frame);
+ * `allSeconds` is the wall time of every count-up pass together, never
+ * presented as one frame's time.
+ */
+export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number, passes: number): string[] {
   return [
     `PARTICLES RENDERED ${big(s.evaluated)}`,
     `LANDED IN FRAME ${big(s.landed)} (COUNTED ON THE GPU)`,
-    `THIS FRAME TOOK ${seconds.toFixed(1)} S`,
+    `THIS FRAME TOOK ${s.seconds.toFixed(1)} S ON THE GPU` +
+      (Number.isFinite(allSeconds) ? `  ALL ${passes} PASSES ${allSeconds.toFixed(1)} S` : ""),
     `STATELESS  ONE FROZEN FRAME  ${job.width}X${job.height}`,
   ];
 }
 
 // --------------------------------------------------------------- loupe ----
 
-/** Deterministic dice roll over the lit pixels of a count grid. */
-export function rollPixel(lo: Uint32Array, hi: Uint32Array, width: number, height: number, dice: number): { x: number; y: number; count: bigint } {
+/** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
+export const LOUPE_MIN = 10_000;
+export const LOUPE_MAX = 50_000;
+
+/** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
+export const LOUPE_SIZE = 2160;
+
+/**
+ * Deterministic dice roll over a count grid for a pixel holding between `min`
+ * and `max` particles. Opened up at LOUPE_SIZE squared, 50,000 dots are about
+ * 10 pixels apart, so every one reads as a separate dot (a 3,000,000 pixel is
+ * grey static). Tries random pixels in the central 60% first, then the whole
+ * frame, then falls back to the lit pixel whose count is closest to the range.
+ */
+export function rollPixel(
+  lo: Uint32Array,
+  hi: Uint32Array,
+  width: number,
+  height: number,
+  dice: number,
+  min = LOUPE_MIN,
+  max = LOUPE_MAX,
+): { x: number; y: number; count: bigint } {
+  const countAt = (i: number): bigint => (BigInt(lo[i]) + (BigInt(hi[i]) << 32n)) / 65536n;
+  const lo64 = BigInt(min);
+  const hi64 = BigInt(max);
   let h = pcg(dice >>> 0);
-  for (let tries = 0; tries < 100000; tries++) {
-    h = pcg(h);
-    // Keep away from the edges so the loupe pixel is a typical one.
-    const x = Math.floor(width * 0.2 + ((h >>> 8) / 16777216) * width * 0.6);
-    h = pcg(h);
-    const y = Math.floor(height * 0.2 + ((h >>> 8) / 16777216) * height * 0.6);
-    const i = y * width + x;
-    const units = BigInt(lo[i]) + (BigInt(hi[i]) << 32n);
-    if (units > 0n) return { x, y, count: units / 65536n };
+  for (const span of [0.6, 1]) {
+    for (let tries = 0; tries < 200000; tries++) {
+      h = pcg(h);
+      const x = Math.floor(width * (0.5 - span / 2) + ((h >>> 8) / 16777216) * width * span);
+      h = pcg(h);
+      const y = Math.floor(height * (0.5 - span / 2) + ((h >>> 8) / 16777216) * height * span);
+      const count = countAt(y * width + x);
+      if (count >= lo64 && count <= hi64) return { x, y, count };
+    }
   }
-  throw new Error("No lit pixel found for the loupe");
+  // Full scan: the lit pixel nearest the range, ties broken by grid order.
+  let best = -1;
+  let bestGap = -1;
+  for (let i = 0; i < lo.length; i++) {
+    if (lo[i] === 0 && hi[i] === 0) continue;
+    const c = Number(countAt(i));
+    if (c === 0) continue;
+    const gap = c < min ? min / c : c > max ? c / max : 1;
+    if (best < 0 || gap < bestGap) {
+      best = i;
+      bestGap = gap;
+      if (gap === 1) break;
+    }
+  }
+  if (best < 0) throw new Error("No lit pixel found for the loupe");
+  return { x: best % width, y: Math.floor(best / width), count: countAt(best) };
 }
 
 /**
@@ -308,4 +361,89 @@ class CameraPathAt {
 
 export function pullBackLabel(s: FrameStats): string[] {
   return [`PARTICLES RENDERED ${big(s.evaluated)}`, `IN VIEW ${big(s.landed)} (COUNTED ON THE GPU)`, `STATELESS  TIME FROZEN`];
+}
+
+// -------------------------------------------------------------- ladder ----
+
+/**
+ * The scale ladder: the frozen world at 1M, 100M, 10B and 1T. Rungs above the
+ * world's own count are left out and the world's total is always the top rung. Every sheet's count is scaled by the same
+ * factor, so the rungs are nested and differ only in grain. Exposure is locked
+ * per particle: each rung uses the top rung's white point scaled by its count,
+ * so all rungs share one mean brightness. Each rung is held 1.5 s.
+ * Cost: one frame per rung, about 1.01 trillion-frames for the default rungs.
+ */
+export function ladderPasses(o: ShotOptions, counts: readonly number[] = DEFAULT_RUNGS): Pass[] {
+  const world = baseWorld(o);
+  const total = totalParticles(world);
+  const rungs = [...new Set(counts.filter((n) => n >= 1 && n <= total))].sort((a, b) => a - b);
+  // The ladder always ends on the whole world, also in a reduced-count preview.
+  if (rungs.length === 0 || rungs[rungs.length - 1] < total) rungs.push(total);
+  const top = rungs[rungs.length - 1];
+  const key = (n: number) => `ladder-${shortCount(n)}-`;
+  return rungs.map((n) => ({
+    key: key(n),
+    job: { ...scaleParticles(world, n), name: `ladder ${shortCount(n)}` },
+    hold: Math.max(1, Math.round(o.fps * 1.5)),
+    lock: { key: key(top), scale: n / top },
+  }));
+}
+
+export function ladderLabel(s: FrameStats): string[] {
+  return [`PARTICLES RENDERED ${big(s.evaluated)}`, `IN VIEW ${big(s.landed)} (COUNTED ON THE GPU)`, `SAME SHOT, SAME EXPOSURE PER PARTICLE`];
+}
+
+// ------------------------------------------------------------ collapse ----
+
+/**
+ * The ending: time frozen, the whole world shrinks toward one pixel until
+ * every particle lands in it. Each frame scales every sheet's offset from the
+ * collapse point and its half size by s, easing in log space from 1 to a world
+ * radius of 0.15 pixel, so it is a per-frame job transform and no shader
+ * changes. The collapse point is the world point behind the center of pixel
+ * (width/2, height/2) at the target's depth, so the end is one pixel, not the
+ * four around the image center. In count weighting that pixel ends holding
+ * exactly every particle (landed == evaluated, one lit pixel). Exposure is
+ * locked to the first frame, so the gathering light clips to white. The last
+ * frame is held 2 s and doubles as the video's opening frame.
+ * Cost: every frame is a full frame of the world (4 s at 30 fps: 120).
+ */
+export function collapsePasses(o: ShotOptions, seconds = 4): Pass[] {
+  const world = baseWorld(o);
+  const pose = new CameraPath(world.camera).at(0);
+  const cam = cameraBasis(pose);
+  // World size of one pixel at the target's depth (square pixels, see planeHomography).
+  const pixel = pose.distance / ((0.5 * world.height) / Math.tan(pose.fovY / 2));
+  // Pixel centers sit at half integers: +x is right, +y is down the image.
+  const point = add(pose.target, scale(sub(cam.right, cam.up), 0.5 * pixel));
+  let reach = 0;
+  for (const p of world.planes) {
+    const d = sub(p.position, point);
+    reach = Math.max(reach, Math.hypot(d[0], d[1], d[2]) + Math.hypot(p.halfSize[0], p.halfSize[1]));
+  }
+  const end = (0.15 * pixel) / Math.max(reach, 1e-30);
+  const frames = Math.max(2, Math.round(seconds * o.fps));
+  const key = (f: number) => `collapse-${String(f).padStart(4, "0")}-`;
+  const out: Pass[] = [];
+  for (let f = 0; f < frames; f++) {
+    const u = f / (frames - 1);
+    const s = Math.exp(Math.log(end) * u * u * (3 - 2 * u));
+    const planes = world.planes.map((p) => ({
+      ...p,
+      position: add(point, scale(sub(p.position, point), s)),
+      halfSize: [p.halfSize[0] * s, p.halfSize[1] * s] as [number, number],
+    }));
+    out.push({
+      key: key(f),
+      job: { ...world, name: `collapse ${f}`, planes, camera: [{ t: 0, ...pose }] },
+      hold: f === frames - 1 ? Math.max(1, Math.round(o.fps * 2)) : 1,
+      lock: { key: key(0), scale: 1 },
+    });
+  }
+  return out;
+}
+
+export function collapseLabel(s: FrameStats): string[] {
+  const where = s.litPixels === 1 ? "ALL OF THEM IN ONE PIXEL" : `LIT PIXELS ${big(s.litPixels)}`;
+  return [`PARTICLES RENDERED ${big(s.evaluated)}`, `IN VIEW ${big(s.landed)} (COUNTED ON THE GPU)`, where];
 }

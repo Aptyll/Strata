@@ -2,13 +2,13 @@
 // addPlane / removePlane calls, fades planes with PlaneDesc.brightness and
 // pauses the ones that are asleep. Depends only on the PlaneHost contract.
 
-import type { AppContext, PlaneHost, PlaneInstance } from '../core/contracts';
+import type { AppContext, CameraState, PlaneHost, PlaneInstance, Vec3 } from '../core/contracts';
 import { toPlaneDesc } from './scene';
 import type { PlaneDescOptions } from './scene';
 import { createStreamer, SLOT_AWAKE } from './streamer';
 import type { StreamCamera, Streamer, StreamerOptions } from './streamer';
 import { createWorld } from './world';
-import type { PlaneSource, WorldOptions } from './world';
+import type { Plane, PlaneSource, World, WorldOptions } from './world';
 
 export interface WorldDriverOptions extends StreamerOptions, PlaneDescOptions {
   /** Registered behavior ids to hand out. Plane behavior indices wrap around this list. */
@@ -112,14 +112,10 @@ export interface StreamingWorld extends WorldDriver {
  * World units are scaled for the engine (sheets a few units across).
  */
 export function startStreamingWorld(app: AppContext, options: StreamingWorldOptions = {}): StreamingWorld {
-  const world = createWorld({
-    sectorSize: 12,
-    particleDensity: 5000,
-    minParticles: 2000,
-    maxParticles: 2_000_000,
-    ...options,
-  });
+  const world = createEngineWorld(options);
   const driver = createWorldDriver(app, world, {
+    // 3.5 sectors, so a structure framed by openingCamera sits inside the full-brightness zone.
+    loadRadius: world.sectorSize * 3.5,
     maxPlanes: 192,
     maxAwake: 64,
     maxParticles: 8_000_000,
@@ -141,4 +137,53 @@ export function startStreamingWorld(app: AppContext, options: StreamingWorldOpti
       driver.update({ position: eye, forward: l > 0 ? [d[0] / l, d[1] / l, d[2] / l] : undefined }, dt);
     },
   };
+}
+
+/** The world startStreamingWorld streams, scaled for the engine (sheets a few units across). */
+export function createEngineWorld(options: WorldOptions = {}): World {
+  return createWorld({
+    sectorSize: 12,
+    particleDensity: 5000,
+    minParticles: 2000,
+    maxParticles: 2_000_000,
+    ...options,
+  });
+}
+
+/**
+ * A camera that opens on the structure nearest the origin, framed to fill the
+ * view. Without it the opening view can be empty: structures sit wherever
+ * their sector put them. Pass the same world options as startStreamingWorld.
+ */
+export function openingCamera(options: WorldOptions = {}, fovY = (50 * Math.PI) / 180): CameraState {
+  const world = createEngineWorld(options);
+  const S = world.sectorSize;
+  let best: { center: Vec3; radius: number; dist: number } | null = null;
+  for (let cz = -3; cz <= 2; cz++) {
+    for (let cy = -3; cy <= 2; cy++) {
+      for (let cx = -3; cx <= 2; cx++) {
+        const planes = world.sector(cx, cy, cz).filter((p) => p.kind !== 'stray');
+        if (planes.length === 0) continue;
+        const bounds = boundingSphere(planes);
+        const dist = Math.hypot(...bounds.center);
+        // Prefer near structures, then big ones.
+        if (!best || dist - bounds.radius < best.dist - best.radius) best = { ...bounds, dist };
+      }
+    }
+  }
+  if (!best) return { target: [S / 2, S / 2, S / 2], yaw: 0.6, pitch: -0.35, distance: S, fovY };
+  // Back off until the bounding sphere fits the vertical field of view, with a little margin.
+  const distance = (best.radius / Math.sin(fovY / 2)) * 0.9;
+  return { target: best.center, yaw: 0.6, pitch: -0.35, distance, fovY };
+}
+
+function boundingSphere(planes: readonly Plane[]): { center: Vec3; radius: number } {
+  const center: Vec3 = [0, 0, 0];
+  for (const p of planes) for (let i = 0; i < 3; i++) center[i] += p.position[i] / planes.length;
+  let radius = 0;
+  for (const p of planes) {
+    const d = Math.hypot(p.position[0] - center[0], p.position[1] - center[1], p.position[2] - center[2]);
+    radius = Math.max(radius, d + p.radius);
+  }
+  return { center, radius };
 }

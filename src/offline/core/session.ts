@@ -24,6 +24,7 @@ export interface FileStore {
   read(name: string): Promise<Uint8Array | null>;
   /** Must be atomic: a reader never sees a half-written file. */
   write(name: string, data: Uint8Array): Promise<void>;
+  /** Removing a file that does not exist is not an error. */
   remove(name: string): Promise<void>;
 }
 
@@ -147,6 +148,8 @@ export async function renderJob(
         break;
       }
       if (await store.read(frameStatsName(frame))) {
+        // A finished frame needs no checkpoint. Earlier versions could leave one behind.
+        await store.remove(partialName(frame));
         skipped++;
         continue;
       }
@@ -162,26 +165,26 @@ export async function renderJob(
       if (opts.signal?.aborted) inner.abort();
       let result;
       try {
-      result = await renderer.renderFrame(frame, {
-        resume,
-        signal: inner.signal,
-        onPartial: opts.onPartial
-          ? { everyMs: (opts.previewSeconds ?? 15) * 1000, show: (acc, done, total) => opts.onPartial!(frame, acc, done, total) }
-          : undefined,
-        checkpoint:
-          (opts.checkpointSeconds ?? 300) > 0
-            ? {
-                everyMs: (opts.checkpointSeconds ?? 300) * 1000,
-                save: (cursor, acc) => store.write(partialName(frame), packPartial(job, frame, cursor, acc)),
-              }
+        result = await renderer.renderFrame(frame, {
+          resume,
+          signal: inner.signal,
+          onPartial: opts.onPartial
+            ? { everyMs: (opts.previewSeconds ?? 15) * 1000, show: (acc, done, total) => opts.onPartial!(frame, acc, done, total) }
             : undefined,
-        onProgress: (done, total, batchSize, batchMs) => {
-          const r = batchSize / Math.max(batchMs / 1000, 1e-6);
-          rate = rate === 0 ? r : rate * 0.9 + r * 0.1;
-          opts.onProgress?.({ frame, done, total, rate, batchSize, batchMs });
-          if (opts.shouldStop?.()) inner.abort();
-        },
-      });
+          checkpoint:
+            (opts.checkpointSeconds ?? 300) > 0
+              ? {
+                  everyMs: (opts.checkpointSeconds ?? 300) * 1000,
+                  save: (cursor, acc) => store.write(partialName(frame), packPartial(job, frame, cursor, acc)),
+                }
+              : undefined,
+          onProgress: (done, total, batchSize, batchMs) => {
+            const r = batchSize / Math.max(batchMs / 1000, 1e-6);
+            rate = rate === 0 ? r : rate * 0.9 + r * 0.1;
+            opts.onProgress?.({ frame, done, total, rate, batchSize, batchMs });
+            if (opts.shouldStop?.()) inner.abort();
+          },
+        });
       } catch (e) {
         // A stop requested through shouldStop ends the run cleanly; an aborted signal rejects.
         if ((e as DOMException).name === "AbortError" && !opts.signal?.aborted && opts.shouldStop?.()) {
@@ -193,9 +196,13 @@ export async function renderJob(
         opts.signal?.removeEventListener("abort", forward);
       }
 
-      // The GPU's own count must match the world, or the frame is not what it claims.
+      // The evaluated count must match the world, or the frame is not what it
+      // claims. The offline kernel counts on the GPU, so this checks real work.
+      // The trillion kernel's count is summed by the host from dispatch sizes,
+      // so there it only checks that the dispatches covered the world.
       if (result.gpuEvaluated !== BigInt(renderer.total)) {
-        throw new Error(`Frame ${frame}: the GPU evaluated ${result.gpuEvaluated} particles, expected ${renderer.total}`);
+        const who = renderer.evaluatedBy === "gpu" ? "the GPU evaluated" : "the dispatches covered";
+        throw new Error(`Frame ${frame}: ${who} ${result.gpuEvaluated} particles, expected ${renderer.total}`);
       }
       const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
       const stats = frameStats(frame, result, developed, {
@@ -206,7 +213,10 @@ export async function renderJob(
       });
       await store.write(frameImageName(frame), await encodeGrayPng(developed.codes, job.width, job.height, zlib));
       await store.write(frameStatsName(frame), text.encode(JSON.stringify(stats)));
-      if (partialFile) await store.remove(partialName(frame));
+      // Always, not only when the frame started from a checkpoint: checkpoints
+      // saved during this frame are a full grid each (66 MB at 4K) and would
+      // otherwise pile up, one per long frame, in the folder or browser storage.
+      await store.remove(partialName(frame));
       rendered++;
       opts.onFrame?.(stats, resume !== undefined);
     }
@@ -223,9 +233,17 @@ export interface GradeOptions {
 }
 
 export function defaultLabel(stats: FrameStats, job: OfflineJob): string[] {
+  // Claim "evaluated" only when the GPU counted it. With the trillion kernel
+  // the count comes from dispatch sizes, so the label says dispatched.
+  const verb = stats.evaluatedBy === "host" ? "dispatched" : "evaluated";
   const lines: string[] = [
-    `${withCommas(totalParticles(job))} particles, every one evaluated every frame`,
+    `${withCommas(totalParticles(job))} particles, every one ${verb} every frame`,
     "Stateless: closed-form motion, nothing stored per particle",
+    // Flux weighting rounds each weight at random, so a faint far particle is
+    // drawn only in expectation. Say so instead of implying one unit each.
+    job.weighting === "count"
+      ? "Each particle in frame adds exactly one unit of light"
+      : "Far particles dimmed by random rounding: drawn on average, not each",
   ];
   return [...lines, `In frame: ${withCommas(stats.landed)}`];
 }

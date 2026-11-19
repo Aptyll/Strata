@@ -2,14 +2,15 @@
  * The about card: one screen that answers "what am I looking at?".
  *
  *   what you are looking at    sheets, behaviors, why brighter means denser
- *   right now, live            particles simulated this frame, stored, per pixel, fps
+ *   right now, live            particles simulated this frame, stored, frames per second, per pixel
  *   the trillion               rendered, not simulated, and what that means
  *   the sheets in this world   each behavior in the world with its one sentence
  *
  * The live numbers come from the running world and refresh while the card is
  * open. The definitions are the TERMS in ./words.ts, word for word, so the
  * card, the stats line and the docs cannot drift apart. The only fixed claims
- * are the measured trillion numbers in MEASURED, each quoted with its GPU.
+ * are the measured trillion frame times in MEASURED, quoted with their GPU and
+ * with which of the two ways of adding light each one belongs to.
  */
 import { census, censusLine, totals, type Sheet } from "./sheets";
 import { MEASURED, TERMS, exactCount, perPixel, plural } from "./words";
@@ -42,8 +43,15 @@ export interface About {
   refresh(): void;
 }
 
-/** Text with some runs emphasised: plain strings, and [text] for the strong ones. */
+/** Text with some runs emphasised: plain strings, [text] for the strong ones, or a ready-made node. */
 type Rich = Array<string | [string] | Node>;
+
+/** The key hints in the card's footer: where the rest of the information lives. ./index.ts makes each key do what it says. */
+const FOOTER_KEYS: ReadonlyArray<readonly [key: string, what: string]> = [
+  ["?", "all controls"],
+  ["h", "live numbers"],
+  ["esc", "close"],
+];
 
 export function createAbout(root: HTMLElement, sources: AboutSources, options: AboutOptions): About {
   const doc = root.ownerDocument;
@@ -71,11 +79,21 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
     a.rel = "noopener";
     return a;
   };
+  /** One number with the words that say what it counts: <div><dt>label</dt><dd>value</dd></div>, drawn value first. */
+  const number = (list: HTMLElement, label: string) => {
+    const wrap = h("div", "si-number");
+    const dt = h("dt", undefined, label);
+    const dd = h("dd", undefined, "-");
+    wrap.append(dt, dd);
+    list.append(wrap);
+    return { wrap, dd };
+  };
 
   const el = h("div", "si-about");
   el.setAttribute("aria-hidden", "true");
   const card = h("div", "si-card");
   card.setAttribute("role", "dialog");
+  card.setAttribute("aria-modal", "true");
   card.setAttribute("aria-label", "What you are looking at");
   card.tabIndex = -1;
   const close = h("button", "si-close", "close");
@@ -88,35 +106,28 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
     sheetCount,
     " floating in it. Each sheet runs its own 2D particle system and follows one rule, its ",
     ["behavior"],
-    ". Every dot is one particle. Where particles overlap their light adds up, so brighter means denser.",
+    ". Each particle is drawn as one dot of light. Where particles overlap their light adds up, so brighter means denser.",
   ]);
 
   // ---- right now, live --------------------------------------------------------
-  const numbers = h("dl", "si-numbers");
-  const number = (label: string) => {
-    const wrap = h("div");
-    const dd = h("dd", undefined, "-");
-    const dt = h("dt", undefined, label);
-    wrap.append(dd, dt);
-    numbers.append(wrap);
-    return { dd, dt };
-  };
-  const simulated = number("particles simulated this frame");
-  const fps = number("frames per second");
-  const stored = number("particles stored");
-  const density = number("simulated particles per pixel");
+  const hero = h("dl", "si-live si-hero");
+  const simulated = number(hero, "particles simulated this frame");
+  const facts = h("dl", "si-live si-facts");
+  const stored = number(facts, "stored");
+  const fps = number(facts, "frames per second");
+  const density = number(facts, "simulated per pixel");
   const live = rich([...define(TERMS.simulated), ...define(TERMS.stored)]);
 
   // ---- the trillion -------------------------------------------------------------
-  const [fast, slow] = MEASURED.trillionFrameSeconds;
+  const { exact, averaged } = MEASURED.trillionFrameSeconds;
   const trillion = rich([
     "The frames with ",
     [exactCount(MEASURED.trillion)],
-    " particles are made offline, a different way: a trillion particles do not fit in a graphics card's memory.",
+    " particles are not this live world. They are made offline, one frame at a time, in a different way, because a trillion particles do not fit in a graphics card's memory.",
   ]);
-  const renderedText = rich([
-    ...define(TERMS.rendered),
-    `One 4K frame took ${fast} to ${slow} seconds on an ${MEASURED.gpu}.`,
+  const renderedText = rich(define(TERMS.rendered));
+  const measured = rich([
+    `On an ${MEASURED.gpu}, one 4K frame takes about ${exact[0]} to ${exact[1]} seconds when every particle in view adds exactly one unit of light, and ${averaged[0]} to ${averaged[1]} seconds when far particles are drawn on average instead of one by one.`,
   ]);
   const links = h("p", "si-links");
   links.append(
@@ -128,19 +139,21 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
   // ---- the sheets in this world -------------------------------------------------
   const legend = h("dl", "si-legend");
 
-  card.append(
-    close,
-    h("h2", undefined, "what you are looking at"), intro,
-    h("h2", undefined, "right now, live"), numbers, live,
-    h("h2", undefined, "the trillion is rendered, not simulated"), trillion, renderedText, links,
-    h("h2", undefined, "the sheets in this world"), legend,
+  const column = (...nodes: Node[]) => {
+    const section = h("section");
+    section.append(...nodes);
+    return section;
+  };
+  const columns = h("div", "si-cols");
+  columns.append(
+    column(h("h2", undefined, "what you are looking at"), intro, h("h2", undefined, "right now, live"), hero, facts, live),
+    column(h("h2", undefined, "the trillion is rendered, not simulated"), trillion, renderedText, measured, links),
   );
+  card.append(close, columns, h("h2", undefined, "the sheets in this world"), legend);
   // Footer: where the rest of the information lives. Keys only, so a touch screen goes without.
   if (!options.touch) {
     const foot = h("div", "si-foot");
-    for (const [key, what] of [["?", "all controls"], ["h", "live numbers"], ["esc", "settings"], ["i", "close"]]) {
-      foot.append(rich([[key], what], "span"));
-    }
+    for (const [key, what] of FOOTER_KEYS) foot.append(rich([[key], what], "span"));
     card.append(foot);
   }
   el.append(card);
@@ -161,7 +174,9 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
     set(fps.dd, rate > 0 ? String(Math.round(rate)) : "-");
     const size = sources.pixels();
     set(density.dd, size ? perPixel(t.simulated, size[0] * size[1]) : "-");
-    set(density.dt, size ? `simulated particles per pixel (${size[0]} × ${size[1]})` : "simulated particles per pixel");
+    // The sum behind the ratio, for anyone who points at it.
+    const sum = size ? `${exactCount(t.simulated)} particles simulated ÷ ${exactCount(size[0] * size[1])} pixels (${size[0]} × ${size[1]})` : "";
+    if (density.wrap.title !== sum) density.wrap.title = sum;
 
     // Rebuild the list only when the cast of behaviors changes (a dice roll, a new sheet count).
     const rows = census(sheets);

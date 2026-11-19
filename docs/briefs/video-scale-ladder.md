@@ -1,9 +1,9 @@
 # Brief: the video scale ladder and the one-pixel ending
 
-Owner (2026-11-19): the ladder itself is done in the Node runner (PR #59);
-the browser ladder and the one-pixel ending are unowned. It builds on
-`src/proof` (proof shots thread) and `src/offline` (offline renderer thread);
-coordinate with both.
+Owner (2026-11-19): done. The ladder runs in the Node runner (PR #59) and in
+the browser as the `ladder` and `collapse` shots on `/src/proof/web/`
+(PR #79). It builds on `src/proof` (proof shots thread) and `src/offline`
+(offline renderer thread).
 
 ## State on main (after PR #68)
 
@@ -13,10 +13,14 @@ coordinate with both.
   Exposure is locked per particle (white scales with the count). This is the
   proportional prefix and locked exposure described below.
 - Done, PR #65: per-thread write combining in the accumulate shader.
-- Open: the Node runner cannot run on Noah's PC (Windows Application Control
-  blocks `dawn.node`), so the ladder needs a browser entry point
-  (`/src/offline/web/` or `/src/proof/web/`). The one-pixel collapse and the
-  one-pixel opening frame do not exist yet.
+- Done, PR #79: the browser entry point, since the Node runner cannot run on
+  Noah's PC (Windows Application Control blocks `dawn.node`). `/src/proof/web/`
+  has a `ladder` shot (1M, 100M, 10B, 1T, always ending on the world's total,
+  exposure locked per particle) and a `collapse` shot: every sheet shrinks
+  toward the world point behind the center pixel until all particles land on
+  one pixel, exposure locked to the first frame. Its last frame, held 2 s, is
+  the one-pixel opening frame. Checked on a software GPU: 4,000,000 particles,
+  1 lit pixel.
 
 ## Context
 

@@ -24,6 +24,7 @@ import { KEYS, createKeyRouter } from "./app/keys";
 import { createFpsMeter, createFrameLoop } from "./app/loop";
 import { readOptions, type AppOptions } from "./app/options";
 import { createSceneHost } from "./app/scene";
+import { mountSound } from "./audio";
 import { mountCapture } from "./capture/app";
 import type { AppContext, GpuContext } from "./core/contracts";
 import { createParallaxCamera } from "./depth";
@@ -32,19 +33,22 @@ import { mountRecord } from "./record";
 import { mountPanels } from "./ui";
 import { mountAutoCam } from "./ux/autocam";
 import { attachCameraInput, createCamera } from "./ux/camera";
+import { applyMobileBudget, mountMobileControls } from "./ux/mobile";
 import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
+import { mountRecovery, reportBootFailure } from "./ux/recovery";
 import { startStreamingWorld } from "./world";
 
-const options = readOptions(location.search);
+const options = applyMobileBudget(readOptions(location.search), location.search); // phones get a smaller budget (src/ux/mobile)
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
 if (options.challenge) {
   void import("./challenge/main").then((m) => m.startChallenge(canvas));
 } else {
-  void startApp(canvas, options);
+  // A throw during boot would otherwise leave a black page with no reason on it.
+  startApp(canvas, options).catch((err) => reportBootFailure(err, { particles: options.particles }));
 }
 
 async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise<void> {
@@ -56,7 +60,10 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     console.warn(err);
     canvas.remove();
     const cap = await detectCapability();
-    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap);
+    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap, {
+      fullCount: options.particles,
+      sheets: options.planes,
+    });
     return;
   }
 
@@ -98,11 +105,14 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // ---- people: HUD, pointer forces, the opening ----------------------------
   // Brushes swallow a held pointer's moves, so they must register after the HUD's own pointer listeners.
   const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view });
+  mountMobileControls(ui.hud); // tap target for the Esc menu on touch screens
   const brushes = attachBrushes(canvas, view, () => sim.planes);
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.
   const intro =
     options.intro && options.world === null
-      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height))
+      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height), {
+          cameraKeys: keys.cameraTarget,
+        })
       : null;
 
   // One-line gesture hints and the die's breathing, on one schedule; never during the opening.
@@ -133,6 +143,12 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
 
+  // ---- sound: off on every load; M or the Esc menu turns it on (src/audio, docs/audio.md) ----
+  const sound = mountSound({
+    app, hud: ui.hud, viewport: () => ({ width: graph.width, height: graph.height }), key: KEYS.sound,
+  });
+  loop.hooks.push({ afterFrame: (f) => sound.frame(f) });
+
   // ---- capture: P screenshot, V record, stills and offline video in the menu ----
   mountCapture({
     canvas,
@@ -159,6 +175,15 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     if (id === "record") loop.offline = running;
   });
   if (options.record) setTimeout(() => record.start(), 500);
+
+  // ---- when the GPU fails later: device lost, or a particle count it cannot hold (src/ux/recovery) ----
+  mountRecovery({
+    device: gpu.device,
+    scenes,
+    notify: (text) => ui.hud.status(text, 8000),
+    onLost: () => (loop.offline = true),
+    busy: () => ui.hud.busy,
+  });
 
   loop.start();
 }

@@ -4,15 +4,15 @@
  * color themes (src/ux/theme: a "theme" menu section and T), then adds what
  * only the app knows about:
  *
- *   menu      planes, rasterizer, look (bloom, trails, white point, pointer
- *             parallax, plane crossings), performance (hold frame rate,
- *             target fps, challenge)
- *   stats     "total": particle capacity across every plane (shown as "stored")
+ *   menu      sheets, render (which rasterizer), look (bloom, trails, white
+ *             point, contrast, pointer parallax, sheet crossings), performance
+ *             (hold frame rate, target fps, challenge)
  *   keys      ] [ particles, = - brightness, G nearest sheet (rows in ./keys.ts)
  *
- * Last, the information layer (src/ux/info) gives the stats their words
- * (simulated, stored, sheets) and adds the sheet label, the full controls
- * list and the about card behind I.
+ * Last, the information layer (src/ux/info) gives the stats line its words
+ * ("1.20M simulated  2.00M stored  32 sheets", the second count only while
+ * some sheets rest) and adds the sheet label, every control behind ? and the
+ * about card behind I.
  *
  * Capture adds its own "capture" section and keys (src/capture/app.ts).
  * Registration order is menu order, so keep new entries at the end of their group.
@@ -69,13 +69,7 @@ export function mountAppHud({ app, canvas, scenes, render, budget, camera, view 
   // What the words on screen say: labelled counts, the sheet label, every control behind ?, about behind I.
   mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
 
-  return {
-    hud,
-    update(dt) {
-      update(dt);
-      hud.setStat("total", scenes.total);
-    },
-  };
+  return { hud, update };
 }
 
 function registerMenu(
@@ -83,14 +77,16 @@ function registerMenu(
   { scenes, render, budget, view }: Pick<AppHudDeps, "scenes" | "render" | "budget" | "view">,
 ): void {
   hud.registerParam({
-    id: "planes", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: scenes.planeCount,
+    id: "planes", label: "sheets", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: scenes.planeCount,
     onChange: (v) => {
       scenes.planeCount = Math.round(v);
       scenes.rebuild();
     },
   });
   hud.registerParam({
-    id: "rasterizer", type: "select", group: "performance",
+    // Keep the label short: the select is as wide as its longest option, up to the
+    // HUD's 150px cap, which leaves room for about nine characters (changed dot included).
+    id: "rasterizer", label: "render", type: "select", group: "performance",
     value: render.rasterizer.current(),
     options: RASTERIZERS.map((r) => ({ value: r.pass, label: r.label })),
     onChange: render.rasterizer.set,
@@ -111,13 +107,20 @@ function registerMenu(
       id: "white", label: "white point", type: "range", scale: "log", group: "look", min: 1, max: 100_000,
       value: look.tone.white, onChange: (v) => (look.tone.white = v),
     });
+    // Power on the tone curve's output. 1 is the default look; about 2.2 undoes the second
+    // brightening that the sRGB encode adds on top of the log curve
+    // (docs/briefs/visual/V02-tone-curve-lifts-mid-greys.md).
+    hud.registerParam({
+      id: "contrast", type: "range", group: "look", min: 1, max: 3, step: 0.1,
+      value: look.tone.contrast ?? 1, onChange: (v) => (look.tone.contrast = v),
+    });
   }
   hud.registerParam({
     id: "parallax", label: "pointer parallax", type: "toggle", group: "look",
     value: view.parallax.enabled, onChange: (on) => (view.parallax.enabled = on),
   });
   hud.registerParam({
-    id: "interplane", label: "plane crossings", type: "toggle", group: "look",
+    id: "interplane", label: "sheet crossings", type: "toggle", group: "look",
     value: render.interplane.enabled, onChange: render.interplane.set,
   });
 

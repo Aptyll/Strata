@@ -1,12 +1,12 @@
 /**
  * The words Strata uses with viewers, and how it writes counts. One place, so
- * the stats line, the sheet label, the about card and the Esc menu all say the
- * same thing. Design notes and the full rules: docs/ux/information.md.
+ * the stats line, the sheet label and the about card all say the same thing.
+ * The vocabulary and the rules: docs/ux/information.md.
  *
  * The one rule that must never slip (CLAUDE.md, "Honest counting"): a count
  * always carries the word that says what was done to those particles.
  *
- *   simulated   stored state, stepped every frame      the live world, challenge mode
+ *   simulated   stored state, stepped this frame       the live world
  *   stored      held in GPU memory, maybe resting      the live world
  *   rendered    stateless, computed and forgotten      the trillion (offline)
  *
@@ -23,7 +23,7 @@ export interface Term {
 export const TERMS = {
   particle: {
     word: "particle",
-    means: "One white dot. Where particles overlap their light adds up, so brighter means denser.",
+    means: "One dot of light. Where particles overlap their light adds up, so brighter means denser.",
   },
   sheet: {
     word: "sheet",
@@ -40,26 +40,36 @@ export const TERMS = {
   },
   stored: {
     word: "stored",
-    means: "Particles held in GPU memory. Sheets outside the view rest, so fewer may be simulated than stored.",
+    means:
+      "Particles held in GPU memory. A sheet that is out of view rests, and a sheet can be thinned to hold the frame rate, so fewer may be simulated than stored.",
   },
   rendered: {
     word: "rendered",
     means:
-      "Nothing is stored. Each particle's position is computed from its number and the time, added to the picture and forgotten.",
+      "Nothing is stored. For each frame, every particle's position is computed from its number and the time. The ones that land in view add light to the picture, and nothing is kept for the next frame.",
   },
 } as const satisfies Record<string, Term>;
 
 /**
  * Measured results the app is allowed to quote, with the hardware they were
- * measured on. Source: README.md and docs/perf.md. When a new number is
- * measured on the real GPU, change it here and the about card follows.
+ * measured on. Source: README.md ("The numbers", "Rendered, not simulated").
+ * When a new number is measured on the real GPU, change it there and here.
  */
 export const MEASURED = {
   gpu: "RTX 2070",
   /** Particles in one offline 4K frame. */
   trillion: 1_000_000_000_000,
-  /** Seconds per 4K trillion frame, fastest and slowest framing. */
-  trillionFrameSeconds: [26, 52],
+  /**
+   * Seconds per 4K trillion frame, fastest and slowest framing, for the two
+   * ways a particle's light is added. The times differ sixfold, so a time is
+   * never quoted without saying which one it is.
+   */
+  trillionFrameSeconds: {
+    /** Count weighting: every particle in view adds exactly one unit (the proof shots). */
+    exact: [160, 193],
+    /** Flux weighting: far particles get a randomly rounded weight, often zero (the record stills). */
+    averaged: [26, 52],
+  },
 } as const;
 
 /** 1048576 -> "1.05M". Three significant digits with K, M, B or T, for lines that must stay short. */
@@ -80,3 +90,11 @@ export function perPixel(particles: number, pixels: number): string {
   const r = particles / pixels;
   return r >= 100 ? exactCount(r) : r >= 10 ? r.toFixed(1) : r.toFixed(2);
 }
+
+/**
+ * How long a caption of this many characters should stay up so it can be read,
+ * in milliseconds: about 17 characters a second plus a second to notice it,
+ * never less than 4 s or more than 10 s.
+ */
+export const readingMs = (characters: number): number =>
+  Math.min(10_000, Math.max(4_000, 1_000 + (Math.max(0, characters) / 17) * 1_000));

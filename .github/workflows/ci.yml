@@ -41,7 +41,34 @@ jobs:
       - name: Type check and build
         run: npm run build
 
-      # Every *.test.* file under src/, a few seconds, no GPU. Shader checks
-      # (npm run verify) need a browser with WebGPU and are not run here yet.
+      # Every *.test.* file under src/, a few seconds, no GPU.
       - name: Unit tests
         run: npm test
+
+  # WGSL is only compiled by the GPU driver at run time, so tsc cannot see a
+  # broken shader. This job compiles every production shader and runs the
+  # shader correctness cases on a software GPU (SwiftShader) in headless
+  # Chromium. It proves the shaders are valid and correct, never how fast.
+  shaders:
+    name: Shader checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Playwright is not a project dependency (threads use the one installed
+      # in their sandbox), so CI installs a pinned copy just for this job.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Shader checks (npm run verify)
+        run: npm run verify

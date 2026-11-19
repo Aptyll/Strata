@@ -185,6 +185,10 @@ in `driver.ts` maps the streamer onto the `PlaneHost` contract:
 5,000 particles per square unit, 2,000 to 2 million per plane, 192 slots with
 64 awake. All of it can be overridden through its options.
 
+The opening camera comes from `openingCamera({ seed })`: it frames the structure
+nearest the origin, so the first view is never empty. The streamer's load
+radius is 3.5 sectors, so that framed structure sits at full brightness.
+
 Limits to know about:
 
 - Loading another scene (dice roll, plane count slider) clears the streamed

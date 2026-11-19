@@ -1,8 +1,12 @@
 # Brief: one rasterizer for the realtime app
 
-Owner (2026-11-19): unowned. The cleanup threads own `src/render`,
-`src/depth`, `src/passes`, `src/perf`, `src/challenge` and `src/gpu`, so agree
-the plan with them before editing.
+Owner (2026-11-19): steps 2 (debug labels), 4 and 5 are done and decided in
+[docs/perf.md](../perf.md), "Decisions" (PR #128). Steps 1, 3 and 6 (one
+compute rasterizer with the cues, `?depth=1`, the docs) belong to the
+brief-executor thread since 02:05 UTC. The plan, a new `src/raster` kernel
+that imports `src/depth` instead of copying it, was agreed with the cleanup
+threads, who own `src/render`, `src/depth`, `src/passes`, `src/perf`,
+`src/challenge` and `src/gpu`.
 
 ## Context
 

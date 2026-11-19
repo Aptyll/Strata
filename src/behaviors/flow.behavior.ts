@@ -1,4 +1,4 @@
-import { defineBehavior } from "./define";
+import { defineBehavior } from "./core";
 
 /**
  * Particles ride a slowly evolving noise field. A curl component makes them

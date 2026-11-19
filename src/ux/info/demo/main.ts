@@ -40,6 +40,8 @@ let scene: Scene = {
 let planes: DemoPlane[] = [];
 /** Stand-in for the frame-rate governor: when on, every other sheet draws half its particles. */
 let thin = false;
+/** Stand-in for sheets out of view: when on, the bottom row rests (stored, not simulated). */
+let rest = false;
 
 function loadScene(next: Scene): void {
   scene = structuredClone(next);
@@ -95,14 +97,24 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 const ui = mountHud(app, { hud: { persist: false, stats: location.hash === "#stats" }, shareLink: false });
+// As sheets out of view do: stored, not simulated.
 ui.hud.registerParam({
-  id: "thin", label: "thin every other sheet (as the frame-rate governor does)", type: "toggle", value: false, persist: false,
+  id: "rest", label: "rest the bottom row", type: "toggle", value: false, persist: false,
+  onChange: (on) => (rest = on),
+});
+// As holding the frame rate does: half the particles simulated.
+ui.hud.registerParam({
+  id: "thin", label: "thin every other sheet", type: "toggle", value: false, persist: false,
   onChange: (on) => (thin = on),
 });
 const info = mountInfo({ hud: ui.hud, app, canvas, rig, base: "/" });
 if (location.hash === "#about") info.about.open();
 if (location.hash === "#keys") ui.hud.toggleHelp();
 if (location.hash === "#stats") focused = planes[2];
+if (location.hash === "#rest") {
+  ui.hud.setParam("rest", true);
+  ui.hud.showStats();
+}
 Object.assign(window, { ui, app, info });
 
 let last = performance.now();
@@ -112,8 +124,10 @@ function frame(now: number): void {
   last = now;
   if (dt > 0) fps += (1 / dt - fps) * 0.05;
   ui.update(dt);
-  ui.hud.setStat("total", planes.reduce((n, p) => n + p.capacity, 0));
-  planes.forEach((p, i) => (p.activeCount = thin && i % 2 ? Math.round(p.capacity / 2) : p.capacity));
+  planes.forEach((p, i) => {
+    const resting = rest && i >= COLS;
+    p.activeCount = resting ? 0 : thin && i % 2 ? Math.round(p.capacity / 2) : p.capacity;
+  });
 
   const dpr = Math.min(devicePixelRatio, 2);
   const w = Math.round(innerWidth * dpr);

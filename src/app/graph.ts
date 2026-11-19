@@ -24,9 +24,9 @@ import { Simulation } from "../sim/simulation";
 /** The interchangeable rasterize passes, in menu order. `url` is the ?raster= value. */
 export const RASTERIZERS = [
   { url: "", pass: "atomic-raster", label: "compute" },
-  { url: "points", pass: "points", label: "points" },
-  { url: "splat", pass: "density-splat", label: "sub-pixel splats" },
-  { url: "sprites", pass: "depth-sprites", label: "depth sprites (fog, focus)" },
+  { url: "points", pass: "points", label: "points (debug, f16 blend)" },
+  { url: "splat", pass: "density-splat", label: "sub-pixel splats (debug)" },
+  { url: "sprites", pass: "depth-sprites", label: "depth sprites (debug, f16 blend)" },
   { url: "hue", pass: "sheet-hue", label: "points, one hue per sheet" },
 ] as const;
 const DEFAULT_RASTERIZER = "atomic-raster";
