@@ -36,6 +36,8 @@ export const A11Y_CSS = `
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--hud-fg), 0.35) transparent;
 }
+/* With the tabbed menu only the pages scroll; give them the same visible scrollbar. */
+.strata-hud .sm-pages { scrollbar-width: thin; scrollbar-color: rgba(var(--hud-fg), 0.35) transparent; }
 .strata-hud .sh-help { background: rgba(var(--hud-bg), 0.82); --hud-a-dim: 0.7; }
 
 /* ---- target sizes (WCAG 2.2: 24px minimum) --------------------------------- */
