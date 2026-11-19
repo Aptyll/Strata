@@ -184,7 +184,10 @@ same into a caller-owned encoder, for frame graphs.
 - **Compute rasterizer.** `createAtomicRasterPass` is the app's default
   rasterizer (`?raster=points` switches back to point lists). It reads the
   standard f32 particle buffers through each plane's `simBindGroup` and adds
-  light per pixel in fixed point, honouring per-plane brightness.
+  light per pixel in fixed point, honouring per-plane brightness. It lives in
+  `src/raster` now (this name is a re-export), where `?subpixel=1` and
+  `?depth=1` add the 2x2 split and the depth cues as separate pipelines, so
+  the default pays nothing for them.
 - **`PerfBudget`** implements `ParticleBudget` and is the app's "hold frame
   rate" option (`?adaptive=1`): a density cap per plane from `screenCoverage`,
   zero for culled planes, and a global governor that steps twice a second:
@@ -211,9 +214,11 @@ From [docs/briefs/unify-rasterizers.md](briefs/unify-rasterizers.md):
   labelled "debug" in the settings menu, because the two blending ones
   saturate near 2048 hits per pixel in `rgba16float`. `sheet-hue`
   (`?raster=hue`, one hue per sheet, added afterwards in #91) is not labelled
-  debug; it blends in f16 like `points`, so it has the same cap. Folding
-  sub-pixel, fog, size falloff and depth of field into the compute pass as
-  options is still open (brief step 1).
+  debug; it blends in f16 like `points`, so it has the same cap. Sub-pixel
+  splats (`?subpixel=1`) and the depth cues (`?depth=1`: fog, size falloff,
+  depth of field) are now options of the compute pass itself (`src/raster`,
+  brief steps 1 and 3), so they no longer need a blending pass. With both off
+  its shader is the same text as before.
 - **`PerfEngine` stays bench-only for now.** It is not wired into
   `src/main.ts`; the app runs `Simulation` plus the compute rasterizer. Wiring
   it behind `?engine=perf` is the next step for the app's high-count path,

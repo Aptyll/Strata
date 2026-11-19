@@ -20,7 +20,7 @@ check `git log` for anything newer.
 | 3 | [honest-counting](honest-counting.md) | The video is only as strong as its proof: exact tally, manifest, wording. | done: tallies (PRs #43, #48, #49, #52), manifest and `npm run record` (PR #94); wording audit clean on main `a453d91` (code, docs and video prompts say "rendered" for the trillion) |
 | 4 | [video-scale-ladder](video-scale-ladder.md) | The deliverable: 1M to 1T on one shot, ending with 1T collapsed into one pixel. | done: Node ladder (PR #59), write combining (PR #65), browser `ladder` and `collapse` shots on `/src/proof/web/` (PR #79) |
 | 5 | [accumulation-and-tonemap](accumulation-and-tonemap.md) | Where 1T looks different from 1B, and how not to hide it. | cleanup threads own `src/render`, `src/depth` |
-| 6 | [unify-rasterizers](unify-rasterizers.md) | Realtime app quality. Off the 1T critical path. | steps 2, 4, 5 done (PR #128, `docs/perf.md` "Decisions"); steps 1, 3, 6 (cues in the compute rasterizer, `?depth=1`, docs): brief-executor thread, since 02:05 UTC |
+| 6 | [unify-rasterizers](unify-rasterizers.md) | Realtime app quality. Off the 1T critical path. | done: decisions and debug labels (PR #128); cues as options of the compute rasterizer in `src/raster`, `?depth=1`, `?subpixel=1`, docs (brief-executor thread). Open: menu switches, a look on the 2070 |
 
 Rule for all of them: Noah asked for speed over verification. Type check
 (`npx tsc --noEmit`) and a quick build (`npm run build`) only; real testing is

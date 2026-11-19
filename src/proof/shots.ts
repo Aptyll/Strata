@@ -100,6 +100,33 @@ export function prefixJob(job: OfflineJob, n: number, name: string): OfflineJob 
   return { ...job, name, frames: 1, planes };
 }
 
+/**
+ * The first `n` particles spread over every sheet in proportion to its size:
+ * sheet i takes its own indices [0, take_i), with
+ *   take_i = floor(n * cum_i / total) - floor(n * cum_(i-1) / total)
+ * (cum_i = particles in sheets 0..i). The parts sum to exactly n and grow with
+ * n, so each count-up stage shows the whole cluster getting denser instead of
+ * one sheet filling at a time. Exact in BigInt (n * cum reaches 10^24).
+ * Stages are nested from about 1,000 particles up; below that, when sheets
+ * hold 0 or 1 particle each, a lone particle can sit on a different sheet from
+ * one stage to the next (checked over the default 1T stages).
+ */
+export function evenPrefixJob(job: OfflineJob, n: number, name: string): OfflineJob {
+  const total = BigInt(totalParticles(job));
+  const N = BigInt(Math.min(n, totalParticles(job)));
+  let cum = 0n;
+  let prev = 0n;
+  const planes = [];
+  for (const p of job.planes) {
+    cum += BigInt(p.particleCount);
+    const upto = (N * cum) / total;
+    const take = Number(upto - prev);
+    prev = upto;
+    if (take > 0) planes.push({ ...p, particleCount: Math.min(take, p.particleCount) });
+  }
+  return { ...job, name, frames: 1, planes };
+}
+
 export interface Pass {
   /** Prefix for this pass's files in the shot folder. */
   key: string;
@@ -120,7 +147,7 @@ export function countUpPasses(o: ShotOptions): Pass[] {
   const total = totalParticles(world);
   return countUpStages(total).map((n, i) => ({
     key: `countup-${String(i).padStart(2, "0")}-`,
-    job: prefixJob(world, n, `countup ${n}`),
+    job: evenPrefixJob(world, n, `countup ${n}`),
     hold: Math.max(6, Math.round(o.fps * 0.4)),
   }));
 }
@@ -144,17 +171,25 @@ export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number,
 
 /** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
 export const LOUPE_MIN = 10_000;
-export const LOUPE_MAX = 50_000;
+// 200k: at 1T sheet interiors run above 100k per pixel (2070 runs, 2026-11-19:
+// the nearest pick held 106,651). Opened at 2160x2160, 200k dots are still
+// about 5 px apart, and drawn 3x3 they cover about 13% of the frame.
+export const LOUPE_MAX = 200_000;
 
 /** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
 export const LOUPE_SIZE = 2160;
 
+/** Each of the 8 neighbours must be within this fraction of the pixel's count: a sheet interior, not an edge. */
+export const LOUPE_FLATNESS = 0.2;
+
 /**
  * Deterministic dice roll over a count grid for a pixel holding between `min`
- * and `max` particles. Opened up at LOUPE_SIZE squared, 50,000 dots are about
- * 10 pixels apart, so every one reads as a separate dot (a 3,000,000 pixel is
- * grey static). Tries random pixels in the central 60% first, then the whole
- * frame, then falls back to the lit pixel whose count is closest to the range.
+ * and `max` particles whose 8 neighbours are all within LOUPE_FLATNESS of it.
+ * Opened up at LOUPE_SIZE squared, 50,000 dots are about 10 pixels apart, so
+ * each reads as a separate dot, and the flat neighbourhood means a sheet fills
+ * the pixel instead of an edge cutting through it. Tries random pixels in the
+ * central 60% first, then the whole frame, then a full scan that relaxes the
+ * rules, nearest first.
  */
 export function rollPixel(
   lo: Uint32Array,
@@ -164,60 +199,68 @@ export function rollPixel(
   dice: number,
   min = LOUPE_MIN,
   max = LOUPE_MAX,
-): { x: number; y: number; count: bigint } {
-  const countAt = (i: number): bigint => (BigInt(lo[i]) + (BigInt(hi[i]) << 32n)) / 65536n;
-  const lo64 = BigInt(min);
-  const hi64 = BigInt(max);
+): { x: number; y: number; count: bigint; interior: boolean } {
+  const countAt = (i: number): number => Number((BigInt(lo[i]) + (BigInt(hi[i]) << 32n)) / 65536n);
+  /** Largest relative difference between the pixel and its 8 neighbours. */
+  const roughness = (x: number, y: number, c: number): number => {
+    if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1 || c === 0) return Infinity;
+    let worst = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        worst = Math.max(worst, Math.abs(countAt((y + dy) * width + x + dx) - c) / c);
+      }
+    return worst;
+  };
+  const pick = (x: number, y: number, interior: boolean) => ({ x, y, count: BigInt(countAt(y * width + x)), interior });
   let h = pcg(dice >>> 0);
   for (const span of [0.6, 1]) {
-    for (let tries = 0; tries < 200000; tries++) {
+    for (let tries = 0; tries < 400000; tries++) {
       h = pcg(h);
       const x = Math.floor(width * (0.5 - span / 2) + ((h >>> 8) / 16777216) * width * span);
       h = pcg(h);
       const y = Math.floor(height * (0.5 - span / 2) + ((h >>> 8) / 16777216) * height * span);
-      const count = countAt(y * width + x);
-      if (count >= lo64 && count <= hi64) return { x, y, count };
+      const c = countAt(y * width + x);
+      if (c >= min && c <= max && roughness(x, y, c) <= LOUPE_FLATNESS) return pick(x, y, true);
     }
   }
-  // Full scan: the lit pixel nearest the range, ties broken by grid order.
+  // Full scan: score = how far outside the count range, times how rough. Best wins.
   let best = -1;
-  let bestGap = -1;
+  let bestScore = Infinity;
   for (let i = 0; i < lo.length; i++) {
     if (lo[i] === 0 && hi[i] === 0) continue;
-    const c = Number(countAt(i));
+    const c = countAt(i);
     if (c === 0) continue;
-    const gap = c < min ? min / c : c > max ? c / max : 1;
-    if (best < 0 || gap < bestGap) {
+    const x = i % width;
+    const y = (i - x) / width;
+    const range = c < min ? min / c : c > max ? c / max : 1;
+    const score = range * (1 + Math.max(0, roughness(x, y, c) - LOUPE_FLATNESS));
+    if (score < bestScore) {
       best = i;
-      bestGap = gap;
-      if (gap === 1) break;
+      bestScore = score;
     }
   }
   if (best < 0) throw new Error("No lit pixel found for the loupe");
-  return { x: best % width, y: Math.floor(best / width), count: countAt(best) };
+  return pick(best % width, Math.floor(best / width), false);
 }
 
 /**
- * A camera at the same eye as `job`'s frame 0, looking through pixel (x, y),
- * with a field of view of exactly one main-view pixel. A square frame of this
- * camera is that pixel blown up.
+ * The loupe: the main camera, unchanged, keeping only the particles whose
+ * main-view pixel is exactly (x, y) (job.select: the same float operations and
+ * u32 floor as the main frame, in the same shader), each placed in a
+ * size x size output by where it falls inside that pixel. The dot count is
+ * then the pixel's count exactly, not approximately.
  */
 export function loupeJob(job: OfflineJob, x: number, y: number, size: number): OfflineJob {
-  const key = job.camera[0];
-  const cam = cameraBasis(key);
-  const focal = (0.5 * job.height) / Math.tan(cam.fovY / 2);
-  const dx = (x + 0.5 - job.width / 2) / focal;
-  const dy = -(y + 0.5 - job.height / 2) / focal;
-  let dir = add(add(cam.forward, scale(cam.right, dx)), scale(cam.up, dy));
-  const len = Math.hypot(dir[0], dir[1], dir[2]);
-  dir = scale(dir, 1 / len);
-  // One pixel seen from slightly off-axis is 1/len times smaller in angle.
-  const fovY = 2 * Math.atan(0.5 / focal / len);
-  const pitch = Math.asin(Math.max(-1, Math.min(1, dir[1])));
-  const yaw = Math.atan2(-dir[0], -dir[2]);
-  const target = add(cam.eye, scale(dir, key.distance));
-  const camera: CameraKey[] = [{ t: 0, target, yaw, pitch, distance: key.distance, fovY }];
-  return { ...job, name: `loupe ${x},${y}`, width: size, height: size, frames: 1, camera };
+  return {
+    ...job,
+    name: `loupe ${x},${y}`,
+    width: size,
+    height: size,
+    ssaa: 1,
+    frames: 1,
+    select: { width: job.width * job.ssaa, height: job.height * job.ssaa, x: x * job.ssaa, y: y * job.ssaa },
+  };
 }
 
 export function loupeLabel(pixel: { x: number; y: number; count: bigint }, loupeLanded: string): string[] {

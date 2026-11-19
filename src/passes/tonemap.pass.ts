@@ -31,8 +31,12 @@ export default function createTonemapPass(gpu: GpuContext): Pass {
     const pass = createDensityTonemapPass({
       settings: {
         // Particles add `brightness` (1 by default) each: one particle is a
-        // clear grey dot and about 64 on one pixel reach full white.
-        tone: { ...DEFAULT_TONE, exposure: 2, white: 128 },
+        // dim grey dot (55 of 255) and about 64 on one pixel reach full white.
+        // Contrast 2.2 cancels the sRGB encode's second brightening of the
+        // log curve, so each doubling of density is one equal step on screen,
+        // as in the 1T grade (docs/briefs/visual/V02-tone-curve-lifts-mid-greys.md).
+        // The Esc menu's contrast slider changes it live.
+        tone: { ...DEFAULT_TONE, exposure: 2, white: 128, contrast: 2.2 },
         trails: { enabled: true, mode: "max", halfLife: 0.08 },
       },
     });

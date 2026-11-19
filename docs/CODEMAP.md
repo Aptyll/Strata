@@ -50,10 +50,11 @@ build (`vite.config.ts`).
 | `src/sim` | the engine's simulation: one 16-byte particle buffer and one compute dispatch per plane | `simulation.ts` |
 | `src/passes` | render passes auto-registered into the app (`*.pass.ts`): points, depth sprites, tone map | `index.ts` |
 | `src/behaviors` | particle rules (`*.behavior.ts`, auto-registered), authoring tools, preview page | `index.ts`, `core/` |
-| `src/perf` | the 8-byte high-count engine (PerfEngine), the app's compute rasterizer pass, the adaptive budget | `engine.ts`, `docs/perf.md` |
+| `src/perf` | the 8-byte high-count engine (PerfEngine), the adaptive budget, and the old import names of the compute rasterizer (now in `src/raster`) | `engine.ts`, `docs/perf.md` |
 | `src/challenge` | challenge mode: its own 8-byte engine, the ramp, tiers, stateless "proc" mode | `README.md` |
+| `src/raster` | the app's default compute rasterizer (`atomic-raster`): each particle adds into a u32 per pixel; optional sub-pixel splats (`?subpixel=1`) and depth cues (`?depth=1`) | `README.md` |
 | `src/render` | density rendering: splatting, trails, bloom, tone mapping, integer counter tone mapping | `docs/render.md` |
-| `src/depth` | depth cues: fog, depth of field, size falloff, parallax, depth sprites | `docs/depth.md` |
+| `src/depth` | depth cues: fog, depth of field, size falloff, parallax, depth sprites; the compute rasterizer's `?depth=1` uses its settings and WGSL | `docs/depth.md` |
 | `src/hue` | one color per sheet: a points rasterizer that tags each sheet's light with its hue, and a tint pass after the tone map | `sheetHue.ts` |
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
@@ -69,6 +70,7 @@ build (`vite.config.ts`).
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
+| `src/site` | what the published site says about itself (build-time, nothing runs in the app): titles, descriptions and link previews for every shipped page from one table, the share card, `sitemap.xml`, the landing page's load budget | `README.md`, then `pages.ts` |
 | `src/math.ts` | column-major mat4 helpers that write into `out`, `planeModelMatrix`, quaternion helpers, `seededRandom` (mulberry32) | |
 | `docs/` | one doc per area, plus `explainers/rendering.html` | `architecture.md` |
 
@@ -80,7 +82,7 @@ adding another.
 
 | engine | folder | particle state | how it draws | used by |
 | --- | --- | --- | --- | --- |
-| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/perf/atomicRasterPass.ts`), `points`, `density-splat`, `depth-sprites` | the app `/` |
+| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/raster`, with optional sub-pixel and depth cues), `points`, `density-splat`, `depth-sprites` | the app `/` |
 | `PerfEngine` | `src/perf` | 8 bytes packed (below), 64 MB pages, one range per plane | fused kernel: simulate and `atomicAdd` in one pass, then a fullscreen resolve | bench page; not yet the app's simulation |
 | `ChallengeEngine` | `src/challenge` | 8 bytes packed, a different velocity encoding (below), 128 MiB slabs | fused kernel with its own forces (not contract behaviors), `atomicAdd`, own resolve | `/?challenge` |
 | stateless "proc" mode | `src/challenge` | none: position from `(id, time)` | same accumulation buffer as above | `/?challenge`, key `M` |
@@ -253,7 +255,8 @@ and particles) or `renderBindGroup` (uniform only, vertex stage) from
 
 `src/perf` has two parts (see `src/perf/index.ts`):
 
-- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`) is the
+- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`, a
+  re-export of `src/raster` since the rasterizers were unified) is the
   default rasterizer: one compute dispatch per plane reads the engine's
   16-byte particles, projects them and adds `plane.brightness * LIGHT_ONE` to a
   u32 per pixel with `atomicAdd`; a fullscreen triangle then adds each pixel's
@@ -336,8 +339,8 @@ particle at brightness 1 adds 1.0, the scale the density look's defaults are
 tuned for (with `?tonemap=basic` the app starts at brightness 0.2 instead).
 The tonemap stage reads the target (the density look uses the red
 channel only) and writes the canvas. `PASS_ORDER` has a `depth` stage, but no
-pass uses it yet: depth cues come from the depth sprites rasterizer and the
-parallax camera.
+pass uses it yet: depth cues come from the compute rasterizer's `?depth=1`
+option, the depth sprites rasterizer and the parallax camera.
 
 **Rasterizers**, stage `rasterize`. Exactly one is enabled and it clears the
 HDR target. Pick it with the URL or the Esc menu's "render" setting (the
@@ -345,10 +348,11 @@ list is `RASTERIZERS` in `src/app/graph.ts`).
 
 | pass | file | how it draws | where counting stops |
 | --- | --- | --- | --- |
-| `atomic-raster` (default) | `src/perf/atomicRasterPass.ts` | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` (default) | `src/raster` (`kernel.ts`, `pass.ts`; `src/perf/atomicRasterPass.ts` keeps the old names) | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` with `?depth=1` and/or `?subpixel=1` | `src/raster/kernel.ts` (`rasterKernelWgsl`) | the same pass with options: fog, near fade and size gain as a weight per particle, depth of field as a fixed lens offset per particle (`src/depth`), the 2x2 bilinear split; stochastic rounding keeps dim light on average | the same u32 limit: nothing blends in f16 |
 | `points` (`?raster=points`) | `src/passes/points.pass.ts` | one-pixel point list, additive blend | about 2048 hits per pixel, where adding to f16 stops changing it |
 | `sheet-hue` (`?raster=hue`) | `src/hue/sheetHue.ts` | points that also write the sheet's hue; its `ui` pass `sheet-hue-tint` tints the canvas after the tone map | the same f16 limit |
-| `depth-sprites` (`?raster=sprites` or `?depth=1`) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
+| `depth-sprites` (`?raster=sprites`, debug) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
 | `density-splat` (`?raster=splat`) | `src/render/passes.ts` (`SplatAccumulator` in `quad` mode) | instanced quads with a 2x2 tent, smooth below one pixel | the same f16 limit |
 
 `interplane-streams` (`src/interplane/interplane.pass.ts`) is a rasterize pass
@@ -371,14 +375,17 @@ bloom chain) and their formats are in `docs/render.md`, "Buffers and formats".
 
 ### Depth cues
 
-`src/depth`, all off by default: the depth sprites rasterizer above;
+`src/depth`, all off by default. Two rasterizers above draw its cues: the
+compute rasterizer with `?depth=1` (`depth_point_weight` for fog, near fade
+and size gain, and `depth_lens_jitter_*` for one fixed lens offset per
+particle, hashed from the particle so blurred sheets do not shimmer) and the
+depth sprites (`?raster=sprites`, a real disc per particle, f16 blend). Both
+read the same `DepthParams` uniform (`params.ts` packs it; `DEPTH_DEFAULTS`
+holds the defaults) and scale it with the world radius
+(`depthSettingsForWorld`), measured from the planes. The folder also has
 `createParallaxCamera` (`?parallax=1`: the eye follows the pointer while the
-focus distance holds still on screen); `FocusTracker`, autofocus on the
-nearest sheet along the view axis; and `depthWGSL`, the shader library with
-its `DepthParams` uniform (`params.ts` packs it). Sprite settings scale with
-the world radius (`depthSettingsForWorld`), measured from the planes on the
-first frame. The library also has `depth_point_weight` and
-`depth_lens_jitter_*` for point renderers; no app pass uses them yet.
+focus distance holds still on screen), `FocusTracker` (autofocus on the
+nearest sheet along the view axis) and `depthWGSL`, the shader library.
 
 ### The 1T path: stateless, rendered, never simulated
 
@@ -516,7 +523,7 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
 - **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
   adds P and V and the "capture" menu section, and reaches the app only
   through `CaptureHost` (add a pass, render one frame, go offline, fix the
-  resolution). The record job (`src/record`) is separate: it renders
+  resolution, and optionally a soundtrack for rendered videos). The record job (`src/record`) is separate: it renders
   stateless particles with `src/offline` and borrows only the HUD and the
   offline flag.
 - **Audio** (`docs/audio.md`): `mountSound(host)` in `src/audio/app.ts` adds M

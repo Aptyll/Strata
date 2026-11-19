@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
+import { strataSite } from "./src/site/plugin.mjs";
 
 // Pages that ship in the production build next to the app. Everything else
 // under src/**/demo stays dev-only (npm run dev serves every page).
@@ -16,6 +17,8 @@ const pages = {
 };
 
 export default defineConfig({
+  // Page titles, link previews, the sitemap and the landing page's load budget: src/site.
+  plugins: [strataSite()],
   build: {
     rollupOptions: {
       input: Object.fromEntries(Object.entries(pages).map(([name, path]) => [name, resolve(__dirname, path)])),

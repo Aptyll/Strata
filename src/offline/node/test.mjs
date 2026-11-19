@@ -6,16 +6,19 @@
  *   batch invariance different batch sizes give bit-identical grids
  *   64-bit carry     more light in one pixel than a u32 holds is still exact
  *   CPU cross-check  the shader agrees with the double-precision reference
- *   resume           a checkpointed frame continues to the identical result
+ *   resume           a checkpointed frame continues to the identical result,
+ *                    and reports the time and batches of every run, not the last
  */
 import { create, globals } from "webgpu";
 
 import { CameraPath } from "../core/camera";
 import { ONE } from "../core/job";
 import { lawPosition, particleKey, draw, u01 } from "../core/laws";
+import { STATELESS_LAWS } from "../../stateless/laws";
 import { cameraBasis, planeHomography } from "../core/math";
 import { decodeGrayPng16, encodeGrayPng } from "../core/png";
 import { StatelessRenderer, accumulationSum } from "../core/renderer";
+import { renderJob } from "../core/session";
 import { nodeZlib } from "./platform.mjs";
 
 Object.assign(globalThis, globals);
@@ -133,7 +136,7 @@ for (const splat of ["point", "bilinear"]) {
   try {
     await renderOnce(job, opts, 1, {
       signal: controller.signal,
-      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc, progress) => void (saved = { cursor, ...acc, ...progress }) },
       onProgress: () => {
         if (++batches === 7) controller.abort();
       },
@@ -143,6 +146,38 @@ for (const splat of ["point", "bilinear"]) {
   }
   const resumed = saved ? await renderOnce(job, opts, 1, { resume: saved }) : null;
   check("cancel saves a checkpoint that resumes exactly", resumed !== null && same(whole.lo, resumed.lo) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, saved ? `saved after ${saved.gpuEvaluated} particles` : "nothing saved");
+  // The checkpoint carries the work spent so far, so the continued frame
+  // reports the whole frame: every batch, and at least the first run's time.
+  check(
+    "a continued frame counts the batches and time of every run",
+    resumed !== null && saved.batches === 7 && resumed.batches === whole.batches && resumed.resumes === 1 && whole.resumes === 0 && resumed.seconds > saved.seconds && saved.seconds > 0,
+    resumed ? `${saved.batches} + ${resumed.batches - saved.batches} of ${whole.batches} batches` : "nothing saved",
+  );
+}
+
+// ---- the same through the session: stop, run again, read the frame's stats ------
+{
+  /** @type {Map<string, Uint8Array>} */
+  const files = new Map();
+  const store = {
+    read: async (/** @type {string} */ name) => files.get(name) ?? null,
+    write: async (/** @type {string} */ name, /** @type {Uint8Array} */ data) => void files.set(name, data),
+    remove: async (/** @type {string} */ name) => void files.delete(name),
+  };
+  const job = testJob({ frames: 1 });
+  const opts = { initialBatch: 60_000, maxBatch: 60_000 };
+  let batches = 0;
+  const first = await renderJob(device, /** @type {any} */ (job), store, nodeZlib, { ...opts, shouldStop: () => batches >= 5, onProgress: () => void batches++ });
+  const checkpointed = files.has("partial-000000.bin");
+  const second = await renderJob(device, /** @type {any} */ (job), store, nodeZlib, opts);
+  const file = files.get("frame-000000.json");
+  const stats = file ? JSON.parse(new TextDecoder().decode(file)) : {};
+  const whole = await renderOnce(job, opts, 0);
+  check(
+    "session: a stopped and continued frame reports its whole time and batches",
+    first.stopped && checkpointed && second.rendered === 1 && stats.resumes === 1 && stats.batches === whole.batches && stats.seconds > 0 && !files.has("partial-000000.bin"),
+    `${stats.batches} of ${whole.batches} batches over ${stats.resumes + 1} runs`,
+  );
 }
 
 // ---- batch invariance -------------------------------------------------------
@@ -166,9 +201,12 @@ for (const splat of ["point", "bilinear"]) {
 }
 
 // ---- CPU cross-check --------------------------------------------------------
-for (const law of LAWS) {
+for (const law of [...LAWS, ...STATELESS_LAWS.map((l) => l.id)]) {
   const job = testJob();
-  job.planes = [{ ...job.planes[LAWS.indexOf(law)], particleCount: 200_000 }];
+  // src/stateless laws ride on the first sheet with their default params.
+  const core = LAWS.indexOf(/** @type {any} */ (law));
+  const stateless = STATELESS_LAWS.find((l) => l.id === law);
+  job.planes = [{ ...job.planes[Math.max(0, core)], law, params: stateless ? [...stateless.defaults] : job.planes[core].params, particleCount: 200_000 }];
   const frame = 2;
   const out = await renderOnce(job, {}, frame);
   // Reference: same hash and law in doubles, same projection, point splat.
@@ -200,7 +238,11 @@ for (const law of LAWS) {
   let l1 = 0;
   for (let i = 0; i < ref.length; i++) l1 += Math.abs(ref[i] - (out.lo[i] + out.hi[i] * 2 ** 32) / ONE);
   const moved = l1 / 2 / plane.particleCount;
-  check(`CPU cross-check, ${law}`, moved < 0.002, `${(moved * 100).toFixed(4)}% of particles in a different pixel`);
+  // Ribbons folds space (stretch 40 against at most 4 for the others), so the
+  // same f32 rounding moves about ten times as many particles across a pixel
+  // edge. A wrong formula would move most of them, not a fraction of a percent.
+  const limit = (stateless?.cost.stretch ?? 0) > 10 ? 0.005 : 0.002;
+  check(`CPU cross-check, ${law}`, moved < limit, `${(moved * 100).toFixed(4)}% of particles in a different pixel`);
 }
 
 // ---- resume -----------------------------------------------------------------
@@ -244,6 +286,15 @@ for (const splat of ["point", "bilinear"]) {
   // Different hashing for shutter and splat, so compare counts, not pixels.
   const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
   check("trillion kernel: in-frame count matches offline kernel", a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
+}
+{
+  // A src/stateless law through both kernels: same in-frame count.
+  const job = testJob();
+  job.planes = [{ ...job.planes[0], law: "galaxy", params: [...STATELESS_LAWS.find((l) => l.id === "galaxy").defaults] }];
+  const a = await renderOnce(job, { kernel: "trillion" });
+  const b = await renderOnce(job);
+  const rel = Math.abs(Number(a.landed - b.landed)) / Math.max(1, Number(b.landed));
+  check("stateless law (galaxy) on both kernels", b.landed > 0n && rel < 0.01, `${a.landed} vs ${b.landed}`);
 }
 {
   const job = testJob({ splat: "bilinear" });

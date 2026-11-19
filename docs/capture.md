@@ -30,6 +30,9 @@ Capture is already wired into the app by `src/capture/app.ts`:
   to disk, and two buttons. **save still** renders one frame at the chosen
   resolution. **render video** renders offline at a fixed time step, so the
   result is smooth however slowly it renders; pressing it again cancels.
+- A video rendered while the sound is on (`M`, see `docs/audio.md`) carries
+  the soundtrack: AAC at 192 kbit/s, or Opus where the browser cannot encode
+  AAC. Live recordings (`V`) stay silent.
 
 While a still or an offline video renders, the app's realtime loop stops
 drawing, the drawing buffer is fixed at the render size
@@ -153,8 +156,25 @@ What the engine has to provide:
 While an offline render runs, pause the normal `requestAnimationFrame` loop,
 or it will draw into the resized canvas between frames.
 
-`result` reports `codec`, `frames`, `duration`, `elapsed`, and `blob` (or
-`null` when the file was streamed to disk).
+`result` reports `codec`, `audioCodec`, `frames`, `duration`, `elapsed`, and
+`blob` (or `null` when the file was streamed to disk).
+
+### Sound
+
+`recording.audio` takes a `RecordingAudio` (src/audio's
+`createRecordingAudio` makes one) and adds an AAC track, or Opus where the
+browser cannot encode AAC (`audioBitrate`, default 192 kbit/s; Windows' AAC
+encoder only takes 96, 128, 160 or 192). It needs fixed timing, so realtime
+recordings refuse it. After each frame the recorder calls `pull(videoTime)`
+and encodes whatever audio comes back; at the end `finish(duration)` returns
+the rest, so the track ends with the last frame; `cancel()` is called if the
+recording fails or is cancelled. Hand audio over a few seconds at a time
+rather than all at the end: the muxer interleaves by time and keeps encoded
+video in memory until audio for the same time arrives.
+
+Checked in headless Chromium (which has no AAC encoder, so Opus): a 25 s
+render came out with a 25 s VP9 track and a 25.01 s Opus track (the extra is
+Opus padding), with no click where the audio chunks join.
 
 ### Memory or disk
 
@@ -327,7 +347,8 @@ files. It needs Playwright with Chromium installed.
 - Browser support: recording needs WebCodecs (Chrome, Edge, recent Safari and
   Firefox). `pickOutputFile` needs Chromium. `isRecordingSupported()` tells you
   up front.
-- No audio track.
+- Live (realtime) recordings have no audio track; a soundtrack needs fixed
+  timing (`recording.audio` above).
 - No motion blur. The right way to do it is to accumulate several sub-frames
   in the engine's HDR target before tonemapping; averaging 8 bit canvas frames
   would crush dim particles. `substeps` already gives the simulation side of
