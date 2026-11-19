@@ -32,6 +32,7 @@ import { mountRecord } from "./record";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera } from "./ux/camera";
 import { detectCapability } from "./ux/experience/capability";
+import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
 import { startStreamingWorld } from "./world";
@@ -98,6 +99,9 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height))
       : null;
 
+  // One-line gesture hints and the die's breathing, on one schedule; never during the opening.
+  const hints = mountAppHints({ canvas, hud: ui.hud, isOpening: () => intro?.active ?? false });
+
   // ---- frame loop ----------------------------------------------------------
   const loop = createFrameLoop({
     gpu, graph, sim, budget, fps,
@@ -116,6 +120,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   }
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
+  loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
 
   // ---- capture: P screenshot, V record, stills and offline video in the menu ----
   mountCapture({
