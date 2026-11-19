@@ -131,7 +131,7 @@ export function createDensitySplatPass(opts: DensitySplatPassOptions = {}): Pass
           offset: 0,
           dims: 2,
           mvp: mulMat4(viewProj, model, model),
-          energy,
+          energy: energy * (plane.desc.brightness ?? 1),
           size,
         });
       });
