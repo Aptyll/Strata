@@ -67,6 +67,22 @@ What the numbers say:
 To profile: `?bench=1&modes=brute&counts=200M` with `draw=0`, then `sim=0`,
 then `res=640x360` (a framebuffer that fits in L2).
 
+### Trillion kernel (`src/trillion`), 1T rendered frames
+
+RTX 2070, main `ab82ede` (before the 2x2 run merge), 3840x2160, 233 planes,
+2026-11-19. Details, the four-mode bench and the diagnosis are in
+[docs/trillion.md](trillion.md#measured).
+
+| 1T 4K frame | seconds | billion per second |
+| --- | ---: | ---: |
+| stratified fast path, wide | 47.55 | 21.03 |
+| stratified fast path, close-up (41% in view) | 42.39 | 23.59 |
+| plain path (offline laws), wide | 48.92 | 20.44 |
+
+The fast path was not faster yet: the stochastic sub-pixel splat broke the
+runs it merges. With no counter writes at all, the math alone took 28 to 42 s
+per 1T, so that is the floor for these laws on this card.
+
 ## Design
 
 ### 8 bytes per particle
@@ -227,8 +243,9 @@ From [docs/briefs/unify-rasterizers.md](briefs/unify-rasterizers.md):
 - **The film's 1T kernel is `src/offline`** (`StatelessRenderer`,
   `src/offline/core/shaders.ts`). The record (`src/record`) and proof
   (`src/proof`) paths use it and every verified 1T still came from it.
-  `src/trillion` is a faster kernel on the same shared 64-bit keys, with its
-  own demo. Since #80 the offline renderer can also run it behind the same
+  `src/trillion` is a kernel on the same shared 64-bit keys built to be
+  faster, with its own demo (on the 2070 it is not faster yet: see "Trillion
+  kernel" under "Measured so far"). Since #80 the offline renderer can also run it behind the same
   `StatelessRenderer` (`kernel: "trillion"`), for an A/B; the default is still
   `"offline"`.
 
