@@ -11,6 +11,7 @@ const pages = {
   bench: "src/perf/bench/index.html",
   verify: "src/verify/index.html",
   colorLife: "src/color-life/demo/index.html",
+  design: "src/ux/design/demo/index.html",
 };
 
 export default defineConfig({

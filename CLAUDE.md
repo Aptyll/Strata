@@ -70,7 +70,7 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
@@ -137,6 +137,10 @@ needs Playwright). Offline Node CLI: `src/offline/README.md`.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
   owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **Chrome is styled with the design tokens.** Fonts, sizes, text opacities,
+  spacing and timings of anything on screen come from `src/ux/design` as
+  `var(--st-*)`; no literal fonts, alphas or durations in new UI. Rules and
+  the six text roles: `docs/ux/design.md`. Specimen: `/src/ux/design/demo/`.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
