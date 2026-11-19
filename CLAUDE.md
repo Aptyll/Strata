@@ -75,7 +75,7 @@ Two very different modes, and the wording must keep them apart:
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
-| `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
+| `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
 | `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
