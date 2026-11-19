@@ -131,13 +131,18 @@ ${
     : /* wgsl */ `
   // Particles just outside the frame still spread light onto its edge pixels.
   if (!(s.x > -1.0 && s.y > -1.0 && s.x < size.x + 1.0 && s.y < size.y + 1.0)) { return false; }
-  // Weight in units of 1/256 of a particle, spread over 4 pixels with 4-bit
-  // subpixel weights. The 4 integer weights sum to exactly 256 * unit.
-  var unit = 256u;
-  if (B.fluxRef2 > 0.0) {
-    let f = min(1.0, B.fluxRef2 / (c.z * c.z));
-    unit = u32(f * 256.0 + u01(draw(key, 7u)));
-    if (unit == 0u) { return inFrame; }
+  // Weight in units of 1/65536 of a particle, spread over 4 pixels with 4-bit
+  // subpixel weights: 256 * wx * wy per pixel, the 4 summing to exactly 65536.
+  // Flux mode scales each pixel's weight and rounds it on its own, with its
+  // own 8 bits of draw 7 as dither (unbiased to within 1/256 of a unit), so a
+  // dim particle still spreads fractions of its light instead of being
+  // rounded to whole 1/256ths of a particle.
+  let flux = B.fluxRef2 > 0.0;
+  var f = 1.0;
+  var dither = 0u;
+  if (flux) {
+    f = min(1.0, B.fluxRef2 / (c.z * c.z));
+    dither = draw(key, 7u);
   }
   let q = s - vec2f(0.5);
   let fl = floor(q);
@@ -153,7 +158,11 @@ ${
     let y = iy + i32(dy);
     let wx = select(16u - fr.x, fr.x, dx == 1u);
     let wy = select(16u - fr.y, fr.y, dy == 1u);
-    let w = unit * wx * wy;
+    var w = 256u * wx * wy;
+    if (flux) {
+      let r = (f32((dither >> (8u * t)) & 0xffu) + 0.5) * (1.0 / 256.0);
+      w = u32(f * f32(w) + r);
+    }
     if (w != 0u && x >= 0 && y >= 0 && x < gw && y < gh) {
       add64(u32(y) * B.gridWidth + u32(x), w);
     }

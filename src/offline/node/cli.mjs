@@ -198,10 +198,15 @@ async function render(args) {
   const [first, end] = args.frame !== undefined ? [Number(args.frame), Number(args.frame) + 1] : String(args.range ?? "").includes(":") ? String(args.range).split(":").map(Number) : [undefined, undefined];
   const [shardIndex, shardCount] = args.shard ? String(args.shard).split("/").map(Number) : [0, 1];
 
-  // A lost device (driver reset, sleep) is retried a few times from the last checkpoint.
+  // A lost device (driver reset, sleep) is reopened and the render resumes
+  // from its last checkpoint. It gives up after 5 losses in a row with no
+  // frame finished in between, so a run of several days survives several resets.
+  let failures = 0;
   for (let attempt = 0; ; attempt++) {
     const { device, name } = await openDevice(args, job);
     if (attempt === 0) console.log(`Adapter: ${name}\n`);
+    let lost = false;
+    void device.lost.then(() => (lost = true));
     let lastPrint = 0;
     try {
       const r = await renderJob(device, job, store, nodeZlib, {
@@ -220,6 +225,7 @@ async function render(args) {
           process.stdout.write(`\rframe ${p.frame}: ${((100 * p.done) / p.total).toFixed(1)}%  ${fmtRate(p.rate)}  batch ${withCommas(p.batchSize)} in ${p.batchMs.toFixed(0)} ms  frame eta ${fmtDuration(eta)}      `);
         },
         onFrame: (s, resumed) => {
+          failures = 0;
           const rate = Number(s.evaluated) / Math.max(s.seconds, 1e-9);
           process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
         },
@@ -229,8 +235,11 @@ async function render(args) {
       return;
     } catch (e) {
       const message = /** @type {Error} */ (e).message ?? String(e);
-      if (!/device lost/i.test(message) || attempt >= 5 || stop) throw e;
-      console.log(`\n${message}. Reopening the GPU and resuming (attempt ${attempt + 1} of 5).`);
+      // Ask the device itself: a failed readback can reject with a message that
+      // does not say "device lost", before the loss is reported.
+      if (!lost) await Promise.race([device.lost, new Promise((r) => setTimeout(r, 1000))]);
+      if (!(lost || /device (is |was )?lost/i.test(message)) || ++failures > 5 || stop) throw e;
+      console.log(`\n${message}. Reopening the GPU and resuming (attempt ${failures} of 5).`);
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
