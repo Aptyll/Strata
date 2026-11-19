@@ -68,8 +68,8 @@ ${BATCH_STRUCT}
 @group(0) @binding(1) var<storage, read_write> acc: array<atomic<u32>>;
 // [0] landed lo, [1] landed hi, [2] in view lo, [3] in view hi,
 // [4] strata patches run, [5] strata patches that found a tile,
-// [6] evaluated lo, [7] evaluated hi
-@group(0) @binding(2) var<storage, read_write> tally: array<atomic<u32>, 8>;
+// [6] evaluated lo, [7] evaluated hi, [8] strata patches with a partial tile
+@group(0) @binding(2) var<storage, read_write> tally: array<atomic<u32>, 12>;
 
 const TILE_BINS: u32 = ${tileBins}u;
 var<workgroup> bins: array<atomic<u32>, TILE_BINS>;
@@ -295,6 +295,7 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   }
   workgroupBarrier();
   var tile = vec4i(0);
+  var partial = 0u;
   let x1 = atomicLoad(&sX1);
   let y1 = atomicLoad(&sY1);
   if (x1 > 0u) {
@@ -313,8 +314,25 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
       bx = min(i32(x1) + 2, i32(B.width));
       by = min(i32(y1) + 2, i32(B.height));
     }
-    if (bx > ax && by > ay && u32((bx - ax) * (by - ay)) <= TILE_BINS && (B.flags & 4u) == 0u) {
-      tile = vec4i(ax, ay, bx - ax, by - ay);
+    if ((B.flags & 4u) == 0u && bx > ax && by > ay) {
+      if (u32((bx - ax) * (by - ay)) <= TILE_BINS) {
+        tile = vec4i(ax, ay, bx - ax, by - ay);
+      } else {
+        // The patch is too spread out for one tile. Cover its middle with the
+        // largest tile of the same shape; hits outside still go to global
+        // memory, so this only ever saves atomics.
+        let cw = f32(bx - ax);
+        let ch = f32(by - ay);
+        let k = sqrt(f32(TILE_BINS) / (cw * ch));
+        let tw = clamp(i32(cw * k), 1, bx - ax);
+        let th = clamp(i32(TILE_BINS) / tw, 1, by - ay);
+        let cx = (ax + bx) / 2;
+        let cy = (ay + by) / 2;
+        let px0 = clamp(cx - tw / 2, 0, i32(B.width) - tw);
+        let py0 = clamp(cy - th / 2, 0, i32(B.height) - th);
+        tile = vec4i(px0, py0, tw, th);
+        partial = 1u;
+      }
     }
   }
 
@@ -353,7 +371,8 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   workgroupBarrier();
   if (lid == 0u) {
     atomicAdd(&tally[4], 1u);
-    atomicAdd(&tally[5], select(0u, 1u, tile.z > 0));
+    atomicAdd(&tally[5], select(0u, 1u, tile.z > 0 && partial == 0u));
+    atomicAdd(&tally[8], partial);
   }
   let tw = u32(tile.z);
   let area = tw * u32(tile.w);

@@ -123,7 +123,7 @@ async function main(): Promise<void> {
     `${N.toExponential(3)} particles, ${planes.length} planes, ${width}x${height}, tile ${kernel.tileBins} counters`,
     `evaluated ${tally.evaluatedGpu.toExponential(4)} (GPU tally)   culled ${tally.culled.toExponential(4)}`,
     `in view   ${tally.inView.toExponential(4)}   landed ${tally.landed.toExponential(4)}`,
-    tally.patches ? `strata patches ${tally.patches}, ${((100 * tally.tiledPatches) / tally.patches).toFixed(1)}% on a shared memory tile` : 'plain path (no strata patches)',
+    tally.patches ? `strata patches ${tally.patches}, ${((100 * tally.tiledPatches) / tally.patches).toFixed(1)}% on a shared memory tile, ${((100 * tally.partialPatches) / tally.patches).toFixed(1)}% partly` : 'plain path (no strata patches)',
     `${secs.toFixed(2)} s, ${(tally.evaluated / secs / 1e9).toFixed(2)} B particles/s`,
   ].join('\n');
 
@@ -200,7 +200,7 @@ async function bench(device: GPUDevice, width: number, height: number, n: number
       rows.push({
         shot: shotName, mode, particles: t.evaluated, seconds,
         billionPerSecond: rate / 1e9, secondsPer1T: 1e12 / rate,
-        tiled: t.patches ? `${((100 * t.tiledPatches) / t.patches).toFixed(0)}%` : '-',
+        tiled: t.patches ? `${((100 * t.tiledPatches) / t.patches).toFixed(0)}% (+${((100 * t.partialPatches) / t.patches).toFixed(0)}% partly)` : '-',
       });
     }
   }
