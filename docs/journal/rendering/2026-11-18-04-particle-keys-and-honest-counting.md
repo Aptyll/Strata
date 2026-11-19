@@ -169,7 +169,7 @@ frames from the RTX 2070.
 
 ![Label of trillion-A.png: in frame 985,878,512,802](images/label-100pct_trillion-A.png)
 
-*Composition A, a close-up: 985,878,512,802 in frame.*
+*Composition A, a close-up: 985,878,512,802 in frame. Correction: A was rendered on 32-bit keys with stacked identical sheets, so it holds at most about 17.2 billion distinct particles, not a trillion ([docs/record](../../record/README.md#distinct-particles-read-this-before-using-a-or-b)).*
 
 ![Label of trillion-key1-f0.png with two digits hidden behind a sheet](images/label-100pct_trillion-key1-f0.png)
 

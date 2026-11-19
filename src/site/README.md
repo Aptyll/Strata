@@ -30,10 +30,12 @@ descriptions 50 to 160, and no clause that calls the trillion "simulated"
 ## The share card
 
 `share/strata-1t.jpg` is the picture chat apps and social sites show next to a
-pasted link. It is a real frame, `docs/record/trillion-A.png`, scaled down
-with only empty rows and columns trimmed, and the two numbers on it are that
-frame's GPU tallies: 1,000,000,000,000 particles evaluated and 985,878,512,802
-landed in the frame. To change it, edit `share/make-card.py` (frame, numbers,
+pasted link. It is a real frame, `docs/record/trillion-key2-f0.png`, scaled
+down with only empty rows and columns trimmed (and the bottom darkened behind
+the type), and the two numbers on it are that frame's GPU tallies:
+1,000,000,000,000 particles evaluated and 107,787,615,440 landed in the frame.
+It used to be `trillion-A.png`, which is not a trillion distinct particles (see
+`docs/record/README.md`). To change it, edit `share/make-card.py` (frame, numbers,
 type) and run it; it needs Python with Pillow and the Inter font.
 
 The published file name contains a hash of the image's bytes

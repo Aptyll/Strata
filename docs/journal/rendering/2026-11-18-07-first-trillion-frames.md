@@ -58,6 +58,12 @@ burned-in label.
 | `trillion256-K0.png` | the far view again | not reported | | 1,000,000,000,000 | contrast 256 |
 | `trillion-clip-k068.mp4` | 8 frames, the key2 camera with a slow push | about 32 s per frame | 31 B/s | 107,787,615,782 on the first frame, 107,743,038,598 on the last | contrast 256 |
 
+**Correction (added 2026-11-19 02:35 UTC):** A, `trillion256-A` and B were
+rendered on 32-bit keys (before PR #45) with stacked identical sheets, so they
+are **not** a trillion distinct particles: A holds at most about 17.2 billion
+distinct, B about 137 billion. The cluster frames are still 1T distinct. See
+[docs/record/README.md](../../record/README.md#distinct-particles-read-this-before-using-a-or-b).
+
 The first six are in git under [`docs/record/`](../../record/README.md). The
 last three are in the project files only.
 
