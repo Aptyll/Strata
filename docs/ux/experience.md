@@ -264,7 +264,7 @@ and a brief lift on `f.focusedPlane` scaled by `f.focusGlow`.
 | --- | --- |
 | `index.ts` | `createExperience()`, the per-frame contract, `gainToActiveCount()` |
 | `intro.ts` | Opening timeline, ignition order, `IntroDirector` (clock and skip) |
-| `camera-rig.ts` | Orbit camera with inertia, drift, focus; `planeFromDesc()` |
+| `camera-rig.ts` | Thin front for the shared camera in `src/ux/camera` (same feel as the app); `planeFromDesc()` |
 | `pointer-ray.ts` | Cursor to ray to `(plane, u, v)` |
 | `force-brush.ts` | Wake, attract, repel, release burst, GPU packing, reference force |
 | `gestures.ts` | Mouse, pen and touch recogniser |
