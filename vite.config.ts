@@ -7,8 +7,10 @@ const pages = {
   main: "index.html",
   challenge: "src/challenge/index.html",
   offline: "src/offline/web/index.html",
+  proof: "src/proof/web/index.html",
   bench: "src/perf/bench/index.html",
   verify: "src/verify/index.html",
+  colorLife: "src/color-life/demo/index.html",
 };
 
 export default defineConfig({

@@ -1,18 +1,72 @@
 /**
- * One place that decides which module owns which key, so modules written in
- * parallel do not both react to the same press.
+ * Every key the app answers to, and the one module that owns it.
  *
- *   HUD     R dice, H stats, Esc settings, F fullscreen, ? keys, plus the app
- *           shortcuts registered in main.ts ([ ] - = G P V T)
- *   camera  WASD / arrows / Q E / Shift to fly, , . previous and next plane,
- *           Home to fly home, Space to toggle idle drift
+ * The HUD (src/ux/hud) listens on the window and matches KeyboardEvent.key.
+ * The camera (src/ux/camera/input.ts) matches KeyboardEvent.code, and it
+ * listens on a detached element instead of the window: the router below
+ * forwards it every key that no other module owns. So to give a key to the
+ * HUD or a feature, add a row to KEYS and register it from that row; the
+ * camera stops seeing it automatically.
  *
- * The camera input module listens on a key target. Instead of the window it
- * gets a detached element that only receives the keys the camera owns.
+ * Camera keys (owned by src/ux/camera/input.ts, everything not in KEYS):
+ *   W A S D, arrows, Q E   fly          Shift   faster
+ *   , .                    previous / next plane
+ *   Home                   fly home     Space   toggle idle drift
+ * The camera also binds F (nearest plane) and H (home), but in the app the
+ * HUD owns those two; G and Home do the same camera moves.
  */
+import type { ShortcutSpec } from "../ux/hud/index.js";
 
-/** KeyboardEvent.code values the HUD and app shortcuts own; the camera never sees them. */
-const RESERVED = new Set(["KeyH", "Escape", "KeyF", "KeyR", "KeyG", "BracketLeft", "BracketRight", "Minus", "Equal", "KeyP", "KeyV", "KeyT"]);
+export type KeyOwner =
+  | "hud" // built into the HUD (src/ux/hud/index.js); listed here, registered there
+  | "app" // registered from these rows by src/app/hud.ts
+  | "capture" // registered by src/capture/app.ts with the rows main.ts passes in
+  | "theme" // src/ux/theme/index.ts registers it itself; keep the row in sync
+  | "autocam" // src/ux/autocam/index.ts registers the row main.ts passes in
+  | "panels"; // src/ui/index.ts, only while a src/ui/*.panel.ts exists
+
+export interface KeyBinding {
+  /** KeyboardEvent.key, as the HUD names it: "g", "]", "escape", "?". */
+  key: string;
+  /** KeyboardEvent.code of the same key on a US layout. The camera never sees it. */
+  code: string;
+  owner: KeyOwner;
+  /** Shown in the HUD's keys sheet (?). */
+  label: string;
+}
+
+export const KEYS = {
+  randomize: { key: "r", code: "KeyR", owner: "hud", label: "randomize" },
+  stats: { key: "h", code: "KeyH", owner: "hud", label: "stats" },
+  settings: { key: "escape", code: "Escape", owner: "hud", label: "settings" },
+  fullscreen: { key: "f", code: "KeyF", owner: "hud", label: "fullscreen" },
+  help: { key: "?", code: "Slash", owner: "hud", label: "keys" },
+
+  moreParticles: { key: "]", code: "BracketRight", owner: "app", label: "double particles" },
+  fewerParticles: { key: "[", code: "BracketLeft", owner: "app", label: "halve particles" },
+  brighter: { key: "=", code: "Equal", owner: "app", label: "brighter" },
+  dimmer: { key: "-", code: "Minus", owner: "app", label: "dimmer" },
+  nearestPlane: { key: "g", code: "KeyG", owner: "app", label: "go to nearest plane" },
+
+  screenshot: { key: "p", code: "KeyP", owner: "capture", label: "screenshot" },
+  record: { key: "v", code: "KeyV", owner: "capture", label: "record video" },
+
+  nextTheme: { key: "t", code: "KeyT", owner: "theme", label: "next color theme" },
+
+  autoCamera: { key: "c", code: "KeyC", owner: "autocam", label: "auto camera tour" },
+
+  panels: { key: "tab", code: "Tab", owner: "panels", label: "panels" },
+} as const satisfies Record<string, KeyBinding>;
+
+/** A HUD shortcut for one row of KEYS. */
+export const shortcut = (binding: KeyBinding, run: ShortcutSpec["run"]): ShortcutSpec => ({
+  key: binding.key,
+  label: binding.label,
+  run,
+});
+
+/** KeyboardEvent.code values some module other than the camera owns. */
+const OWNED = new Set<string>(Object.values(KEYS).map((k) => k.code));
 
 export interface KeyRouter {
   /** Pass as `keyTarget` to attachCameraInput. */
@@ -24,7 +78,7 @@ export function createKeyRouter(source: Window = window): KeyRouter {
   const cameraTarget = document.createElement("div");
 
   const forward = (e: KeyboardEvent) => {
-    if (RESERVED.has(e.code)) return;
+    if (OWNED.has(e.code)) return;
     // Typing in a settings field must not fly the camera. Sliders and switches are fine.
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;

@@ -28,6 +28,7 @@ import { BYTES_PER_PARTICLE, ChallengeEngine } from "./engine";
 import type { ChallengeMode } from "./engine";
 import { Ramp } from "./ramp";
 import { ROW } from "./shaders";
+import { adapterOptions } from "../gpu/adapter-options";
 
 /** The shared challenge target for realtime: simulated particles, 1080p, 30 fps. */
 export const TIER1 = { particles: 100_000_000, fps: 30, width: 1920, height: 1080 } as const;
@@ -50,6 +51,14 @@ export interface ChallengeResult {
   bytesPerParticle: number;
   /** GPU time of the compute pass, when the browser allows timestamp queries. */
   gpuMs: number | null;
+  /** Particles the GPU itself counted in the latest checked frame (null before the first check). */
+  gpuCount: number | null;
+  /**
+   * True when the GPU counted exactly `particles` in the latest checked frame
+   * and no checked frame since the run started came out different. Required
+   * for a tier: a frame whose work the browser dropped would otherwise look fast.
+   */
+  gpuCountVerified: boolean;
   tier1: boolean;
   adapter: string;
   workgroupSize: number;
@@ -140,7 +149,7 @@ export async function startChallenge(
     say("Challenge mode needs WebGPU (recent Chrome, Edge or Safari).");
     return;
   }
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  const adapter = await navigator.gpu.requestAdapter(adapterOptions());
   if (!adapter) {
     say("No WebGPU adapter found.");
     return;
@@ -249,6 +258,7 @@ export async function startChallenge(
   };
 
   const restart = () => {
+    engine.resetCountCheck();
     if (fixedCount) {
       ramp = null;
       status = "fixed count";
@@ -265,6 +275,8 @@ export async function startChallenge(
     const sustained = ramp ? ramp.phase === "hold" && ramp.record > 0 : false;
     const particles = sustained ? ramp!.record : engine.count;
     const rate = sustained ? ramp!.recordFps : fps;
+    const gpuCountVerified =
+      engine.countMismatches === 0 && engine.gpuCount === particles && engine.gpuCountExpected === particles;
     return {
       mode: engine.mode,
       particles,
@@ -278,9 +290,12 @@ export async function startChallenge(
       particlesPerPixel: Math.round((particles / (canvas.width * canvas.height)) * 10) / 10,
       bytesPerParticle: engine.mode === "sim" ? BYTES_PER_PARTICLE : 0,
       gpuMs: engine.gpuMs === null ? null : Math.round(engine.gpuMs * 100) / 100,
+      gpuCount: engine.gpuCount,
+      gpuCountVerified,
       tier1:
         engine.mode === "sim" &&
         sustained &&
+        gpuCountVerified &&
         particles >= TIER1.particles &&
         rate >= TIER1.fps &&
         canvas.width * canvas.height >= TIER1.width * TIER1.height,
@@ -317,6 +332,13 @@ export async function startChallenge(
     const modeName = r.mode === "sim" ? "simulated" : "procedural (stateless, not a tier entry)";
     lines.push(`CHALLENGE  ${modeName}`);
     lines.push(`${fmtInt(r.particles)} particles   ${fps ? fps.toFixed(1) : "--"} fps   ${r.particlesPerPixel} per pixel`);
+    lines.push(
+      engine.countMismatches > 0
+        ? `GPU COUNT MISMATCH in ${engine.countMismatches} checked frame(s): some particles did not run, result invalid`
+        : r.gpuCount === null
+          ? "GPU count: waiting for the first checked frame"
+          : `GPU count ${fmtInt(r.gpuCount)} particles in the last checked frame`,
+    );
     const limit =
       r.stoppedBy === "ceiling"
         ? engine.memoryLimited
@@ -332,7 +354,13 @@ export async function startChallenge(
         r.tier1
           ? `TIER 1 REACHED  100M simulated at ${TIER1.fps}+ fps, 1080p`
           : `Tier 1 (100M at ${TIER1.fps} fps, 1080p): ${
-              !sized ? "needs a 1080p or larger buffer" : targetFps < TIER1.fps ? `needs fps=${TIER1.fps}` : `${pct}%`
+              !sized
+                ? "needs a 1080p or larger buffer"
+                : targetFps < TIER1.fps
+                  ? `needs fps=${TIER1.fps}`
+                  : engine.countMismatches > 0
+                    ? "refused, the GPU count did not match"
+                    : `${pct}%`
             }`,
       );
     }

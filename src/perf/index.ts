@@ -1,4 +1,4 @@
-export { PerfEngine, requestPerfDevice } from './engine';
+export { PerfEngine } from './engine';
 export type { PerfEngineOptions, FrameParams, FrameStats } from './engine';
 export { classifyPlane, DEFAULT_LOD } from './culling';
 export type { LodSettings, PlaneClass } from './culling';
@@ -13,8 +13,6 @@ export {
   unpackVelocity,
 } from './packing';
 export { LIGHT_ONE, buildSimRasterWGSL } from './shaders';
-export { mat4Identity, mat4Multiply, mat4Perspective, mat4LookAt } from './math';
-export type { Mat4 } from './math';
 export { PerfBudget } from './budget';
 export type { PerfBudgetOptions } from './budget';
 export { createAtomicRasterPass } from './atomicRasterPass';

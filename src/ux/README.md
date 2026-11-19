@@ -8,6 +8,7 @@ Everything between the person and the simulation. Each subfolder is self-contain
 | `camera/` | `CameraRig`, a DOM-free camera for flying through the void; `engine.ts` (`createCamera`) adapts it to the `CameraController` contract, `input.ts` binds mouse, touch, pen and keys. Demo: `/src/ux/camera/demo/`. | live |
 | `experience/` | First-run opening, capability check and starting budget (`capability.ts`), pointer forces (`engine-brushes.ts`), the no-WebGPU fallback (`fallback.ts`), gestures and hints. `index.ts` (`createExperience`) is the standalone version used by its demo. | partly live (capability, brushes, fallback, intro via `src/app/intro.ts`) |
 | `behavior-ui/` | `roll.ts`: what the R dice produce (`rollScene`, `startRoll`); wired by `hud/wire.ts`. | live |
+| `theme/` | Color themes: a gradient map on the canvas after the tone map (one SVG filter), T to cycle, `?theme=`; mounted by `src/app/hud.ts`. | live |
 
 - **Depends on:** `src/core/contracts.ts`.
 - **Used by:** `src/main.ts`, `src/app`, `src/capture`, `src/record`, `src/challenge`.

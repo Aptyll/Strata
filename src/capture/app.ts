@@ -30,8 +30,23 @@ export interface CaptureHost {
   flush?: () => Promise<unknown>;
   /** While on, the app's realtime loop must not draw: this module calls `frame` itself. */
   setOffline(on: boolean): void;
-  /** Fixes the drawing buffer size, or null to follow the window again. */
+  /**
+   * Fixes the drawing buffer size, or null to follow the window again. While the size is
+   * fixed, a host whose particles light a fixed number of pixels should scale their light
+   * by (height / window height)^2, or captures taller than the window come out darker.
+   */
   setResolution(size: { width: number; height: number } | null): void;
+  /**
+   * Keys for the two live actions, as HUD shortcut names. The app passes its
+   * rows from src/app/keys.ts. Defaults: P screenshot, V record video.
+   */
+  keys?: { screenshot?: CaptureKey; record?: CaptureKey };
+}
+
+/** A HUD shortcut key and the label shown for it in the keys sheet. */
+export interface CaptureKey {
+  key: string;
+  label: string;
 }
 
 const SIZES: Record<string, [number, number]> = {
@@ -85,10 +100,16 @@ export function mountCapture(host: CaptureHost): void {
   let busy = false;
   let abort: AbortController | null = null;
 
-  hud.registerShortcut({ key: 'p', label: 'screenshot', run: (e) => !busy && !e.repeat && live.requestScreenshot() });
+  const screenshotKey = host.keys?.screenshot ?? { key: 'p', label: 'screenshot' };
+  const recordKey = host.keys?.record ?? { key: 'v', label: 'record video' };
   hud.registerShortcut({
-    key: 'v',
-    label: 'record video',
+    key: screenshotKey.key,
+    label: screenshotKey.label,
+    run: (e) => !busy && !e.repeat && live.requestScreenshot(),
+  });
+  hud.registerShortcut({
+    key: recordKey.key,
+    label: recordKey.label,
     run: (e) => {
       if (busy || e.repeat) return;
       void live.toggleRecording().catch(() => {});
