@@ -296,6 +296,7 @@ const { blob } = await rec.stop();
 | `timing` | `'fixed'` | `'fixed'`: frame N is at N / fps. `'realtime'`: wall clock, drops frames when busy. |
 | `output` | `'memory'` | Or a `FileSystemFileHandle` from `pickOutputFile()`. |
 | `hardwareAcceleration` | `'no-preference'` | |
+| `range` | `'limited'` | `'limited'`: frames are converted to BT.709 limited range YUV before encoding. `'full'`: the browser converts, giving full-range YUV. |
 | `download`, `filename` | off | Download on stop (memory output). |
 
 Why the bitrate is high: a dense particle field is close to noise, which is
@@ -303,6 +304,13 @@ the worst case for a video codec, and YouTube re-encodes whatever it is given.
 Uploading at 4K helps even for viewers at 1080p, because YouTube gives 4K
 uploads a better codec and far more bits. If a video still looks blocky on
 YouTube, raise `bitsPerPixel` (0.25 is not unreasonable) and upload at 4K.
+
+Colour: files are tagged BT.709, limited ("TV") range, `yuv420p`, which is
+what YouTube, players and editors all assume. The browser's own conversion
+writes full range (`yuvj420p`), and a tool that ignores the range flag then
+turns everything below code 16 black, which is the faint dust and halos.
+The recorder therefore converts to YUV itself, on the CPU: roughly a
+4K frame's readback and conversion per frame, fine for offline renders.
 
 H.264 is tried first because it is what YouTube recommends and what every
 player opens. H.264 tops out around 4096 px wide, so larger sizes fall through
