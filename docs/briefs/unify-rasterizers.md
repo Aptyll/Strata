@@ -1,6 +1,8 @@
 # Brief: one rasterizer for the realtime app
 
-Owner (2026-11-19): unowned. The cleanup threads own `src/render`,
+Owner (2026-11-19): partly done. Steps 2 (debug labels), 4 and 5 are decided in
+[docs/perf.md](../perf.md), "Decisions". Steps 1, 3 and 6 are open.
+Was: unowned. The cleanup threads own `src/render`,
 `src/depth`, `src/passes`, `src/perf`, `src/challenge` and `src/gpu`, so agree
 the plan with them before editing.
 
