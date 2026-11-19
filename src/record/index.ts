@@ -10,17 +10,23 @@
  *   ?record=1e12               particles per frame: also 250M, 10B, 1T
  *   &size=4k                   1080p, 1440p, 4k, 8k (default: the menu's capture resolution)
  *   &frames=1                  more than 1 renders a clip and encodes an MP4; or &seconds=10
+ *   &shot=heroA                a hand-placed composition from src/offline (heroA, heroB, heroC) instead of the
+ *                              cluster; it brings its own splat and weighting unless given below
  *   &fps=60  &sheets=1024  &seed=1
  *   &weighting=count           count (default): every particle adds exactly one unit; flux: far sheets dimmer
  *   &fresh=1                   discard a saved partial render of the same job and start over
  *
  * Frames are kept in the browser's private storage, one folder per job, so a
  * reload or a crash continues where it stopped: open the same URL again.
+ * While a frame renders, a preview of it sharpens over the app every 15 s,
+ * captioned with the GPU's own running tally.
  */
 import { downloadBlob, startRecording, timestampName } from "../capture";
-import type { FrameStats } from "../offline/core/develop";
-import { DEFAULT_LOOK, withCommas } from "../offline/core/grade";
+import { TOKENS } from "../core/contracts";
 import { buildManifest } from "../manifest/manifest.mjs";
+import { COMPOSITIONS } from "../offline/core/compositions";
+import { develop, frameStats, type FrameStats } from "../offline/core/develop";
+import { DEFAULT_LOOK, exposureTrack, gradeFrame, toneTable, withCommas } from "../offline/core/grade";
 import { totalParticles, type OfflineJob, type SplatMode, type Weighting } from "../offline/core/job";
 import { StatelessRenderer } from "../offline/core/renderer";
 import { gradeJob, jobFingerprint, loadStats, renderJob, type FileStore } from "../offline/core/session";
@@ -39,6 +45,8 @@ const SIZES: Record<string, [number, number]> = {
 };
 
 const COUNTS = ["1M", "100M", "1B", "10B", "100B", "1T"];
+/** "cluster" is the trillion preset's field of sheets; the rest are src/offline compositions. */
+const SHOTS = ["cluster", ...Object.keys(COMPOSITIONS)];
 
 /** Accepts 1e12, 1_000_000, 250M, 10B, 1T. */
 export function parseCount(v: string): number {
@@ -64,11 +72,30 @@ export interface RecordSettings {
   seed?: number;
   weighting?: Weighting;
   splat?: SplatMode;
+  /** "cluster" (default) or a key of src/offline's COMPOSITIONS. */
+  shot?: string;
 }
 
 /** The offline job for some settings. Same settings, same job, so a rerun resumes it. */
 export function recordJob(s: RecordSettings): OfflineJob {
   const preset = PRESETS.trillion;
+  const composition = s.shot ? COMPOSITIONS[s.shot] : undefined;
+  if (composition) {
+    return composition.build({
+      ...composition.defaults,
+      name: `record-${s.shot}-${shortCount(s.particles)}-${s.width}x${s.height}-${s.frames}f`,
+      width: s.width,
+      height: s.height,
+      fps: s.fps,
+      frames: s.frames,
+      particles: s.particles,
+      seed: s.seed ?? composition.defaults.seed ?? 1,
+      // A composition picks its own splat and weighting (bilinear against moire, flux for depth)
+      // unless the URL says otherwise. Evaluated and landed are GPU-counted either way.
+      weighting: s.weighting,
+      splat: s.splat,
+    });
+  }
   return clusterJob({
     ...preset,
     name: `record-${shortCount(s.particles)}-${s.width}x${s.height}-${s.frames}f`,
@@ -199,6 +226,18 @@ async function browserStore(job: OfflineJob, fresh: boolean): Promise<{ store: F
   }
 }
 
+/**
+ * Grade a frame that is still rendering, for a progressive preview. The white
+ * point follows a percentile of the partial grid, so early previews look like
+ * the final picture, only noisier, and sharpen as batches land.
+ */
+export function gradePartial(acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint }, job: OfflineJob, frame: number): Uint8Array {
+  const developed = develop(acc.lo, acc.hi, job.width, job.height, job.ssaa);
+  const stats = frameStats(frame, acc, developed, { evaluated: 0n, seconds: 0, batches: 0 });
+  const white = exposureTrack([stats], { ...DEFAULT_LOOK, smoothFrames: 0 })[0];
+  return gradeFrame(developed.codes, toneTable(white, DEFAULT_LOOK), frame);
+}
+
 function grayToRgba(gray: Uint8Array, rgba: Uint8ClampedArray): void {
   for (let i = 0, o = 0; i < gray.length; i++, o += 4) {
     rgba[o] = rgba[o + 1] = rgba[o + 2] = gray[i];
@@ -206,20 +245,46 @@ function grayToRgba(gray: Uint8Array, rgba: Uint8ClampedArray): void {
   }
 }
 
-/** The finished picture over the app until clicked away. The world view is paused behind it. */
-function showOverlay(gray: Uint8Array, width: number, height: number): void {
-  document.getElementById("strata-record-view")?.remove();
-  const c = document.createElement("canvas");
-  c.id = "strata-record-view";
-  c.width = width;
-  c.height = height;
-  Object.assign(c.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", objectFit: "contain", background: "#000", cursor: "pointer" });
-  const rgba = new Uint8ClampedArray(width * height * 4);
-  grayToRgba(gray, rgba);
-  c.getContext("2d")!.putImageData(new ImageData(rgba, width, height), 0, 0);
-  c.title = "click to close";
-  c.addEventListener("click", () => c.remove());
-  document.body.appendChild(c);
+/**
+ * The record picture over the app: the frame in progress, then the finished
+ * one, with a caption. Click to close. The world view is paused behind it and
+ * the HUD (z-index 10) stays on top.
+ */
+let view: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; image: ImageData; caption: HTMLDivElement } | null = null;
+
+function closeView(): void {
+  view?.canvas.remove();
+  view?.caption.remove();
+  view = null;
+}
+
+function showFrame(gray: Uint8Array, width: number, height: number, caption: string): void {
+  if (!view || !view.canvas.isConnected || view.canvas.width !== width || view.canvas.height !== height) {
+    closeView();
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.title = "click to close";
+    Object.assign(canvas.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", objectFit: "contain", background: "#000", cursor: "pointer" });
+    canvas.addEventListener("click", closeView);
+    const text = document.createElement("div");
+    Object.assign(text.style, {
+      position: "fixed",
+      left: `${TOKENS.unit * 5}px`,
+      top: `${TOKENS.unit * 5}px`,
+      pointerEvents: "none",
+      whiteSpace: "pre",
+      font: TOKENS.font,
+      letterSpacing: TOKENS.letterSpacing,
+      color: TOKENS.color.foreground,
+      opacity: String(TOKENS.opacityDim),
+    });
+    document.body.append(canvas, text);
+    view = { canvas, ctx: canvas.getContext("2d")!, image: new ImageData(width, height), caption: text };
+  }
+  grayToRgba(gray, view.image.data);
+  view.ctx.putImageData(view.image, 0, 0);
+  view.caption.textContent = caption;
 }
 
 export interface RecordOptions {
@@ -245,6 +310,11 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
   hud.registerParam({
     id: "record.clip", label: "record a clip (else a still)", group, type: "toggle", value: false,
   });
+  hud.registerParam({
+    id: "record.shot", label: "record shot", group, type: "select",
+    value: SHOTS.includes(query.get("shot") ?? "") ? query.get("shot")! : "cluster",
+    options: SHOTS,
+  });
 
   /** URL wins over the menu, so a shared link renders exactly what it says. */
   const settings = (): RecordSettings => {
@@ -267,6 +337,7 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
       seed: q.has("seed") ? parseCount(q.get("seed")!) : undefined,
       weighting: (q.get("weighting") as Weighting | null) ?? undefined,
       splat: (q.get("splat") as SplatMode | null) ?? undefined,
+      shot: q.get("shot") ?? String(hud.getParam("record.shot") ?? "cluster"),
     };
   };
 
@@ -296,6 +367,19 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
           targetBatchMs: 120,
           checkpointSeconds: persistent ? 60 : 0,
           signal,
+          // A preview of the frame in progress. Its caption is the GPU's own running tally.
+          previewSeconds: 15,
+          onPartial: (frame, acc, done, frameTotal) => {
+            const frameText = job.frames > 1 ? `frame ${frame + 1} of ${job.frames}, ` : "";
+            showFrame(
+              gradePartial(acc, job, frame),
+              job.width,
+              job.height,
+              `rendering ${what}: ${frameText}${((100 * done) / frameTotal).toFixed(0)}%\n` +
+                `GPU tally so far: ${withCommas(acc.gpuEvaluated.toString())} of ${withCommas(total)} evaluated, ` +
+                `${withCommas(acc.landed.toString())} in frame`,
+            );
+          },
           onProgress: (p) => {
             const t = performance.now();
             if (t - lastPaint < 250) return;
@@ -372,9 +456,13 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
         }
       }
       downloadBlob(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }), `${base}.json`);
-      if (last) showOverlay(last, job.width, job.height);
-
       const t = manifest.frames[manifest.frames.length - 1];
+      // The caption repeats the GPU's tally for the last frame, as the manifest records it.
+      const lastTally = [...tallies].sort((a, b) => a.frame - b.frame).pop();
+      if (last) {
+        showFrame(last, job.width, job.height, lastTally ? `done: ${tallyLine(lastTally)}\nclick to close` : "done. click to close");
+      }
+
       return t
         ? `saved ${saved} and ${base}.json. ${withCommas(t.evaluated)} of ${withCommas(manifest.particlesPerFrame)} evaluated, ${withCommas(t.landed)} in frame`
         : `saved ${saved}`;
