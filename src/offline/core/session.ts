@@ -24,6 +24,7 @@ export interface FileStore {
   read(name: string): Promise<Uint8Array | null>;
   /** Must be atomic: a reader never sees a half-written file. */
   write(name: string, data: Uint8Array): Promise<void>;
+  /** Removing a file that does not exist is not an error. */
   remove(name: string): Promise<void>;
 }
 
@@ -147,6 +148,8 @@ export async function renderJob(
         break;
       }
       if (await store.read(frameStatsName(frame))) {
+        // A finished frame needs no checkpoint. Earlier versions could leave one behind.
+        await store.remove(partialName(frame));
         skipped++;
         continue;
       }
@@ -206,7 +209,10 @@ export async function renderJob(
       });
       await store.write(frameImageName(frame), await encodeGrayPng(developed.codes, job.width, job.height, zlib));
       await store.write(frameStatsName(frame), text.encode(JSON.stringify(stats)));
-      if (partialFile) await store.remove(partialName(frame));
+      // Always, not only when the frame started from a checkpoint: checkpoints
+      // saved during this frame are a full grid each (66 MB at 4K) and would
+      // otherwise pile up, one per long frame, in the folder or browser storage.
+      await store.remove(partialName(frame));
       rendered++;
       opts.onFrame?.(stats, resume !== undefined);
     }
