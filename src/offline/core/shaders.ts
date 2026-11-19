@@ -11,7 +11,7 @@ import type { LawId, SplatMode } from "./job";
 import { WGSL_COMMON, lawSource } from "./laws";
 
 /** Size of the Batch uniform in bytes. Layout must match the struct below. */
-export const BATCH_UNIFORM_BYTES = 176;
+export const BATCH_UNIFORM_BYTES = 208;
 
 /** Invocations per workgroup. */
 export const WORKGROUP_SIZE = 64;
@@ -52,6 +52,12 @@ struct Batch {
   d0: vec4f,
   d1: vec4f,
   d2: vec4f,
+  // Single-pixel selection (job.select): selA = (x, y, outWidth, outHeight)
+  // in pixels, selB = (scale x, scale y, on, _). When on, gridWidth and
+  // gridHeight above are the reference frame's, the test is the reference
+  // frame's own, and kept particles are placed in the out grid.
+  selA: vec4u,
+  selB: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> B: Batch;
@@ -117,6 +123,14 @@ ${
   splat === "point"
     ? /* wgsl */ `
   if (!inFrame) { return false; }
+  var idx = u32(s.y) * B.gridWidth + u32(s.x);
+  if (B.selB.z > 0.0) {
+    // Exactly the reference frame's pixel test (same s, same u32 floor).
+    if (u32(s.x) != B.selA.x || u32(s.y) != B.selA.y) { return false; }
+    let ox = min(u32((s.x - f32(B.selA.x)) * B.selB.x), B.selA.z - 1u);
+    let oy = min(u32((s.y - f32(B.selA.y)) * B.selB.y), B.selA.w - 1u);
+    idx = oy * B.selA.z + ox;
+  }
   // Weight in units of 1/65536 of a particle.
   var w = 65536u;
   if (B.fluxRef2 > 0.0) {
@@ -125,7 +139,7 @@ ${
     w = u32(f * 65536.0 + u01(draw(key, 7u)));
     if (w == 0u) { return true; }
   }
-  combine(u32(s.y) * B.gridWidth + u32(s.x), w);
+  combine(idx, w);
   return true;`
     : /* wgsl */ `
   // Particles just outside the frame still spread light onto its edge pixels.
