@@ -195,6 +195,15 @@ async function openDevice(job: OfflineJob): Promise<GPUDevice> {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser. Use Chrome or Edge, or the Node runner.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("No GPU adapter found.");
+  // Name the GPU and browser next to the frames: `npm run record -- make` puts them in the manifest.
+  // Best effort: a browser without adapter.info (Chrome before 127) still renders.
+  try {
+    const { vendor, architecture, device, description } = adapter.info;
+    const gpu = { vendor, architecture, device, description, browser: navigator.userAgent };
+    await store.write("adapter.json", new TextEncoder().encode(JSON.stringify(gpu)));
+  } catch {
+    // The manifest then says the GPU is unknown, or takes --gpu.
+  }
   return adapter.requestDevice({ requiredLimits: StatelessRenderer.requiredLimits(job, adapter) });
 }
 

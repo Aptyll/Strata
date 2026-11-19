@@ -1,0 +1,23 @@
+{
+  "format": "strata-record/1",
+  "title": "One trillion particles, 4K, 60 fps, 10 seconds",
+  "description": "1,000,000,000,000 stateless particles on 1024 sheets. Every frame evaluates every particle from scratch: its position is a closed-form function of (sheet seed, particle index, time). Rendered, not simulated. Same world as the app's /?record=1e12&size=4k&frames=600&fps=60&sheets=1024&seed=1.",
+  "world": {
+    "particles": 1000000000000,
+    "width": 3840,
+    "height": 2160,
+    "fps": 60,
+    "frames": 600,
+    "planes": 1024,
+    "seed": 1,
+    "weighting": "count",
+    "splat": "point"
+  },
+  "camera": [
+    {"t": 0, "target": [0, 0, 0], "yaw": -0.5, "pitch": -0.18, "distance": 191.08057584547117, "fovY": 0.6981317007977318},
+    {"t": 0.4, "target": [0, 0, 0], "yaw": 0.25, "pitch": -0.3, "distance": 76.43223033818848, "fovY": 0.6981317007977318},
+    {"t": 0.68, "target": [0.495, 0.18, 0], "yaw": 0.75, "pitch": -0.5, "distance": 7.800000000000001, "fovY": 0.6981317007977318},
+    {"t": 0.86, "target": [0.99, 0.36, 0], "yaw": 0.98, "pitch": -0.62, "distance": 0.7268879275143353, "fovY": 0.6981317007977318},
+    {"t": 1, "target": [0.99, 0.36, 0], "yaw": 1.08, "pitch": -0.66, "distance": 0.06773923835462635, "fovY": 0.6981317007977318}
+  ]
+}

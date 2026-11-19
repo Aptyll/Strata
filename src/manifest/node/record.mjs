@@ -1,104 +1,61 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * npm run record: write, check and reproduce render manifests.
+ * npm run record: make, check and verify render manifests. Walkthrough:
+ * docs/proof/reproduce.md.
  *
- *   npm run record -- make <dir> [--gpu "RTX 2070"] [--look look.json] [--entry "how it was launched"]
+ *   npm run record -- job [config.json] [--out dir]
+ *       Write the job of a record config (default proof/trillion-4k.json) as
+ *       <dir>/job.json. Choose that folder in /src/offline/web/ and press
+ *       render to render exactly that job. Needs tsx (npm ci --prefix src/offline), no GPU.
+ *   npm run record -- make <dir> [--gpu "RTX 2070"] [--look look.json] [--entry "how it was launched"] [--mp4 file]
  *       Read job.json and frame-*.json (written by src/offline) in <dir> and
- *       write <dir>/manifest.json. Needs no GPU, so it runs on Noah's PC too.
+ *       write <dir>/manifest.json, with the video's SHA-256 when there is one.
+ *       Needs no GPU, so it runs on Noah's PC too.
  *   npm run record -- check <reference.json> <dir | manifest.json>
- *       Compare per-frame GPU counts and grid hashes. Exit 1 on any mismatch.
- *   npm run record -- render <reference.json> [--out dir] [--range a:b]
- *       Re-render frames of the manifest's job on this machine (Node + Dawn),
- *       write a manifest for them, and check it against the reference.
- *       Needs `cd src/offline && npm install` once. Not on Noah's PC (Dawn is blocked there).
+ *       Compare frames frame by frame: identical, same picture or different.
+ *       Exit 1 on any different frame. No GPU.
+ *   npm run record -- verify <reference.json | dir> [--frames N | --at 0,300] [--seed S] [--out dir] [--config file] [--mp4 file]
+ *       Check the manifest on its own, run the GPU self-checks, re-render
+ *       frames picked at random on this machine (Node + Dawn) and compare.
+ *       `render <reference.json> --range a:b` is the same with the frames named.
+ *   npm run record -- render <folder> [--range a:b]
+ *       Render the missing frames of the job in a folder on this machine
+ *       (Node + Dawn, resumable), after the GPU self-checks, then make its manifest.
+ *   npm run record -- selfcheck
+ *       The GPU self-checks alone.
  *
+ * verify, render and selfcheck need Dawn: `npm ci --prefix src/offline` once,
+ * on any machine but Noah's PC (Windows Application Control blocks dawn.node).
  * Every number comes from the frame stats the GPU wrote; see manifest.mjs.
  */
-import { spawnSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 
-import { buildManifest, compareManifests, sha256OfBytes } from "../manifest.mjs";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, "../../..");
-
-/** @param {string[]} argv */
-function parseArgs(argv) {
-  /** @type {{ _: string[], [k: string]: any }} */
-  const out = { _: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith("--")) out._.push(a);
-    else if (a.includes("=")) out[a.slice(2, a.indexOf("="))] = a.slice(a.indexOf("=") + 1);
-    else if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) out[a.slice(2)] = argv[++i];
-    else out[a.slice(2)] = true;
-  }
-  return out;
-}
-
-function gitCommit() {
-  const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" });
-  if (r.status !== 0) return null;
-  const dirty = spawnSync("git", ["status", "--porcelain", "--", "src"], { cwd: repo, encoding: "utf8" });
-  return r.stdout.trim() + (dirty.stdout?.trim() ? "-dirty" : "");
-}
-
-/** @param {string} file */
-const readJson = async (file) => JSON.parse(await readFile(file, "utf8"));
-
-/**
- * @param {string} dir
- * @param {{ gpu?: any, look?: any, entry?: string }} extra
- */
-async function makeManifest(dir, extra = {}) {
-  const job = await readJson(path.join(dir, "job.json"));
-  const names = (await readdir(dir)).filter((n) => /^frame-\d+\.json$/.test(n)).sort();
-  const stats = [];
-  /** @type {Record<number, string>} */
-  const imageSha256 = {};
-  for (const n of names) {
-    const s = await readJson(path.join(dir, n));
-    stats.push(s);
-    const png = path.join(dir, n.replace(/\.json$/, ".png"));
-    if (existsSync(png)) imageSha256[s.frame] = await sha256OfBytes(new Uint8Array(await readFile(png)));
-  }
-  if (!stats.length) throw new Error(`No finished frames (frame-*.json) in ${dir}`);
-  let gpu = extra.gpu ?? null;
-  if (!gpu && existsSync(path.join(dir, "adapter.json"))) gpu = await readJson(path.join(dir, "adapter.json"));
-  const manifest = await buildManifest({
-    job,
-    stats,
-    imageSha256,
-    commit: gitCommit(),
-    renderer: "src/offline StatelessRenderer",
-    entry: extra.entry ?? null,
-    gpu,
-    host: { platform: `${os.platform()} ${os.arch()}`, node: process.version },
-    look: extra.look ?? null,
-  });
-  const file = path.join(dir, "manifest.json");
-  await writeFile(file, JSON.stringify(manifest, null, 2));
-  return { manifest, file };
-}
+import { checkManifest, compareManifests, gpuName } from "../manifest.mjs";
+import { parseArgs, printChecks, repo, shown, userPath } from "./common.mjs";
+import { makeManifest, readJson } from "./folder.mjs";
 
 /** @param {any} m */
 function summary(m) {
   const t = m.totals;
   const last = m.frames[m.frames.length - 1];
+  const hashed = m.frames.filter((/** @type {any} */ f) => f.gridSha256 && f.signature).length;
   return [
     `${m.job.name}: ${m.particlesPerFrame} particles per frame on ${m.job.planes} sheets, ${m.job.width}x${m.job.height}`,
     `${t.framesComplete} of ${m.job.frames} frames complete; every particle evaluated in every complete frame: ${t.allEvaluated ? "yes" : "NO"}`,
-    `GPU-evaluated total ${t.evaluated} in ${t.gpuSeconds.toFixed(1)} s (${(t.particlesPerSecond / 1e9).toFixed(2)} billion/s)`,
+    `Evaluated total ${t.evaluated} in ${t.gpuSeconds.toFixed(1)} s (${(t.particlesPerSecond / 1e9).toFixed(2)} billion/s), ` +
+      (t.countedOnGpu === true ? "counted on the GPU" : t.countedOnGpu === false ? "NOT all counted on the GPU (some frames summed dispatch sizes)" : "counter not recorded"),
     `Weighting: ${m.drawing?.meaning ?? "unknown"}${t.eachLandedAddedOnce === true ? " (verified: grid sum = landed x 65536 in every frame)" : t.eachLandedAddedOnce === false ? " (FAILED: grid sum != landed x 65536)" : ""}`,
     last ? `last frame ${last.frame}: landed ${last.landed}${last.drawn != null ? `, of which ${last.drawn} added light` : ""}, outside ${last.outside}` : "",
-    `GPU: ${m.gpu ? Object.values(m.gpu).filter(Boolean).join(" ") : "not recorded (pass --gpu)"}; commit ${m.source.commit ?? "unknown"}`,
+    `Fingerprints (exact grid hash and tile signature): ${hashed} of ${m.frames.length} frames`,
+    m.video ? `Video: ${m.video.file}, ${m.video.bytes} bytes, sha256 ${m.video.sha256}` : "Video: none (pass --mp4 <file>, or put <job name>.mp4 in the folder)",
+    `GPU: ${m.gpu ? gpuName(m.gpu) : "not recorded (pass --gpu)"}; commit ${m.source.commit ?? "unknown"}`,
     "Rendered, not simulated (stateless).",
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** @param {string} p */
@@ -111,58 +68,101 @@ async function loadManifestOrDir(p) {
 }
 
 /** @param {any} reference @param {any} candidate */
-function report(reference, candidate) {
+async function report(reference, candidate) {
+  // A published file must also hold together on its own (for example grid sum = landed x 65536).
+  const failed = (await checkManifest(reference)).filter((c) => c.ok === false);
+  if (failed.length) {
+    console.log("The reference fails its own checks:");
+    printChecks(failed);
+  }
   const r = compareManifests(reference, candidate);
-  console.log(`Checked ${r.checked} frame(s)${r.missing.length ? `, ${r.missing.length} not in the reference` : ""}.`);
-  if (r.ok) console.log("MATCH: GPU counts and grid hashes are identical.");
+  console.log(`Checked ${r.checked} frame(s)${r.missing.length ? `, ${r.missing.length} not in the reference` : ""}: ${r.identical} identical, ${r.samePicture} same picture, ${r.different} different.`);
+  for (const f of r.frames) if (f.verdict === "same picture") console.log(`  frame ${f.frame}: same picture (tiles ${(100 * (f.signatureDistance ?? 0)).toFixed(3)}% apart, in-frame count ${(100 * f.landedDifference).toFixed(4)}%)`);
+  if (r.ok && !failed.length) console.log(r.samePicture ? "MATCH: same GPU counts; pictures within the same-picture limits." : "MATCH: identical frames.");
   else {
     console.log("MISMATCH:");
-    for (const p of r.problems) console.log(`  ${p}`);
+    for (const p of [...failed.map((c) => `reference: ${c.id}: ${c.detail}`), ...r.problems]) console.log(`  ${p}`);
   }
-  return r.ok;
+  return r.ok && !failed.length;
 }
 
+/**
+ * The GPU half (reproduce.mjs) imports the TypeScript renderer, so it runs
+ * through tsx from src/offline's install, registered in this process (no
+ * child process, so Ctrl+C reaches the render exactly once).
+ * @param {boolean} needsDawn
+ * @returns {Promise<typeof import("./reproduce.mjs")>}
+ */
+async function gpuHalf(needsDawn) {
+  const modules = path.join(repo, "src/offline/node_modules");
+  const missing = ["tsx", ...(needsDawn ? ["webgpu"] : [])].filter((n) => !existsSync(path.join(modules, n, "package.json")));
+  if (missing.length) {
+    throw new Error(
+      [
+        `This step needs ${missing.join(" and ")} from src/offline, installed once at the versions pinned in src/offline/package-lock.json:`,
+        "",
+        "  npm ci --prefix src/offline",
+        ...(needsDawn ? ["", "It renders with Dawn (native dawn.node), which Noah's PC blocks: run it on another machine."] : []),
+      ].join("\n"),
+    );
+  }
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major < 20 || (major === 20 && minor < 6)) throw new Error(`This step needs Node 20.6 or newer (22 recommended). This is ${process.version}.`);
+  const tsxPkg = JSON.parse(readFileSync(path.join(modules, "tsx", "package.json"), "utf8"));
+  const api = tsxPkg.exports?.["./esm/api"]?.import?.default ?? "./dist/esm/api/index.mjs";
+  const { register } = await import(pathToFileURL(path.join(modules, "tsx", api)).href);
+  register();
+  return import("./reproduce.mjs");
+}
+
+const HELP = [
+  "npm run record -- job [config.json] [--out dir]                 write a record config's job.json, to render in /src/offline/web/",
+  "npm run record -- make <dir> [--gpu NAME] [--look look.json] [--mp4 file]   write <dir>/manifest.json from a finished render",
+  "npm run record -- check <reference.json> <dir|manifest.json>    compare frames: identical, same picture or different",
+  "npm run record -- verify <reference.json|dir> [--frames N | --at 0,300] [--seed S]   re-render frames here and compare (Node + Dawn)",
+  "npm run record -- render <folder> [--range a:b]                 render a job folder's missing frames here (Node + Dawn), then make its manifest",
+  "npm run record -- render <reference.json> [--range a:b]         the same as verify with the frames named",
+  "npm run record -- selfcheck                                     GPU self-checks on this machine (Node + Dawn)",
+  "Walkthrough: docs/proof/reproduce.md",
+].join("\n");
+
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const args = parseArgs(argv);
   const [cmd, a, b] = args._;
   if (cmd === "make" && a) {
-    const dir = path.resolve(a);
-    const look = typeof args.look === "string" ? await readJson(path.resolve(args.look)) : null;
+    const dir = userPath(a);
+    const look = typeof args.look === "string" ? await readJson(userPath(args.look)) : null;
     const gpu = typeof args.gpu === "string" ? { name: args.gpu } : undefined;
-    const { manifest, file } = await makeManifest(dir, { gpu, look, entry: typeof args.entry === "string" ? args.entry : undefined });
+    const mp4 = typeof args.mp4 === "string" ? userPath(args.mp4) : undefined;
+    const { manifest, file } = await makeManifest(dir, { gpu, look, entry: typeof args.entry === "string" ? args.entry : undefined, mp4 });
     console.log(summary(manifest));
-    console.log(`Wrote ${file}`);
+    console.log(`Wrote ${shown(file)}`);
     return;
   }
   if (cmd === "check" && a && b) {
-    process.exitCode = report(await readJson(path.resolve(a)), await loadManifestOrDir(path.resolve(b))) ? 0 : 1;
+    process.exitCode = (await report(await readJson(userPath(a)), await loadManifestOrDir(userPath(b)))) ? 0 : 1;
     return;
   }
-  if (cmd === "render" && a) {
-    const reference = await readJson(path.resolve(a));
-    if (!reference.fullJob) throw new Error("This manifest has no fullJob, so it cannot be re-rendered.");
-    const out = path.resolve(String(args.out ?? path.join("out", `${reference.job.name}-repro`)));
-    await mkdir(out, { recursive: true });
-    const jobFile = path.join(out, "job.json");
-    if (!existsSync(jobFile)) await writeFile(jobFile, JSON.stringify(reference.fullJob));
-    const tsx = path.join(repo, "src/offline/node_modules/tsx/dist/cli.mjs");
-    if (!existsSync(tsx)) throw new Error("Run `cd src/offline && npm install` once first (tsx and webgpu live there).");
-    const range = String(args.range ?? (reference.frames.length ? `${reference.frames[0].frame}:${reference.frames[0].frame + 1}` : "0:1"));
-    const r = spawnSync(process.execPath, [tsx, path.join(here, "reproduce.mjs"), "--out", out, "--range", range], { stdio: "inherit" });
-    if (r.status !== 0) throw new Error(`render failed (exit ${r.status})`);
-    const { manifest, file } = await makeManifest(out, { entry: `npm run record -- render ${a} --range ${range}` });
-    console.log(summary(manifest));
-    console.log(`Wrote ${file}`);
-    process.exitCode = report(reference, manifest) ? 0 : 1;
+  if (cmd === "job") return (await gpuHalf(false)).job(args);
+  if (cmd === "selfcheck") return (await gpuHalf(true)).selfcheck(args);
+  if (cmd === "render" && a && existsSync(path.join(userPath(a), "job.json"))) {
+    // A folder with a job: render its missing frames here, then write its manifest.
+    const made = await (await gpuHalf(true)).renderFolder(args, `npm run record -- ${argv.join(" ")}`);
+    if (made) {
+      console.log(summary(made.manifest));
+      console.log(`Wrote ${shown(made.file)}`);
+    }
     return;
   }
-  console.log(
-    [
-      "npm run record -- make <dir> [--gpu NAME] [--look look.json]    write <dir>/manifest.json from a finished render",
-      "npm run record -- check <reference.json> <dir|manifest.json>    compare GPU counts and grid hashes",
-      "npm run record -- render <reference.json> [--out dir] [--range a:b]   re-render and check (Node + Dawn)",
-    ].join("\n"),
-  );
+  if ((cmd === "verify" || cmd === "render") && a) {
+    // render --range a:b (the original command) is verify with those frames, end exclusive.
+    if (cmd === "render" && args.at === undefined) args.at = typeof args.range === "string" ? args.range : undefined;
+    if (cmd === "render" && args.at === undefined) args.frames = 1;
+    await (await gpuHalf(true)).verify(args, `npm run record -- ${argv.join(" ")}`);
+    return;
+  }
+  console.log(HELP);
   if (cmd) process.exitCode = 1;
 }
 
