@@ -100,6 +100,33 @@ export function prefixJob(job: OfflineJob, n: number, name: string): OfflineJob 
   return { ...job, name, frames: 1, planes };
 }
 
+/**
+ * The first `n` particles spread over every sheet in proportion to its size:
+ * sheet i takes its own indices [0, take_i), with
+ *   take_i = floor(n * cum_i / total) - floor(n * cum_(i-1) / total)
+ * (cum_i = particles in sheets 0..i). The parts sum to exactly n and grow with
+ * n, so each count-up stage shows the whole cluster getting denser instead of
+ * one sheet filling at a time. Exact in BigInt (n * cum reaches 10^24).
+ * Stages are nested from about 1,000 particles up; below that, when sheets
+ * hold 0 or 1 particle each, a lone particle can sit on a different sheet from
+ * one stage to the next (checked over the default 1T stages).
+ */
+export function evenPrefixJob(job: OfflineJob, n: number, name: string): OfflineJob {
+  const total = BigInt(totalParticles(job));
+  const N = BigInt(Math.min(n, totalParticles(job)));
+  let cum = 0n;
+  let prev = 0n;
+  const planes = [];
+  for (const p of job.planes) {
+    cum += BigInt(p.particleCount);
+    const upto = (N * cum) / total;
+    const take = Number(upto - prev);
+    prev = upto;
+    if (take > 0) planes.push({ ...p, particleCount: Math.min(take, p.particleCount) });
+  }
+  return { ...job, name, frames: 1, planes };
+}
+
 export interface Pass {
   /** Prefix for this pass's files in the shot folder. */
   key: string;
@@ -120,7 +147,7 @@ export function countUpPasses(o: ShotOptions): Pass[] {
   const total = totalParticles(world);
   return countUpStages(total).map((n, i) => ({
     key: `countup-${String(i).padStart(2, "0")}-`,
-    job: prefixJob(world, n, `countup ${n}`),
+    job: evenPrefixJob(world, n, `countup ${n}`),
     hold: Math.max(6, Math.round(o.fps * 0.4)),
   }));
 }
@@ -144,7 +171,9 @@ export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number,
 
 /** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
 export const LOUPE_MIN = 10_000;
-export const LOUPE_MAX = 50_000;
+// 100k: at 1T no sheet-interior pixel holds under 50k (2070 run, 2026-11-19).
+// Opened at 2160x2160, 100k dots are still about 7 px apart.
+export const LOUPE_MAX = 100_000;
 
 /** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
 export const LOUPE_SIZE = 2160;
@@ -215,12 +244,11 @@ export function rollPixel(
 }
 
 /**
- * The loupe: the main camera, unchanged, with an off-axis window that
- * stretches exactly pixel (x, y) of the main frame over a size x size output.
- * A particle lands in the loupe exactly when its projected centre falls in
- * that pixel of the main view (same camera, same projection, cut by the same
- * pixel edges), so the dot count equals the pixel's count up to f32 rounding
- * at the pixel border.
+ * The loupe: the main camera, unchanged, keeping only the particles whose
+ * main-view pixel is exactly (x, y) (job.select: the same float operations and
+ * u32 floor as the main frame, in the same shader), each placed in a
+ * size x size output by where it falls inside that pixel. The dot count is
+ * then the pixel's count exactly, not approximately.
  */
 export function loupeJob(job: OfflineJob, x: number, y: number, size: number): OfflineJob {
   return {
@@ -228,8 +256,9 @@ export function loupeJob(job: OfflineJob, x: number, y: number, size: number): O
     name: `loupe ${x},${y}`,
     width: size,
     height: size,
+    ssaa: 1,
     frames: 1,
-    window: { width: job.width * job.ssaa, height: job.height * job.ssaa, x0: x * job.ssaa, y0: y * job.ssaa, x1: (x + 1) * job.ssaa, y1: (y + 1) * job.ssaa },
+    select: { width: job.width * job.ssaa, height: job.height * job.ssaa, x: x * job.ssaa, y: y * job.ssaa },
   };
 }
 

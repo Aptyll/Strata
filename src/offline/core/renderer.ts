@@ -13,6 +13,7 @@ import { cameraBasis, planeHomography, type CameraBasis } from "./math";
 import { BATCH_UNIFORM_BYTES, WORKGROUP_SIZE, accumulateShader } from "./shaders";
 import { TrillionKernel, type TrillionPlane } from "../../trillion/kernel";
 import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
+import { STATELESS_LAWS } from "../../stateless/laws";
 
 /**
  * Which kernel adds particles to the grid.
@@ -22,7 +23,7 @@ import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
  *   trillion  src/trillion's splat kernel: fire-and-forget u32 atomics folded
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
- *             depth, and evaluated is counted by the host from dispatch sizes.
+ *             depth. Evaluated and landed are both counted on the GPU.
  *             Camera motion blur is offline only: the trillion kernel projects
  *             every particle with the mid-shutter camera, so an A/B with a
  *             moving camera compares blurred against unblurred camera moves.
@@ -72,8 +73,7 @@ export interface Accumulation {
   /**
    * Particles evaluated for this frame (includes work restored from a
    * checkpoint). Equals the world's total when the frame is done. Counted on
-   * the GPU by the offline kernel; by the host from dispatch sizes with the
-   * trillion kernel (see `evaluatedBy`).
+   * the GPU by both kernels.
    */
   gpuEvaluated: bigint;
 }
@@ -129,6 +129,8 @@ const now = (): number => performance.now();
 
 /** The offline kernel's tally: landed, evaluated and drawn, 64 bits each. */
 const TALLY_BYTES = 24;
+/** Readback buffer for either kernel's tally. The trillion kernel's has four 64-bit counts. */
+const READ_TALLY_BYTES = 32;
 
 export class StatelessRenderer {
   readonly gridWidth: number;
@@ -156,9 +158,13 @@ export class StatelessRenderer {
   private tk: TrillionKernel | null = null;
   private tkRead: GPUBuffer | null = null;
   readonly kernel: KernelChoice;
-  /** Who counted `gpuEvaluated`. */
+  /**
+   * Who counted `gpuEvaluated`. Always the GPU now: the trillion kernel has
+   * its own evaluated tally since src/trillion #82. "host" stays in the type
+   * for stats written before that.
+   */
   get evaluatedBy(): "gpu" | "host" {
-    return this.tk ? "host" : "gpu";
+    return "gpu";
   }
   /** Grid units per full-weight particle. The trillion kernel counts whole particles, ONE each. */
   get unitsPerParticle(): number {
@@ -194,7 +200,7 @@ export class StatelessRenderer {
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
     this.tally = device.createBuffer({ label: "offline tally", size: TALLY_BYTES, usage: acc });
-    this.readTally = device.createBuffer({ label: "offline readTally", size: TALLY_BYTES, usage: read });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: READ_TALLY_BYTES, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -209,8 +215,15 @@ export class StatelessRenderer {
   static async create(device: GPUDevice, job: OfflineJob, opts: RendererOptions = {}): Promise<StatelessRenderer> {
     validateJob(job);
     const r = new StatelessRenderer(device, job, opts);
+    if (job.select && r.kernel === "trillion") throw new Error("job.select needs the offline kernel");
     if (r.kernel === "trillion") {
-      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws: OFFLINE_LAWS });
+      // Only the laws this job uses, so no pipeline is compiled for nothing.
+      const used = new Set<string>(job.planes.map((p) => p.law));
+      const laws = [
+        ...OFFLINE_LAWS.filter((l) => used.has(l.id)),
+        ...STATELESS_LAWS.filter((l) => used.has(l.id)).map((l) => ({ id: l.id, fn: l.fn, wgsl: l.wgsl })),
+      ];
+      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws });
       r.tkRead = device.createBuffer({
         label: "offline trillion read",
         size: r.gridWidth * r.gridHeight * 8,
@@ -377,8 +390,9 @@ export class StatelessRenderer {
       u32[22] = plane.seed;
       u32[23] = this.perInvocation;
       u32[24] = gx * WORKGROUP_SIZE;
-      u32[25] = this.gridWidth;
-      u32[26] = this.gridHeight;
+      const sel = job.select;
+      u32[25] = sel ? sel.width : this.gridWidth;
+      u32[26] = sel ? sel.height : this.gridHeight;
       f32[27] = this.unitsPerParticle;
       f32[28] = time;
       f32[29] = shutterSpan;
@@ -388,6 +402,8 @@ export class StatelessRenderer {
       const hc = this.homography(camClose, plane);
       const d = hc.map((v, i) => v - ho[i]);
       f32.set([d[0], d[1], d[2], 0, d[3], d[4], d[5], 0, d[6], d[7], d[8], 0], 32);
+      u32.set(sel ? [sel.x, sel.y, this.gridWidth, this.gridHeight] : [0, 0, 0, 0], 44);
+      f32.set(sel ? [this.gridWidth, this.gridHeight, 1, 0] : [0, 0, 0, 0], 48);
       device.queue.writeBuffer(this.uniform, 0, data);
 
       const enc = device.createCommandEncoder();
@@ -464,9 +480,14 @@ export class StatelessRenderer {
       sum += n;
     }
     this.device.queue.writeBuffer(tk.counts, 0, counts);
-    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view.
+    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view, [4..5]
+    // patch counters (statistics only), [6..7] evaluated on the GPU.
     const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
-    this.device.queue.writeBuffer(tk.tallyBuffer, 0, new Uint32Array([...split(sum), ...split(acc.landed)]));
+    this.device.queue.writeBuffer(
+      tk.tallyBuffer,
+      0,
+      new Uint32Array([...split(sum), ...split(acc.landed), 0, 0, ...split(acc.gpuEvaluated)]),
+    );
     tk.evaluated = Number(acc.gpuEvaluated);
   }
 
@@ -477,7 +498,7 @@ export class StatelessRenderer {
     const enc = device.createCommandEncoder();
     tk.fold(enc);
     enc.copyBufferToBuffer(tk.counts, 0, read, 0, cells * 8);
-    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 16);
+    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 32);
     device.queue.submit([enc.finish()]);
     tk.submitted();
     await Promise.all([read.mapAsync(GPUMapMode.READ), this.readTally.mapAsync(GPUMapMode.READ)]);
@@ -496,9 +517,11 @@ export class StatelessRenderer {
     // Kernel tally: [0..1] particles it added to the grid, [2..3] in view.
     const drawn = BigInt(t[0]) + (BigInt(t[1]) << 32n);
     const landed = BigInt(t[2]) + (BigInt(t[3]) << 32n);
+    // Counted by the kernel, one atomic per workgroup (src/trillion, #82).
+    const gpuEvaluated = BigInt(t[6]) + (BigInt(t[7]) << 32n);
     read.unmap();
     this.readTally.unmap();
-    return { lo, hi, unitsPerParticle: ONE, landed, drawn, gpuEvaluated: BigInt(tk.evaluated) };
+    return { lo, hi, unitsPerParticle: ONE, landed, drawn, gpuEvaluated };
   }
 
   /**
@@ -506,6 +529,8 @@ export class StatelessRenderer {
    * in doubles: px' = (px - x0) * sx, py' = (py - y0) * sy, depth unchanged.
    */
   private homography(cam: CameraBasis, plane: OfflinePlane): number[] {
+    const sel = this.job.select;
+    if (sel) return planeHomography(cam, plane, sel.width, sel.height);
     const w = this.job.window;
     if (!w) return planeHomography(cam, plane, this.gridWidth, this.gridHeight);
     const h = planeHomography(cam, plane, w.width, w.height);

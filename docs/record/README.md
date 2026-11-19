@@ -5,15 +5,17 @@ rendered on one RTX 2070 (8 GB) on 2026-11-19. Each is 3840x2160 with
 1,000,000,000,000 stateless particles: the position of every one of them is
 computed for the frame, and the ones that land in view are added into a 64-bit
 accumulation grid. The label in the bottom left is burned in by the renderer
-and reports how many particles landed in view. These stills were rendered with flux weighting as it was then (the default of
-`/src/offline/web/`, which had no weighting control; their 26 to 52 s frame
-times match that mode's speed, and each frame's job.json on the desktop can confirm it): a far particle gets a randomly rounded weight,
+and reports how many particles landed in view. These stills were rendered with flux weighting as it was then (most likely: it was the default of
+`/src/offline/web/`, which had no weighting control; each frame's job.json on
+the desktop can confirm it): a far particle gets a randomly rounded weight,
 often zero, so it counts as in view but is drawn only on average. That mode is
 now the page's "flux, quick" choice (`fluxBits: 16`); flux frames rendered since
 keep every far particle's light and say so in their label. The
 in-view numbers are exact GPU counts of positions inside the frame, not of
-units of light added. A frame takes 26 to 52 seconds
-on this card, depending on how spread out the hits are.
+units of light added. With flux weighting a frame takes 26 to 52
+seconds on this card when the sheets cover part of the frame, and 172 to 205
+seconds when they fill it (composition A). Count weighting takes about 160 to
+193 seconds.
 
 | frame | view | particles in view |
 | --- | --- | ---: |

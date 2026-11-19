@@ -12,7 +12,11 @@ import type { Quat, Vec2, Vec3 } from "../../core/contracts";
  * a pure function of (plane seed, particle index, time), re-evaluated from
  * scratch every frame. See laws.ts for the equations.
  */
-export type LawId = "kepler" | "vortex" | "lissajous";
+export type CoreLawId = "kepler" | "vortex" | "lissajous";
+/** Laws from src/stateless/laws, by their id there. */
+export type StatelessLawId = "veil" | "galaxy" | "web" | "ribbons";
+export type LawId = CoreLawId | StatelessLawId;
+export const LAW_IDS: readonly LawId[] = ["kepler", "vortex", "lissajous", "veil", "galaxy", "web", "ribbons"];
 
 /** Each law reads up to 8 floats. Same cap as MAX_BEHAVIOR_PARAMS. */
 export const LAW_PARAM_COUNT = 8;
@@ -103,6 +107,23 @@ export interface OfflineJob {
    * reference pixel holds that pixel's particles. Absent: the normal frame.
    */
   window?: ProjectionWindow;
+  /**
+   * Optional single-pixel selection (the proof loupe, exact). Project with the
+   * camera as a `width` x `height` reference frame, keep only the particles
+   * whose reference pixel is exactly (x, y), by the same float operations and
+   * u32 floor the reference frame uses, and place each kept particle in the
+   * output by its position inside that pixel. With the offline kernel and point
+   * splats, the landed tally then equals that pixel's count in the reference
+   * frame exactly. Grid pixels (ssaa included).
+   */
+  select?: PixelSelect;
+}
+
+export interface PixelSelect {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
 }
 
 export interface ProjectionWindow {
@@ -187,13 +208,21 @@ export function validateJob(job: OfflineJob): void {
       fail(`plane ${i}: particleCount must be an integer in [0, 2^32 - 1]`);
     if (!Number.isInteger(p.seed) || p.seed < 0 || p.seed > 0xffffffff) fail(`plane ${i}: seed must be a u32`);
     if (p.params.length !== LAW_PARAM_COUNT) fail(`plane ${i}: params must have ${LAW_PARAM_COUNT} entries`);
-    if (p.law !== "kepler" && p.law !== "vortex" && p.law !== "lissajous") fail(`plane ${i}: unknown law ${p.law}`);
+    if (!LAW_IDS.includes(p.law)) fail(`plane ${i}: unknown law ${p.law}`);
   });
   // Past this the 64-bit accumulator could wrap if everything landed in one pixel.
   if (totalParticles(job) > MAX_PARTICLES) fail("more than 2^47 particles do not fit the 64-bit accumulator");
   // Distinct seeds give every sheet its own particle identities.
   const seeds = new Set(job.planes.map((p) => p.seed));
   if (seeds.size !== job.planes.length) fail("plane seeds must be unique");
+  if (job.select) {
+    const q = job.select;
+    if (job.window) fail("select and window cannot be combined");
+    if (job.splat !== "point") fail("select needs point splats");
+    if (![q.width, q.height].every((v) => Number.isInteger(v) && v > 0)) fail("select width and height must be positive integers");
+    if (!(Number.isInteger(q.x) && Number.isInteger(q.y) && q.x >= 0 && q.y >= 0 && q.x < q.width && q.y < q.height))
+      fail("select pixel must be inside the reference frame");
+  }
   if (job.window) {
     const w = job.window;
     if (!(w.width > 0 && w.height > 0)) fail("window width and height must be positive");

@@ -8,7 +8,7 @@
  */
 import type { Quat, Vec3 } from "../../core/contracts";
 import { MAX_FLUX_BITS, type CameraKey, type LawId, type OfflineJob, type OfflinePlane, type SplatMode, type Weighting } from "./job";
-import { pcg } from "./laws";
+import { pcg, statelessLaw } from "./laws";
 
 export interface ClusterOptions {
   name: string;
@@ -31,6 +31,11 @@ export interface ClusterOptions {
   fluxBits?: number;
   timeScale?: number;
   shutter?: number;
+  /**
+   * Laws to draw sheets from, uniformly. Default: the three core laws, with a
+   * Kepler hero sheet. With a list, the hero sheet uses the first law.
+   */
+  laws?: LawId[];
 }
 
 /** The fluxBits field of a new job: only flux jobs carry one, so count jobs stay as they were. */
@@ -70,6 +75,16 @@ export function lawParams(law: LawId, r: () => number): number[] {
     case "lissajous":
       // [freqX, freqY, shells, thickness, rateX, rateY, shellPhase, extent]
       return [Math.floor(mix(1, 6, r())), Math.floor(mix(1, 6, r())), Math.floor(mix(3, 14, r())), mix(0.01, 0.06, r()), mix(0.1, 0.4, r()), mix(0.1, 0.4, r()), mix(0, 0.5, r()), 0.92];
+    default: {
+      // src/stateless laws: each param a third of the way from its default
+      // toward a random point in its range, so sheets vary but stay near the
+      // look the law was tuned for.
+      const law_ = statelessLaw(law)!;
+      return law_.params.map((q) => {
+        const v = mix(q.default, mix(q.min, q.max, r()), 0.35);
+        return q.integer ? Math.round(v) : v;
+      });
+    }
   }
 }
 
@@ -91,14 +106,24 @@ export function clusterJob(o: ClusterOptions): OfflineJob {
   for (let i = 0; i < n; i++) {
     const hero = i === 0;
     const pick = r();
-    const law: LawId = hero ? "kepler" : pick < 0.5 ? "kepler" : pick < 0.75 ? "vortex" : "lissajous";
+    const law: LawId = o.laws?.length
+      ? hero
+        ? o.laws[0]
+        : o.laws[Math.min(o.laws.length - 1, Math.floor(pick * o.laws.length))]
+      : hero
+        ? "kepler"
+        : pick < 0.5
+          ? "kepler"
+          : pick < 0.75
+            ? "vortex"
+            : "lissajous";
     // Uniform in a ball, squashed along Y, pushed away from the hero sheet.
     const dir = randomRotation(r);
     const rad = radius * mix(0.12, 1, Math.cbrt(r()));
     const position: Vec3 = hero ? [0, 0, 0] : [dir[0] * rad, dir[1] * rad * 0.55, dir[2] * rad];
     const size = hero ? heroHalf : mix(0.7, 2.2, r() * r());
     const params = lawParams(law, r);
-    if (hero) {
+    if (hero && law === "kepler") {
       params[0] = 0.3;
       params[1] = 3.2;
       params[2] = 0.03;
@@ -174,4 +199,26 @@ export const PRESETS: Record<string, ClusterOptions> = {
   ten_billion: { name: "ten_billion", width: 3840, height: 2160, fps: 60, frames: 1800, particles: 10_000_000_000, planes: 512 },
   /** One trillion particles, every one evaluated every frame. */
   trillion: { name: "trillion", width: 3840, height: 2160, fps: 60, frames: 600, particles: 1_000_000_000_000, planes: 1024 },
+  /** The preview shot with the src/stateless laws (veil, galaxy, web, ribbons) instead of the core three. */
+  alive_preview: {
+    name: "alive_preview",
+    width: 1280,
+    height: 720,
+    fps: 30,
+    frames: 150,
+    particles: 200_000_000,
+    planes: 128,
+    laws: ["galaxy", "veil", "web", "ribbons"],
+  },
+  /** One trillion with the src/stateless laws, 4K at 24 fps for 10 seconds. Not timed on a real GPU yet. */
+  alive_trillion: {
+    name: "alive_trillion",
+    width: 3840,
+    height: 2160,
+    fps: 24,
+    frames: 240,
+    particles: 1_000_000_000_000,
+    planes: 1024,
+    laws: ["galaxy", "veil", "web", "ribbons"],
+  },
 };

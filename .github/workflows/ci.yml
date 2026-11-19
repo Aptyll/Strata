@@ -45,12 +45,18 @@ jobs:
       - name: Unit tests
         run: npm test
 
-  # WGSL is only compiled by the GPU driver at run time, so tsc cannot see a
-  # broken shader. This job compiles every production shader and runs the
-  # shader correctness cases on a software GPU (SwiftShader) in headless
-  # Chromium. It proves the shaders are valid and correct, never how fast.
-  shaders:
-    name: Shader checks
+  # The checks that need a browser, on a software GPU (SwiftShader) in headless
+  # Chromium. They prove the shaders are valid and the site starts, never how
+  # fast anything runs.
+  #
+  # Shader checks: WGSL is only compiled by the GPU driver at run time, so tsc
+  # cannot see a broken shader. npm run verify compiles every production
+  # shader and runs the shader correctness cases.
+  #
+  # Boot check: npm run smoke opens every page of the built site and fails if
+  # one throws, logs an error, raises a WebGPU error or stops drawing frames.
+  browser:
+    name: Shader checks and app boot
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -72,3 +78,9 @@ jobs:
 
       - name: Shader checks (npm run verify)
         run: npm run verify
+
+      - name: Build the site
+        run: npm run build
+
+      - name: App boot check (npm run smoke)
+        run: npm run smoke

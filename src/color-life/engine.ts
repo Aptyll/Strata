@@ -71,7 +71,10 @@ export class ColorLifeEngine {
   private toneBG: GPUBindGroup | null = null;
 
   private tallyBuffer: GPUBuffer;
+  /** A tally copy is encoded or waiting to be read; no new copy until it has been read. */
   private tallyBusy = false;
+  /** The tally buffer is being mapped; a buffer takes one map at a time. */
+  private tallyReading = false;
   private wantTally = false;
   private rules: ColorRules | null = null;
   private needsInit = true;
@@ -260,13 +263,19 @@ export class ColorLifeEngine {
   }
 
   async readTally(): Promise<number | null> {
-    if (!this.tallyBusy) return null;
+    // A map can take longer than the caller's polling interval (the first frame
+    // compiles every pipeline). Mapping again would throw, and clearing
+    // tallyBusy here would let step() copy into a buffer that is still mapped,
+    // which fails that whole frame's submit.
+    if (!this.tallyBusy || this.tallyReading) return null;
+    this.tallyReading = true;
     try {
       await this.tallyBuffer.mapAsync(GPUMapMode.READ);
       const n = new Uint32Array(this.tallyBuffer.getMappedRange())[0];
       this.tallyBuffer.unmap();
       return n;
     } finally {
+      this.tallyReading = false;
       this.tallyBusy = false;
     }
   }

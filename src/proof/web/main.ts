@@ -118,7 +118,8 @@ async function renderPass(device: GPUDevice, pass: Pass, i: number, n: number): 
 /** Saved loupe pick. The file name carries the range so a pick from an older rule is not reused. */
 const LOUPE_PIXEL_FILE = `loupe-pixel-interior-${LOUPE_MIN}-${LOUPE_MAX}.json`;
 /** Raw 64-bit count grid of the main loupe frame, kept so a new dice roll costs no re-render. */
-const loupeGridFile = (main: OfflineJob) => `loupe-main-grid-${jobFingerprint(main).toString(16)}.bin`;
+// v2: the accumulate shader changed (job.select), so grids from before it are not reused.
+const loupeGridFile = (main: OfflineJob) => `loupe-main-grid-v2-${jobFingerprint(main).toString(16)}.bin`;
 
 interface LoupePixel {
   x: number;
@@ -132,7 +133,7 @@ interface LoupePixel {
 }
 
 // "window": the exact off-axis loupe. Older loupe frames in the folder are left alone.
-const loupeKey = (p: { x: number; y: number }) => `loupe-window-${p.x}-${p.y}-`;
+const loupeKey = (p: { x: number; y: number }) => `loupe-select-${p.x}-${p.y}-`;
 
 async function readLoupePixel(): Promise<LoupePixel | null> {
   const f = await store.read(LOUPE_PIXEL_FILE);
@@ -183,7 +184,7 @@ async function renderLoupe(device: GPUDevice, o: ShotOptions): Promise<void> {
   await renderPass(device, { key: loupeKey(pixel), job: loupeJob(main, pixel.x, pixel.y, LOUPE_SIZE), hold: 1 }, 1, 2);
   setStatus(
     `Loupe pixel (${pixel.x}, ${pixel.y}) holds ${pixel.count} particles (GPU count).` +
-      (pixel.interior === false ? " No pixel met the 10k to 50k sheet-interior rule; this is the nearest." : "") +
+      (pixel.interior === false ? ` No pixel met the ${LOUPE_MIN} to ${LOUPE_MAX} sheet-interior rule; this is the nearest.` : "") +
       " Export to see it opened up.",
   );
 }
@@ -268,6 +269,29 @@ function boxedLabel(gray: Uint8Array, w: number, h: number, lines: string[], top
   if (top) for (let y = y0; y < y1; y++) gray.set(target.subarray(y * w + x0, y * w + x1), (y - shift) * w + x0);
 }
 
+/**
+ * Loupe only: draw every dot as a 3x3 square (a 3x3 max filter), so single
+ * particles survive YouTube's downscale to 1080p. Display only: the counts
+ * come from the GPU tally, one dot per particle.
+ */
+function growDots(gray: Uint8Array, w: number, h: number): void {
+  const src = gray.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx >= 0 && xx < w && src[yy * w + xx] > m) m = src[yy * w + xx];
+        }
+      }
+      gray[y * w + x] = m;
+    }
+  }
+}
+
 /** A thin ring around a tracked particle, drawn into the graded frame. */
 function ring(gray: Uint8Array, w: number, h: number, cx: number, cy: number, r: number): void {
   for (let a = 0; a < 720; a++) {
@@ -319,6 +343,7 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
         // gradeJob asks for the label just before handing over the frame; draw it ourselves on a solid box.
         let lines: string[] = [];
         await gradeJob(prefixed(store, pass.key), browserZlib, async (f, gray, job) => {
+          if (id === "loupe") growDots(gray, job.width, job.height);
           boxedLabel(gray, job.width, job.height, lines, id === "loupe");
           if (findTarget) {
             const cam = cameraBasis(new CameraPath(job.camera).atFrame(f, job.frames));

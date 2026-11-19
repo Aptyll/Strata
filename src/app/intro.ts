@@ -11,7 +11,7 @@ import type { CameraState, PlaneInstance } from "../core/contracts";
 import { planeFromDesc } from "../ux/experience/camera-rig";
 import { loadMemory, saveMemory } from "../ux/experience/hints";
 import { createIntroRunner, type IntroRunner } from "../ux/experience/intro-runner";
-import { KEYS } from "./keys";
+import { MOVES_CAMERA, isPlainKey } from "./keys";
 
 export interface IntroCamera {
   state: CameraState;
@@ -83,17 +83,12 @@ export function mountIntro(
     released = true;
     skip();
   };
-  const plain = (k: KeyboardEvent) => !(k.ctrlKey || k.altKey || k.metaKey);
-  const onCameraKey = (e: Event) => {
-    const k = e as KeyboardEvent;
-    // Shift on its own and Ctrl, Alt or Meta shortcuts move nothing, so those only fast-forward.
-    if (plain(k) && !k.code.startsWith("Shift")) takeOver();
-    else skip();
-  };
+  // Shift on its own and Ctrl, Alt or Meta shortcuts move nothing, so those only fast-forward.
+  const onCameraKey = (e: Event) => (isPlainKey(e as KeyboardEvent) ? takeOver() : skip());
   const onKey = (e: Event) => {
     const k = e as KeyboardEvent;
     // G is the app's, not the camera's, but it flies to a sheet: each eased write would cancel that flight.
-    if (k.code === KEYS.nearestPlane.code && plain(k)) takeOver();
+    if (MOVES_CAMERA.has(k.code) && isPlainKey(k)) takeOver();
     else skip();
   };
   const listeners: Array<[EventTarget, string, (e: Event) => void, AddEventListenerOptions?]> = [
