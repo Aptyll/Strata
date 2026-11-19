@@ -140,14 +140,58 @@ function fmtDuration(s: number): string {
   return `${(s / 86400).toFixed(1)} days`;
 }
 
+/**
+ * A store that never fails a render: writes go to `primary`, and if one
+ * throws (quota full, private window, no OPFS write support) that file and
+ * every later one are kept in memory instead. The render then finishes but
+ * no longer survives a reload, and `degraded` says so.
+ */
+export function resilientStore(primary: FileStore, onDegrade: (err: unknown) => void): FileStore & { readonly degraded: boolean } {
+  const fallback = memoryStore();
+  let degraded = false;
+  const held = new Set<string>();
+  return {
+    get degraded() {
+      return degraded;
+    },
+    async read(name) {
+      if (held.has(name)) return fallback.read(name);
+      try {
+        return await primary.read(name);
+      } catch {
+        return null;
+      }
+    },
+    async write(name, data) {
+      if (!degraded) {
+        try {
+          await primary.write(name, data);
+          return;
+        } catch (err) {
+          degraded = true;
+          onDegrade(err);
+        }
+      }
+      held.add(name);
+      await fallback.write(name, data);
+    },
+    async remove(name) {
+      held.delete(name);
+      await fallback.remove(name);
+      await primary.remove(name).catch(() => {});
+    },
+  };
+}
+
 /** Frames live in the browser's private file system, one folder per job, so a rerun resumes. */
 async function browserStore(job: OfflineJob, fresh: boolean): Promise<{ store: FileStore; persistent: boolean }> {
+  const warn = (err: unknown) => console.warn("record: browser storage stopped accepting files; the rest of this render stays in memory and will not survive a reload", err);
   try {
     const root = await navigator.storage.getDirectory();
     const name = `strata-record-${jobFingerprint(job).toString(16)}`;
     if (fresh) await root.removeEntry(name, { recursive: true }).catch(() => {});
     void navigator.storage.persist?.().catch(() => {});
-    return { store: directoryStore(await root.getDirectoryHandle(name, { create: true })), persistent: true };
+    return { store: resilientStore(directoryStore(await root.getDirectoryHandle(name, { create: true })), warn), persistent: true };
   } catch (err) {
     console.warn("record: browser storage unavailable, keeping frames in memory", err);
     return { store: memoryStore(), persistent: false };
