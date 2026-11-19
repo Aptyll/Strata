@@ -10,19 +10,18 @@ address: 1200x630, the size Open Graph and X cards both expect. The site plugin
 of its bytes, so a changed card gets a new address and old cached previews
 cannot stick around.
 
-Honest counting: the picture is the frame itself (only empty rows and columns
-are trimmed, and it is scaled down), and both numbers on it are the ones burned
-into that frame's own label. "In this frame" is the GPU's count of the particles
-that landed in the picture. The big number is the particle count of the render
-job: every position is computed (the renderer culls nothing), but the stills in
-docs/record were most likely rendered before the renderer counted evaluated
-particles on the GPU, so for them it is not a GPU count (docs/journal/rendering,
-page 07). Change the frame and you must change the numbers here.
+Honest counting: the picture is the frame itself, cut to the card's shape and
+scaled down, and the two numbers on it repeat the frame's own label. For a frame
+with a render manifest (docs/record/<name>.manifest.json, see src/manifest) the
+numbers are read from the manifest each time the card is built: `evaluated` and
+`landed`, both counted by the GPU. A frame without a manifest has the numbers
+from its label typed in below, with a note on what they are.
 
 Needs Python 3 with Pillow, and the Inter font (rsms.me/inter, OFL). The output
 is committed, so nobody has to run this unless the card should change.
 """
 import argparse
+import json
 import os
 import sys
 
@@ -33,10 +32,25 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 RECORD = os.path.join(ROOT, "docs", "record")
 
 W, H = 1200, 630
-# The renderer's own label sits in rows 2004 to 2111 of a 3840x2160 frame and is
-# far too small to read at card size, so the card stops above it and says the
-# same thing in type that survives a phone. 3802 x 1996 is 1200 x 630 exactly.
-FRAME_BOX = (19, 0, 3821, 1996)
+# One entry per record frame a card can show.
+#   box       the part of the 3840x2160 frame on the card. A card is 1200x630, so a strip
+#             has to go: the bottom rows, which hold the renderer's own label (far too
+#             small to read at card size, so the card says the same in type that survives
+#             a phone), and a few columns left and right.
+#   manifest  the frame's render manifest. The card's numbers are read from it.
+#   evaluated, in_frame   for a frame without a manifest: the numbers on its label.
+FRAMES = {
+    # Composition A on 64-bit keys. Its label takes rows 1964 to 2111, and everything
+    # else this box leaves out is empty black, so the picture on the card is whole.
+    "trillion64-A.png": dict(box=(68, 0, 3771, 1944), manifest="trillion64-A.manifest.json"),
+    # The cluster stills fill the frame, so the box cuts through a few sheets at the
+    # bottom and the sides. They were rendered on 32-bit keys, before the renderer
+    # counted evaluated particles on the GPU (docs/journal/rendering, page 07): "in
+    # frame" is a GPU count, the trillion is the particle count of the render job.
+    "trillion-key2-f0.png": dict(box=(19, 0, 3821, 1996), evaluated="1,000,000,000,000", in_frame="107,787,615,440"),
+    # key1 opens the video. Two digits of its label are hidden behind a sheet, hence "about".
+    "trillion-key1-f0.png": dict(box=(19, 0, 3821, 1996), evaluated="1,000,000,000,000", in_frame="ABOUT 843 BILLION"),
+}
 
 FONT_DIRS = ["/usr/share/fonts/opentype/inter", os.path.expanduser("~/.fonts"), "/Library/Fonts"]
 
@@ -57,8 +71,21 @@ def tracked(draw: ImageDraw.ImageDraw, xy, text: str, fnt, fill, tracking: float
         x += draw.textlength(ch, font=fnt) + tracking
 
 
-def card(frame: str, evaluated: str | None, in_frame: str | None, scrim: bool = False) -> Image.Image:
-    im = Image.open(os.path.join(RECORD, frame)).convert("L").crop(FRAME_BOX)
+def numbers(frame: str) -> tuple[str, str]:
+    """The two numbers a card shows for `frame`: particles evaluated, and particles that landed in the picture."""
+    spec = FRAMES[frame]
+    if "manifest" not in spec:
+        return spec["evaluated"], spec["in_frame"]
+    with open(os.path.join(RECORD, spec["manifest"]), encoding="utf-8") as f:
+        manifest = json.load(f)
+    tally = manifest["frames"][0]
+    if manifest.get("mode") != "rendered-stateless" or tally.get("allEvaluated") is not True:
+        sys.exit(f"make-card: {spec['manifest']} does not say that every particle was evaluated. Its numbers do not go on a card.")
+    return f"{int(tally['evaluated']):,}", f"{int(tally['landed']):,}"
+
+
+def card(frame: str, text: bool = True, scrim: bool = False) -> Image.Image:
+    im = Image.open(os.path.join(RECORD, frame)).convert("L").crop(FRAMES[frame]["box"])
     im = im.resize((W, H), Image.LANCZOS).convert("RGB")
     if scrim:
         # A busy frame needs the bottom darkened for the type to read: black fading in from row 330.
@@ -68,25 +95,26 @@ def card(frame: str, evaluated: str | None, in_frame: str | None, scrim: bool = 
         im.paste(Image.new("RGB", (W, H), "black"), (0, 0), shade.resize((W, H)))
     draw = ImageDraw.Draw(im, "RGBA")
     tracked(draw, (60, 48), "STRATA", font("InterDisplay-Light.otf", 26), (255, 255, 255, 235), 13)
-    if evaluated:
+    if text:
+        evaluated, in_frame = numbers(frame)
         draw.text((57, 470), evaluated, font=font("InterDisplay-ExtraBold.otf", 70), fill=(255, 255, 255, 255))
-        caption = "PARTICLES RENDERED" + (f"  ·  {in_frame} IN THIS FRAME" if in_frame else "")
+        caption = f"PARTICLES RENDERED  ·  {in_frame} IN THIS FRAME"
         tracked(draw, (60, 558), caption, font("Inter-Medium.otf", 19), (255, 255, 255, 205), 2.2)
     return im
 
 
-# The card the site uses. trillion-key2-f0.png: 107,787,615,440 of the 1,000,000,000,000
-# evaluated particles land in the frame (docs/record/README.md). It is a cluster render,
-# so its trillion particles are distinct even on the 32-bit keys it was rendered with.
-# Not trillion-A.png: composition A stacked identical sheets, so on 32-bit keys it held
+# The card the site uses: composition A on 64-bit keys, the first frame whose two numbers
+# are both GPU counts with a manifest in the repo. 98.6% of the trillion land in the
+# picture, so the big number is also true of what the picture shows.
+# Not docs/record/retired/trillion-A-32bit.png: on 32-bit keys the same composition held
 # at most about 17.2 billion distinct particles, repeated.
-SITE_CARD = dict(frame="trillion-key2-f0.png", evaluated="1,000,000,000,000", in_frame="107,787,615,440", scrim=True)
+SITE_CARD = dict(frame="trillion64-A.png")
 
 VARIANTS = {
     "strata-1t": SITE_CARD,
-    "strata-1t-no-text": dict(frame="trillion-key2-f0.png", evaluated=None, in_frame=None),
-    # key1 opens the video. Two digits of its label are hidden behind a sheet, hence "about".
-    "strata-1t-wide": dict(frame="trillion-key1-f0.png", evaluated="1,000,000,000,000", in_frame="ABOUT 843 BILLION", scrim=True),
+    "strata-1t-no-text": dict(frame="trillion64-A.png", text=False),
+    "strata-1t-key2": dict(frame="trillion-key2-f0.png", scrim=True),
+    "strata-1t-wide": dict(frame="trillion-key1-f0.png", scrim=True),
 }
 
 

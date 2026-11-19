@@ -26,9 +26,12 @@ seed, code and measured speed.
    from 0 to N - 1 went through the kernel exactly once in that frame. Also
    report *landed*: how many passed the clip test (position inside the frame).
    Under `count` weighting every landed particle adds exactly one unit, so
-   grid sum / 65536 = landed. Under `flux` weighting a far particle's weight
-   is randomly rounded and often 0, so it is landed but drawn only in
-   expectation; never call a flux render "every particle drawn".
+   grid sum / 65536 = landed. Under `flux` weighting a particle adds a share
+   of a unit that falls with distance, in grid units of 2^-`fluxBits`; one
+   whose weight rounds to nothing is landed but not drawn. The GPU counts
+   *drawn* as well: call a flux render "every particle drawn" only when its
+   `drawn` equals `landed`. Flux frames from before 2026-11-19 have no `drawn`
+   count and were drawn in expectation only.
 3. **Weight one.** For the claim, every particle counts as exactly one. No
    level-of-detail multiplier (`PerfEngine` brightens a thinned plane by
    `count / k`, so it may never feed a record), no instancing, no copies (see

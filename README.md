@@ -14,9 +14,10 @@ brightness instead of disappearing behind the nearest dot.
 [Render the trillion yourself](#render-the-trillion-yourself) ·
 [Docs](#docs)
 
-![One 3840x2160 frame with 1,000,000,000,000 particles](docs/record/trillion-key1-f0.png)
+[![One 3840x2160 frame with 1,000,000,000,000 particles](docs/record/web/trillion-key1-f0-1920.jpg)](docs/record/trillion-key1-f0.png)
 
-<sub>One 3840x2160 frame from the offline renderer. The positions of all
+<sub>One 3840x2160 frame from the offline renderer, shown at half size (click
+a picture on this page for its full frame). The positions of all
 1,000,000,000,000 particles were computed for this frame, and about 843 billion
 of them land in view. Rendered on an RTX 2070 (8 GB) in under a minute. More
 frames in [docs/record](docs/record).</sub>
@@ -29,7 +30,7 @@ Measured on one RTX 2070 (8 GB, 2018) on 2026-11-19.
 | --- | ---: | --- | --- |
 | Realtime, simulated | 100,000,000 | stepped and drawn every frame | 111 fps |
 | Realtime, simulated | 800,000,000 | stepped and drawn every frame | 15 fps, or 54 fps with culling and LOD |
-| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a randomly rounded, often zero, weight with flux weighting) | per 4K frame: 26 to 52 s with flux weighting when the sheets fill part of the frame; 161 to 205 s with flux when they fill it (composition A); about 160 to 193 s with count weighting |
+| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a share of a unit that falls with distance with flux weighting) | per 4K frame: about 160 to 193 s with count weighting; 161 to 205 s with flux when the sheets fill the frame (composition A); 26 to 52 s with the first stills' quick flux, where most far particles add no light |
 
 The realtime rows come from the benchmark page at 1920x1080 without vsync, and
 the full table is in [docs/perf.md](docs/perf.md). The brute force path moves
@@ -55,16 +56,21 @@ How long a 4K frame takes on the RTX 2070 depends on the shot and the weighting:
 
 | shot | weighting | seconds per 4K frame |
 | --- | --- | ---: |
-| sheets cover part of the frame (wide and medium stills) | flux | 26 to 52 |
+| sheets cover part of the frame (wide and medium stills) | flux, quick (16-bit weights) | 26 to 52 |
 | sheets fill the frame (composition A close-up) | flux | 161 to 205 |
 | proof shots and the far opener | count | about 160 to 193 |
 
-The record stills were most likely rendered with flux weighting: far
-particles get a randomly rounded weight, often zero, so they are drawn on
-average rather than one by one. With count weighting every particle in view
-adds exactly one unit of light.
+The record stills were most likely rendered with flux weighting as it first
+was: a far particle's weight was rounded at random to one unit of 1/65536 or to
+nothing, usually nothing, so they were drawn by a random share of the particles
+in view. Skipping those adds is why they were quick. Flux weighting now stores
+weights finely enough that every particle in view adds light, and the frame's
+label says so from a GPU count. That costs an atomic add per particle, as
+count weighting does, so expect such frames to take about as long as count
+frames; this has not been timed on the 2070 yet. With count weighting every
+particle in view adds exactly one unit of light.
 
-![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/trillion-key2-f0.png)
+[![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/web/trillion-key2-f0-1920.jpg)](docs/record/trillion-key2-f0.png)
 
 <sub>Closer in, fewer particles land in the picture: 107,787,615,440 here. The
 rest are still computed; they just fall outside the frame.</sub>

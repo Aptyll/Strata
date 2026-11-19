@@ -84,6 +84,8 @@ const URL_KEYS: Partial<Record<keyof AppOptions, readonly string[]>> = {
   brightness: ["brightness"],
   seed: ["seed"],
   raster: ["raster", "depth"],
+  depth: ["depth"],
+  subpixel: ["subpixel"],
   parallax: ["parallax"],
   interplane: ["interplane"],
   intro: ["intro"],

@@ -3,8 +3,10 @@
 // The rule that makes it work on every device:
 //     move to look, hold still to touch.
 // A pointer that goes down and travels is steering the camera. A pointer that
-// goes down and stays put becomes a force on the particles, and from then on
-// it can move freely, dragging the force with it.
+// goes down and stays put on something becomes a force on the particles, and
+// once it has stayed put a little longer it can move freely, dragging the
+// force with it. A press that pauses and then travels before that is still a
+// camera drag: nobody should lose a turn of the camera to a moment's hesitation.
 //
 // GestureCore is pure: feed it down/move/up/tick with timestamps and it emits
 // events. bindGestures() wires it to a DOM element.
@@ -16,6 +18,13 @@ export const GESTURE_DEFAULTS = Object.freeze({
   /** Milliseconds a pointer must stay put to become a hold. */
   holdMouse: 170,
   holdTouch: 230,
+  /**
+   * Milliseconds a hold must then last, pointer still inside the slop radius,
+   * before it is settled. A settled hold can be dragged about. One that
+   * travels sooner was a camera drag that began with a pause: the hold is
+   * called off and the drag carries on. 0 settles every hold at once.
+   */
+  holdSettle: 220,
   /**
    * Milliseconds the right button must stay put to become a push. 0 pushes at
    * once, which suits a host where a right drag means nothing. The app's
@@ -38,9 +47,17 @@ export interface GestureHandlers {
   /** Pointer position with nothing pressed. */
   onHover?(x: number, y: number, id: number): void;
   onHoverEnd?(id: number): void;
+  /**
+   * Return false when there is nothing to touch at (x, y). The press then
+   * stays a camera press, and is asked again on every tick while it stays put.
+   */
+  canHold?(x: number, y: number, id: number): boolean;
   onHoldStart?(x: number, y: number, id: number, mode: HoldMode): void;
+  /** The hold has lasted holdSettle: from here on, moving the pointer drags the force. */
+  onHoldSettle?(id: number): void;
   onHoldMove?(x: number, y: number, id: number): void;
-  onHoldEnd?(id: number): void;
+  /** `calledOff` is true when the press turned out to be a camera drag (see holdSettle). */
+  onHoldEnd?(id: number, calledOff?: boolean): void;
   onTap?(x: number, y: number): void;
   onDoubleTap?(x: number, y: number): void;
   /** Any deliberate input. Used to skip the intro. */
@@ -71,6 +88,10 @@ interface Tracked {
   secondary: boolean;
   state: 'pending' | 'drag' | 'hold' | 'pinch';
   mode: HoldMode;
+  /** When the hold began, milliseconds. */
+  heldAt: number;
+  /** The hold has lasted holdSettle (see GESTURE_DEFAULTS). */
+  settled: boolean;
 }
 
 export class GestureCore {
@@ -92,19 +113,20 @@ export class GestureCore {
     const p: Tracked = {
       id: e.id, x: e.x, y: e.y, x0: e.x, y0: e.y, t0: now,
       touch, secondary: e.button === 2, state: 'pending', mode: secondary ? 'repel' : 'attract',
+      heldAt: 0, settled: false,
     };
     this.pointers.set(e.id, p);
     this.h.onIntent?.('press');
 
     if (p.secondary && this.cfg.holdSecondary <= 0) {
       // No camera meaning for a right drag in this host, so the push need not wait.
-      this.startHold(p);
+      this.startHold(p, now);
       return;
     }
     if (this.pointers.size === 2) this.beginPinch();
   }
 
-  move(e: PointerSample, _now: number): void {
+  move(e: PointerSample, now: number): void {
     const p = this.pointers.get(e.id);
     if (!p) {
       this.h.onHover?.(e.x, e.y, e.id);
@@ -119,17 +141,30 @@ export class GestureCore {
       this.updatePinch();
       return;
     }
+    const slop = p.touch ? this.cfg.slopTouch : this.cfg.slopMouse;
+    const travelled = Math.hypot(p.x - p.x0, p.y - p.y0) > slop;
     if (p.state === 'pending') {
-      const slop = p.touch ? this.cfg.slopTouch : this.cfg.slopMouse;
-      if (Math.hypot(p.x - p.x0, p.y - p.y0) > slop) {
+      if (travelled) {
         p.state = 'drag';
         // Do not lose the travel that happened inside the slop radius.
         this.h.onOrbit?.(p.x - p.x0, p.y - p.y0);
       }
       return;
     }
-    if (p.state === 'drag') this.h.onOrbit?.(dx, dy);
-    else if (p.state === 'hold') this.h.onHoldMove?.(p.x, p.y, p.id);
+    if (p.state === 'drag') {
+      this.h.onOrbit?.(dx, dy);
+      return;
+    }
+    if (p.state !== 'hold') return;
+    if (!p.settled && now - p.heldAt >= this.cfg.holdSettle) this.settle(p);
+    if (!p.settled && travelled) {
+      // It set off before the hold settled: a camera drag that began with a pause.
+      p.state = 'drag';
+      this.h.onHoldEnd?.(p.id, true);
+      this.h.onOrbit?.(p.x - p.x0, p.y - p.y0);
+      return;
+    }
+    this.h.onHoldMove?.(p.x, p.y, p.id);
   }
 
   up(e: PointerSample, now: number): void {
@@ -167,9 +202,10 @@ export class GestureCore {
   /** Call every frame so holds can begin while the pointer is motionless. */
   tick(now: number): void {
     for (const p of this.pointers.values()) {
+      if (p.state === 'hold' && !p.settled && now - p.heldAt >= this.cfg.holdSettle) this.settle(p);
       if (p.state !== 'pending') continue;
       const delay = p.secondary ? this.cfg.holdSecondary : p.touch ? this.cfg.holdTouch : this.cfg.holdMouse;
-      if (now - p.t0 >= delay) this.startHold(p);
+      if (now - p.t0 >= delay) this.startHold(p, now);
     }
   }
 
@@ -179,9 +215,17 @@ export class GestureCore {
     this.h.onZoom?.(Math.exp(deltaY * 0.0015), x, y);
   }
 
-  private startHold(p: Tracked): void {
+  private startHold(p: Tracked, now: number): void {
+    if (this.h.canHold && !this.h.canHold(p.x, p.y, p.id)) return;
     p.state = 'hold';
+    p.heldAt = now;
     this.h.onHoldStart?.(p.x, p.y, p.id, p.mode);
+    if (this.cfg.holdSettle <= 0) this.settle(p);
+  }
+
+  private settle(p: Tracked): void {
+    p.settled = true;
+    this.h.onHoldSettle?.(p.id);
   }
 
   private beginPinch(): void {
