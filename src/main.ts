@@ -2,6 +2,7 @@ import { createKeyRouter } from "./app/keys";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
 import { TOKENS, type AppContext, type ParticleBudget, type Scene } from "./core/contracts";
+import type { DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
 import { initGpu, writeGlobals } from "./gpu/context";
 import { createPasses } from "./passes";
@@ -18,6 +19,7 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 // URL options:
 //   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=0.2&seed=1
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
+//   &raster=sprites  draw depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
 //   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
@@ -73,7 +75,9 @@ async function start(): Promise<void> {
   const rasterizers = graph.passes.filter((p) => p.stage === "rasterize");
   // Exactly one rasterize pass draws the particles (each one clears the HDR target).
   const setRasterizer = (name: string) => rasterizers.forEach((p) => (p.enabled = p.name === name));
-  setRasterizer(query.get("raster") === "points" ? "points" : "atomic-raster");
+  const wanted = query.get("depth") === "1" ? "sprites" : query.get("raster");
+  setRasterizer(wanted === "points" ? "points" : wanted === "sprites" ? "depth-sprites" : "atomic-raster");
+  const depthSprites = rasterizers.find((p) => p.name === "depth-sprites") as DepthSpritePass | undefined;
 
   // ---- budget ------------------------------------------------------------
   const fullBudget = new VisibleOnlyBudget();
@@ -87,10 +91,9 @@ async function start(): Promise<void> {
   attachCameraInput(canvas, camera.rig, { keyTarget: keys.cameraTarget });
 
   // ---- scene -------------------------------------------------------------
-  let particles = Math.round(num("particles", 2_000_000));
   let planeCount = Math.round(num("planes", 32));
   let total = 0;
-  let scene = buildScene(particles, planeCount, num("brightness", 0.2));
+  let scene = buildScene(Math.round(num("particles", 2_000_000)), planeCount, num("brightness", 0.2));
   // With ?world the planes come from the streamer, so the scene itself starts empty.
   const worldSeed = query.get("world");
   if (worldSeed !== null) scene = { ...scene, planes: [], camera: { ...scene.camera, target: [6, 6, 6], distance: 10 } };
@@ -104,6 +107,7 @@ async function start(): Promise<void> {
     sim.setPlanes(scene.planes);
     total = sim.planes.reduce((n, p) => n + p.capacity, 0);
     camera.rig.setPlanes(scene.planes.map(planeTargetFromDesc));
+    depthSprites?.fitWorld(sim.planes);
     // A scene that came from getScene() (a dice roll, a param edit) keeps the camera exactly
     // where it is, drift and inertia included. Only a scene with a new camera moves it.
     if (JSON.stringify(scene.camera) !== handedOut) {
@@ -145,6 +149,7 @@ async function start(): Promise<void> {
     },
     updatePlane: (plane) => sim.updatePlane(plane),
     setPlaneBehavior: (plane, change) => sim.setBehavior(plane, change),
+    setRender: (patch) => void Object.assign(scene.render, patch),
     stats: () => ({
       fps,
       particles: sim.planes.reduce((n, p) => n + p.activeCount, 0),
@@ -154,7 +159,7 @@ async function start(): Promise<void> {
   if (worldSeed !== null) {
     streaming = startStreamingWorld(app, {
       seed: worldSeed || "strata",
-      maxParticles: query.has("particles") ? particles : 8_000_000,
+      maxParticles: Math.round(num("particles", 8_000_000)),
     });
   }
   mountPanels(app);
@@ -162,34 +167,28 @@ async function start(): Promise<void> {
   (window as unknown as { strata: AppContext }).strata = app;
 
   // ---- HUD: dice, stats on H, settings on Esc ----------------------------
-  const { hud, update: updateHud } = mountHud(app, { hud: { persist: false, autoFps: false } });
+  const { hud, update: updateHud } = mountHud(app, {
+    hud: { autoFps: false },
+    minParticles: MIN_PARTICLES,
+    maxParticles: MAX_PARTICLES,
+    // Particles stay where they are and start obeying the new rule, instead of a hard cut.
+    transition: { swapBehavior: (plane, target) => sim.setBehavior(plane, target) },
+  });
   hud.defineStat("total", { label: "total", format: formatCount });
 
   /** Rebuild the layout for a new particle or plane count, keeping the camera and brightness. */
   const rebuild = () => {
     const keep = getScene();
-    const fresh = buildScene(particles, planeCount, keep.render.brightness);
+    const fresh = buildScene(total, planeCount, keep.render.brightness);
     loadScene(fresh.planes.length === keep.planes.length ? { ...fresh, camera: keep.camera } : fresh);
   };
 
-  const particlesParam = hud.registerParam({
-    id: "particles", type: "range", scale: "log", live: false,
-    min: MIN_PARTICLES, max: MAX_PARTICLES, value: particles, format: formatCount,
-    onChange: (v) => {
-      particles = Math.round(v);
-      rebuild();
-    },
-  });
   hud.registerParam({
-    id: "planes", type: "range", live: false, min: 1, max: 256, step: 1, value: planeCount,
+    id: "planes", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: planeCount,
     onChange: (v) => {
       planeCount = Math.round(v);
       rebuild();
     },
-  });
-  const brightnessParam = hud.registerParam({
-    id: "brightness", type: "range", scale: "log", min: 0.005, max: 5, value: scene.render.brightness,
-    onChange: (v) => (scene.render.brightness = v),
   });
   hud.registerParam({
     id: "rasterizer", type: "select", group: "performance",
@@ -197,6 +196,7 @@ async function start(): Promise<void> {
     options: [
       { value: "atomic-raster", label: "compute" },
       { value: "points", label: "points" },
+      { value: "depth-sprites", label: "depth sprites (fog, focus)" },
     ],
     onChange: setRasterizer,
   });
@@ -209,9 +209,10 @@ async function start(): Promise<void> {
     onChange: (v) => (targetFps = v),
   });
 
+  // The HUD owns the particles and brightness sliders; the keys just move them.
   const scaleParticles = (factor: number) =>
-    particlesParam.set(Math.min(MAX_PARTICLES, Math.max(MIN_PARTICLES, particles * factor)));
-  const scaleBrightness = (factor: number) => brightnessParam.set(scene.render.brightness * factor);
+    hud.setParam("particles", Math.min(MAX_PARTICLES, Math.max(MIN_PARTICLES, total * factor)));
+  const scaleBrightness = (factor: number) => hud.setParam("brightness", scene.render.brightness * factor);
   hud.registerShortcut({ key: "]", label: "double particles", run: () => scaleParticles(2) });
   hud.registerShortcut({ key: "[", label: "halve particles", run: () => scaleParticles(0.5) });
   hud.registerShortcut({ key: "=", label: "brighter", run: () => scaleBrightness(1.25) });
