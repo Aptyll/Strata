@@ -41,16 +41,19 @@ export const MENU_CSS = `
 }
 .sm-fact { min-width: 0; }
 .sm-fact[hidden] { display: none; }
+/* A fact is a value, and values keep their case: 2.00M particles must not read 2.00m (milli). */
 .sm-fact dd {
   margin: 0; color: rgba(var(--hud-fg), var(--hud-a-strong));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  text-transform: none;
 }
 .sm-fact dt { font: var(--hud-font-fine); color: rgba(var(--hud-fg), var(--hud-a-ghost)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- page tabs (first navbar) and section tabs (second navbar) ---- */
+/* Six page tabs must fit on one line: about 0.64em a character plus the gaps, in 27em of room. */
 .sm-tabs, .sm-subtabs {
-  display: flex; flex-wrap: wrap; gap: 0.2em 1.1em;
+  display: flex; flex-wrap: wrap; gap: 0.2em 0.8em;
 }
 .sm-tabs {
   flex: none;
@@ -81,8 +84,40 @@ export const MENU_CSS = `
 }
 .sm-pages::-webkit-scrollbar { display: none; }
 .sm-page[hidden], .sm-section[hidden] { display: none; }
-/* The section tab already names the group, so its heading would repeat it. */
-.sm-page.has-sub .sh-group-title { display: none; }
+/* The page tab, the section tab or the section title already names the group. */
+.sm-menu .sh-group-title { display: none; }
+
+/* ---- stacked pages: every section shown, under a small title ---- */
+.sm-section-title { display: none; }
+.sm-page.is-stacked .sm-section-title {
+  display: block; width: 100%; padding: 0; text-align: left;
+  font: var(--hud-font-fine);
+  color: rgba(var(--hud-fg), var(--hud-a-ghost));
+  margin-bottom: calc(var(--hud-unit) * 2);
+}
+/* A page's first section, named like the page: the page tab already says it. */
+.sm-page.is-stacked > .sm-subtabs + .sm-section.is-self-named > .sm-section-title:not(.sm-fold) { display: none; }
+.sm-page.is-stacked .sm-section + .sm-section {
+  margin-top: calc(var(--hud-unit) * 3); padding-top: calc(var(--hud-unit) * 3);
+  border-top: 1px solid rgba(var(--hud-fg), var(--hud-a-line));
+}
+/* A folded section: the title is a button, marked + while folded and a minus sign while open. */
+.sm-page.is-stacked .sm-fold { cursor: pointer; min-height: calc(var(--hud-unit) * 6); }
+.sm-fold::before { content: "+\\00a0"; }
+.sm-fold[aria-expanded=true]::before { content: "\\2212\\00a0"; }
+.sm-page.is-stacked .sm-fold[aria-expanded=false] { margin-bottom: 0; }
+.sm-page.is-stacked .sm-fold:hover, .sm-page.is-stacked .sm-fold:focus-visible { color: rgb(var(--hud-fg)); }
+.sm-section > .sh-group[hidden] { display: none; }
+
+/* Values keep their case here too: a count of 1T must not read 1t. */
+.strata-hud .sm-menu select { text-transform: none; }
+
+/* ---- a control whose switch is off (ParamPlacement.needs): faint, and it does not react.
+   Its words sit at the floor for text; its marks (track, tick, switch) fade with them. ---- */
+.sh-row.is-off, .sh-row.is-off:hover, .sh-row.is-off:focus-within { color: rgba(var(--hud-fg), var(--hud-a-ghost)); }
+.strata-hud .sh-row.is-off :is(.sh-value, .sh-act, select) { color: inherit; }
+.strata-hud .sh-row.is-off :is(input[type=range], .sh-switch) { opacity: var(--hud-a-ghost); }
+.strata-hud .sh-row.is-off * { cursor: default; }
 
 /* ---- optional always-on fps readout (perf page, "fps in corner") ---- */
 .sm-corner {

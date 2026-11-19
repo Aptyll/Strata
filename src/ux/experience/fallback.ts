@@ -6,27 +6,27 @@
 // an old phone should still get something worth thirty seconds, and should
 // leave knowing there is more.
 
+import { TYPE, installTokens } from '../design';
 import { type Capability, explainUnsupported } from './capability';
 import { ForceBrush, brushForce } from './force-brush';
 import type { PlaneHit } from './pointer-ray';
 import { bindGestures } from './gestures';
 import { introState } from './intro';
 
+// Styled from the design tokens (docs/ux/design.md). The note is spoken to the person, so it takes
+// the voice: a caption for the lede, the body role for the sentences, and the shared button. It sits
+// over the particles, so it has the halo. It arrives unasked, so it fades in slowly.
 const STYLE = `
-.strata-fallback{position:absolute;inset:0;background:#000;overflow:hidden;color:#fff;
-font:400 13px/1.6 ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif}
+.strata-fallback{position:absolute;inset:0;background:var(--st-void);overflow:hidden}
 .strata-fallback canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.strata-fallback-note{position:absolute;left:0;right:0;
-bottom:max(6vh,calc(env(safe-area-inset-bottom) + 24px));padding:0 24px;text-align:center;
-opacity:0;transition:opacity 2.4s ease;pointer-events:none}
+.strata-fallback-note{position:absolute;left:0;right:0;bottom:calc(var(--st-edge-bottom) + var(--st-space-6));
+padding:0 var(--st-edge);text-align:center;text-shadow:var(--st-halo);
+opacity:0;transition:opacity var(--st-slow) var(--st-ease-soft);pointer-events:none}
 .strata-fallback-note[data-on="1"]{opacity:1}
 .strata-fallback-note p{margin:0 auto;max-width:34em;text-wrap:balance}
-.strata-fallback-note .lede{font-size:11px;letter-spacing:.3em;text-transform:uppercase;opacity:.55;margin-bottom:10px}
-.strata-fallback-note .body{opacity:.72}
-.strata-fallback-note button{pointer-events:auto;margin-top:14px;background:none;color:#fff;
-border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 18px;font:inherit;
-font-size:11px;letter-spacing:.24em;text-transform:uppercase;cursor:pointer;opacity:.8}
-.strata-fallback-note button:hover,.strata-fallback-note button:focus-visible{border-color:#fff;opacity:1;outline:none}
+.strata-fallback-note .lede{${TYPE.caption}color:var(--st-dim);text-indent:var(--st-track-wide);margin-bottom:var(--st-space-3)}
+.strata-fallback-note .body{${TYPE.body}}
+.strata-fallback-note button{pointer-events:auto;margin-top:var(--st-space-4)}
 `;
 
 export interface FallbackOptions {
@@ -57,6 +57,7 @@ export function mountFallback(
       ? `The full world opens on ${opts.sheets} sheets and ${fullCount >= 1e6 ? million(fullCount) : fullCount.toLocaleString('en-US')} particles, and the count can be raised from there.`
       : 'The full world is many sheets and millions of particles.';
 
+  installTokens(doc);
   if (!doc.getElementById('strata-fallback-style')) {
     const style = doc.createElement('style');
     style.id = 'strata-fallback-style';
@@ -90,6 +91,7 @@ export function mountFallback(
   if (canShare || canCopy) {
     const btn = doc.createElement('button');
     btn.type = 'button';
+    btn.className = 'st-button';
     btn.textContent = canShare ? 'Send link to another device' : 'Copy link';
     btn.addEventListener('click', async () => {
       try {

@@ -58,10 +58,12 @@ export async function gridSha256(lo: Uint32Array, hi: Uint32Array, gridWidth: nu
 
 /**
  * Tile brightness of the whole grid: SIG_COLS x SIG_ROWS values, row major,
- * each round(SIG_SCALE * log2(1 + light)), where light is the tile's weight
- * units divided by ONE (under count weighting: the particles in the tile).
+ * each round(SIG_SCALE * log2(1 + light)), where light is the tile's grid
+ * units divided by the units one full-weight particle adds (ONE, or more for
+ * flux frames with finer weights): under count weighting, the particles in
+ * the tile.
  */
-export function gridSignature(lo: Uint32Array, hi: Uint32Array, gridWidth: number, gridHeight: number): number[] {
+export function gridSignature(lo: Uint32Array, hi: Uint32Array, gridWidth: number, gridHeight: number, unitsPerParticle: number = ONE): number[] {
   if (lo.length !== gridWidth * gridHeight || hi.length !== lo.length) throw new Error("Grid size does not match its dimensions.");
   const colOf = new Uint8Array(gridWidth);
   for (let x = 0; x < gridWidth; x++) colOf[x] = Math.floor((x * SIG_COLS) / gridWidth);
@@ -75,5 +77,5 @@ export function gridSignature(lo: Uint32Array, hi: Uint32Array, gridWidth: numbe
       if (l !== 0 || h !== 0) sums[tileRow + colOf[x]] += l + h * 4294967296;
     }
   }
-  return Array.from(sums, (units) => Math.round(SIG_SCALE * Math.log2(1 + units / ONE)));
+  return Array.from(sums, (units) => Math.round(SIG_SCALE * Math.log2(1 + units / unitsPerParticle)));
 }

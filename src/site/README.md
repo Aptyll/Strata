@@ -10,6 +10,7 @@ build-time code and a few images.
 | `head.ts` | the privacy lock (a Content-Security-Policy), and the tags built from a row (title, description, canonical, Open Graph, X card, schema.org data); both are written into a page's HTML here |
 | `plugin.mjs` | the Vite plugin that `vite.config.ts` loads: locks and tags every page in dev and build, publishes the `docs/explainers` pages and the share card, writes `sitemap.xml`, prints the landing page's weight |
 | `share/strata-1t.jpg` | the share card, 1200x630, made by `share/make-card.py` |
+| `share/make-web-frames.py` | makes web-sized copies of record frames (`docs/record/web`) for the main README or a page |
 | `site.test.mjs` | unit tests (`npm test -- site`) |
 
 ## The privacy lock
@@ -76,24 +77,34 @@ descriptions 50 to 160, and no clause that calls the trillion "simulated"
 ## The share card
 
 `share/strata-1t.jpg` is the picture chat apps and social sites show next to a
-pasted link. It is a real frame, `docs/record/trillion-key2-f0.png`, scaled
-down with only empty rows and columns trimmed (and the bottom darkened behind
-the type). The two numbers on it are the ones on that frame's own label, and
-they are not the same kind of number:
+pasted link. It is a real frame, `docs/record/trillion64-A.png`, scaled down.
+Only its empty margins and the renderer's own label are left out, and the card
+repeats that label's two numbers in type that survives a phone screen:
 
-- **107,787,615,440 in this frame** is the GPU's count of the particles that
-  landed in the picture.
-- **1,000,000,000,000** is the particle count of the render job. Every
-  position is computed, because the renderer culls nothing, but this still was
-  most likely rendered before the renderer counted evaluated particles on the
-  GPU, so it is not a GPU count
-  ([journal, page 07](../../docs/journal/rendering/2026-11-18-07-first-trillion-frames.md)).
+- **1,000,000,000,000** particles evaluated, and
+- **985,878,422,357 in this frame**, the ones whose position fell inside the
+  picture.
 
-When a frame re-rendered on current main, with a manifest, replaces this one,
-build the card from it: then both numbers are GPU counts. The card used to be
-`trillion-A.png`, which is not a trillion distinct particles (see
-`docs/record/README.md`). To change it, edit `share/make-card.py` (frame,
-numbers, type) and run it; it needs Python with Pillow and the Inter font.
+Both are GPU counts. `share/make-card.py` reads them from the frame's render
+manifest (`docs/record/trillion64-A.manifest.json`, see `src/manifest`) every
+time it builds the card, and a test checks the same two numbers in the card's
+description (`SITE.card.alt`) against that manifest. The frame is flux
+weighted: far particles are drawn on average, not one by one, which is why the
+card says "rendered" and "in this frame" and never "drawn".
+
+Which frame, and why: the card started on the 32-bit render of this
+composition, which turned out to hold at most about 17.2 billion distinct
+particles, then moved to `trillion-key2-f0.png`, whose trillion is most likely
+the job's particle count and not a GPU count. The 64-bit render is the first
+frame with a manifest, so it is the first one whose numbers a reader can check
+(`docs/record/README.md`). Keep the card on a frame that has a manifest. The
+cluster stills (key1, key2) stay in the script as variants, with a note on
+what their numbers are.
+
+To change it, edit `share/make-card.py` (frame, type) and run it; it needs
+Python with Pillow and the Inter font. `--all DIR` also writes the variants:
+the same frame without type, the key2 and key1 cluster stills, and a 1280x640
+copy for GitHub's social preview.
 
 The published file name contains a hash of the image's bytes
 (`share/strata-1t-<hash>.jpg`). Sites that show previews cache the image by
@@ -104,6 +115,52 @@ To see a preview after a deploy, paste the page's address into the LinkedIn
 Post Inspector or the Facebook Sharing Debugger (both also refresh their
 cache), or into a private chat on Slack, Discord or iMessage. X has no
 checker any more; a draft post shows the card.
+
+## Showing a record frame
+
+A record frame in `docs/record` is a 3840x2160 PNG of 1 to 2 MB. Shown inline,
+the browser downloads all of it to draw it at a third of its size. Show a
+web-sized copy and link it to the PNG:
+
+```sh
+python3 src/site/share/make-web-frames.py trillion-key1-f0    # docs/record/web/trillion-key1-f0-1920.jpg
+```
+
+| `trillion-key1-f0` | size |
+| --- | ---: |
+| the PNG, 3840 wide | 1613 kB |
+| copy 1920 wide, JPEG (the default, read everywhere a README is) | 282 kB |
+| copy 1920 wide, WebP (`--format webp`) | 196 kB |
+| copy 1920 wide, AVIF (`--format avif`) | 130 kB |
+
+The main README shows the JPEG copies of its two frames: 444 kB together,
+where the PNGs were 3.3 MB.
+
+On a page of the site:
+
+- Reference the copy from the page's HTML or import it from its script, so
+  the build gives it a fingerprinted name. Because of the privacy lock a
+  picture has to come from the repo anyway.
+- Give the `<img>` its `width` and `height`, so nothing jumps when it arrives,
+  and `loading="lazy"` and `decoding="async"` unless it is the first thing on
+  screen.
+- Link it to the PNG on GitHub. A link is not a request.
+- For AVIF or WebP with a JPEG fallback, make those copies too
+  (`--format avif`, `--format webp`) and use `<picture>`:
+
+```html
+<a href="https://github.com/Aptyll/Strata/blob/main/docs/record/trillion-key1-f0.png">
+  <picture>
+    <source type="image/avif" srcset="/docs/record/web/trillion-key1-f0-1920.avif" />
+    <source type="image/webp" srcset="/docs/record/web/trillion-key1-f0-1920.webp" />
+    <img src="/docs/record/web/trillion-key1-f0-1920.jpg" width="1920" height="1080"
+         loading="lazy" decoding="async" alt="What the frame shows, and its counts" />
+  </picture>
+</a>
+```
+
+The landing page shows no picture today. It opens straight into the
+simulation, and what it loads is script: see "The load budget" below.
 
 ## The site's address
 

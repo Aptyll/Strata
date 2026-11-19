@@ -19,6 +19,10 @@ export interface FrameStatsLike {
   gridSha256?: string;
   /** 16 x 9 log-coded tile brightness (src/offline/core/fingerprint.ts). */
   signature?: number[];
+  /** Landed particles that added light, GPU count. Absent in older stats. */
+  drawn?: string;
+  /** Grid units per full-weight particle. Absent means 65536. */
+  unitsPerParticle?: number;
 }
 
 export interface JobLike {
@@ -87,7 +91,13 @@ export interface ManifestFrame {
   allEvaluated: boolean;
   /** count + point only: grid sum is exactly landed x 65536. null when not provable (flux or bilinear). */
   eachLandedAddedOnce: boolean | null;
-  /** Grid light in particles (unitSum / 65536), as a decimal string. Exact for count, expected total for flux. */
+  /** Landed particles that added light to the grid, counted on the GPU. null: stats older than this count. */
+  drawn: string | null;
+  /** drawn equals landed: every particle in frame added light. null when drawn is unknown. */
+  everyLandedDrawn: boolean | null;
+  /** Grid units a particle at full weight adds: 65536, or more with finer flux weights. */
+  unitsPerParticle: number;
+  /** Grid light in particles (unitSum / unitsPerParticle), as a decimal string. Exact for count, the weighted total for flux. */
   lightParticles: string;
   /** GPU wall seconds and dispatches for the whole frame, summed over every run of it. */
   seconds: number;
@@ -147,6 +157,8 @@ export interface RenderManifest {
     eachLandedAddedOnce: boolean | null;
     /** true: the GPU counted every frame; false: the host counted some frame (old trillion-kernel stats); null: not recorded. */
     countedOnGpu: boolean | null;
+    /** Every frame's drawn equals its landed. null when some frame has no drawn count. */
+    everyLandedDrawn: boolean | null;
     gpuSeconds: number;
     particlesPerSecond: number;
   };

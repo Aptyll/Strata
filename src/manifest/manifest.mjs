@@ -33,9 +33,11 @@ export const MANIFEST_VERSION = 1;
 const WORDING =
   "Rendered, not simulated: every particle's position is a closed-form function of its 64-bit key and time. " +
   "Nothing is stored per particle between frames. evaluated = particles the GPU ran through the kernel this frame; " +
-  "landed = those whose position fell inside the picture. Under count weighting each landed particle adds exactly one unit " +
-  "of light (checked per frame: unitSum = landed x 65536 for point splats). Under flux weighting a far particle's weight is " +
-  "randomly rounded and often 0, so it is landed but drawn only in expectation.";
+  "landed = those whose position fell inside the picture; drawn = those of them that added light to the grid, also counted " +
+  "on the GPU. Under count weighting each landed particle adds exactly one unit of light (checked per frame: unitSum = " +
+  "landed x 65536 for point splats). Under flux weighting a particle adds a fraction of a unit that falls with distance, " +
+  "as a whole number of grid units (unitsPerParticle of them make one particle), rounded at random; one whose weight rounds " +
+  "to nothing is landed but not drawn. Frames without a drawn count are older: their far particles were drawn only in expectation.";
 
 /** Units of light one particle adds under count weighting (src/offline/core/job.ts ONE). */
 const ONE = 65536n;
@@ -82,6 +84,19 @@ export function gridFields(s) {
  */
 export const gridHash = (s) => sha256OfText(JSON.stringify(gridFields(s)));
 
+/**
+ * Light in a frame's grid, in particles, as a decimal string. The grid's own
+ * units are 65536 per particle unless the stats say otherwise (finer flux
+ * weights). Exact to 1/256 of a particle when the unit is a power of two.
+ * @param {import("./manifest.d.mts").FrameStatsLike} s
+ */
+function lightParticles(s) {
+  const unit = s.unitsPerParticle ?? Number(ONE);
+  const sum = BigInt(s.unitSum);
+  if (Number.isInteger(unit / 256)) return (Number(sum / BigInt(unit / 256)) / 256).toString();
+  return (Number(sum) / unit).toString();
+}
+
 /** @param {import("./manifest.d.mts").JobLike} job */
 export function totalParticles(job) {
   let n = 0;
@@ -118,8 +133,12 @@ export async function buildManifest(input) {
       // Exactly one unit per landed particle: provable only for count + point.
       eachLandedAddedOnce:
         job.weighting === "count" && job.splat === "point" ? BigInt(s.unitSum) === BigInt(s.landed) * ONE : null,
-      // Light in the grid, in particles: exact for count, the expected total for flux.
-      lightParticles: (Number(BigInt(s.unitSum) / (ONE / 256n)) / 256).toString(),
+      // The GPU's count of landed particles that added light. null: stats older than the count.
+      drawn: s.drawn === undefined ? null : String(s.drawn),
+      everyLandedDrawn: s.drawn === undefined ? null : String(s.drawn) === String(s.landed),
+      unitsPerParticle: s.unitsPerParticle ?? Number(ONE),
+      // Light in the grid, in particles: exact for count, the weighted total for flux.
+      lightParticles: lightParticles(s),
       seconds: s.seconds,
       batches: s.batches,
       // Stats written before `resumes` existed timed only a continued frame's last run.
@@ -176,7 +195,11 @@ export async function buildManifest(input) {
       meaning:
         job.weighting === "count"
           ? "count: every particle in frame adds exactly one unit of light"
-          : "flux: weights randomly rounded (unbiased); far particles are drawn on average, many add nothing",
+          : frames.length > 0 && frames.every((f) => f.everyLandedDrawn === true)
+            ? "flux: a particle's light falls with distance; every particle in frame added light (GPU count: drawn = landed in every frame)"
+            : frames.some((f) => f.everyLandedDrawn === false)
+              ? "flux: a particle's light falls with distance; the faintest were rounded to nothing at random (see drawn against landed per frame)"
+              : "flux: weights randomly rounded (unbiased); far particles are drawn on average, many add nothing",
     },
     grade: input.look ?? null,
     totals: {
@@ -186,6 +209,7 @@ export async function buildManifest(input) {
       eachLandedAddedOnce: frames.every((f) => f.eachLandedAddedOnce === true) && frames.length > 0 ? true : frames.some((f) => f.eachLandedAddedOnce === false) ? false : null,
       // true: the GPU counted every frame. false: some frame was counted by the host. null: not recorded.
       countedOnGpu: frames.length > 0 && frames.every((f) => f.evaluatedBy === "gpu") ? true : frames.some((f) => f.evaluatedBy === "host") ? false : null,
+      everyLandedDrawn: frames.every((f) => f.everyLandedDrawn === true) && frames.length > 0 ? true : frames.some((f) => f.everyLandedDrawn === false) ? false : null,
       gpuSeconds: seconds,
       particlesPerSecond: Number(evaluatedTotal) / Math.max(seconds, 1e-9),
     },
@@ -281,7 +305,8 @@ export function compareFrame(r, c) {
   const reasons = [];
   if (r.evaluated !== c.evaluated) reasons.push(`evaluated ${r.evaluated} published, ${c.evaluated} here`);
   if (!c.allEvaluated) reasons.push("this render did not evaluate every particle");
-  const statsEqual = GRID_STATS.every((k) => r[k] === c[k]);
+  // drawn (landed particles that added light) is grid-determined too, when both frames have it.
+  const statsEqual = GRID_STATS.every((k) => r[k] === c[k]) && (r.drawn == null || c.drawn == null || r.drawn === c.drawn);
   const sameGrid = r.gridSha256 && c.gridSha256 ? r.gridSha256 === c.gridSha256 : statsEqual;
   const landedDifference = relativeDifference(r.landed, c.landed);
   const distance = Array.isArray(r.signature) && Array.isArray(c.signature) ? signatureDistance(r.signature, c.signature) : null;

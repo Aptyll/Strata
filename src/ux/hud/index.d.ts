@@ -54,6 +54,57 @@ export interface HudOptions {
   panelOpen?: boolean;
   /** Where to listen for keys. Default window. */
   keyTarget?: EventTarget;
+  /** The menu's table of contents: pages, sections, and where each control sits. */
+  layout?: MenuLayout;
+}
+
+/** One page of the settings menu. The default table is PAGES in menu.js. */
+export interface MenuPage {
+  id: string;
+  /** Text on the page tab. */
+  label: string;
+  /**
+   * Group names that land on this page. Their order is the order of the page's sections;
+   * a group the page gets without listing it follows in the order it showed up.
+   */
+  groups: string[];
+  /** Section names for groups whose own name is empty or terse: { performance: 'frame rate' }. */
+  labels?: Record<string, string>;
+  /**
+   * Show the sections stacked under small titles instead of as section tabs. Right for a short
+   * page whose sections belong to one task; tabs suit sections that are alternatives.
+   */
+  stack?: boolean;
+  /** On a stacked page, groups that start folded behind their title ("advanced"). */
+  fold?: string[];
+}
+
+/** Where a control sits in the menu and what it is called there. */
+export interface ParamPlacement {
+  /** Page id. */
+  page?: string;
+  /** Section on that page. */
+  group?: string;
+  /** The name shown. */
+  label?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
+}
+
+/**
+ * The menu's table of contents, kept by the app in one place (Strata's is src/app/menu.ts).
+ * Controls register wherever they are built; `params` has the last word on where each one
+ * appears and what it is called.
+ */
+export interface MenuLayout {
+  /** Pages in tab order. The last page takes every group no page lists. Default PAGES in menu.js. */
+  pages?: MenuPage[];
+  /** By control id. */
+  params?: Record<string, ParamPlacement>;
 }
 
 export type ParamValue = number | boolean | string;
@@ -62,10 +113,16 @@ interface ParamBase<T> {
   id: string;
   /** Defaults to id. */
   label?: string;
-  /** Section heading. Params without one go first. */
+  /** Section on its page. Params without one go first. */
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
   onChange?: (value: T, id: string) => void;
   /** Save the value in localStorage. Default true. */
   persist?: boolean;
@@ -95,8 +152,14 @@ export interface ActionParam {
   id: string;
   label?: string;
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
+  /** Position in its section. Lower first; rows without one follow in the order they registered. */
+  order?: number;
+  /** Id of a switch this control depends on. It is dimmed and inert while that switch is off. */
+  needs?: string;
+  /** One line shown as the row's tooltip. */
+  hint?: string;
   type?: 'action';
   run: () => void;
 }
@@ -115,6 +178,32 @@ export interface ParamHandle {
   set(value: ParamValue, options?: SetOptions): ParamValue;
   reset(): ParamValue;
   remove(): void;
+}
+
+/** A block of your own DOM in a menu section, for read-outs that are not controls. */
+export interface ViewSpec {
+  id: string;
+  /** Section it sits in, like a param's group. */
+  group?: string;
+  /** Menu page, like a param's page. Defaults from group (see PAGES in menu.js). */
+  page?: string;
+  /** Position inside its section, like a param's order. Left out, it follows what is already there. */
+  order?: number;
+  /** The element to show. The HUD places it and leaves its content, styles and updates to you. */
+  node: HTMLElement;
+}
+export interface ViewHandle {
+  id: string;
+  remove(): void;
+}
+
+export interface FactOptions {
+  /** The word under the value. Defaults to the key for a new fact. */
+  label?: string;
+  /** Hover text. */
+  title?: string;
+  /** For a new fact: the key of the fact it follows. Left out, it goes last. */
+  after?: string;
 }
 
 export interface ShortcutSpec {
@@ -148,7 +237,7 @@ export interface JobSpec {
   label?: string;
   /** Menu section, e.g. 'capture'. */
   group?: string;
-  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  /** Menu page id, such as 'scene', 'look' or 'perf'. Defaults from the group (see the page table: PAGES in menu.js, or the app's layout). */
   page?: string;
   /** Resolve with a string to show it as the closing line. Throw to report a failure. */
   run(job: JobContext): Promise<string | void> | string | void;
@@ -199,6 +288,19 @@ export interface Hud {
   registerParam(spec: ParamSpec): ParamHandle;
   registerParams(specs: ParamSpec[]): ParamHandle[];
   removeParam(id: string): void;
+  /**
+   * Put a block of your own DOM in a menu section, where a param with the same group and
+   * page would sit. Registering an id again replaces the block. An emptied section goes away.
+   */
+  registerView(spec: ViewSpec): ViewHandle;
+  removeView(id: string): void;
+  /**
+   * Write a fact in the menu's summary header (the grid under the frame rate). A new key adds
+   * a fact. One of the menu's own keys ('particles', 'total', 'planes', 'resolution', 'theme')
+   * takes that fact over: the menu stops writing it until it is given back.
+   * `null` or '' hides the fact and keeps it yours; `undefined` gives it back (an added fact is removed).
+   */
+  setFact(key: string, text: string | null | undefined, options?: FactOptions): void;
   getParam(id: string): ParamValue | undefined;
   setParam(id: string, value: ParamValue, options?: SetOptions): ParamValue | undefined;
   getParams(): Record<string, ParamValue>;

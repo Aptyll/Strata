@@ -7,13 +7,14 @@
 // and shows at most once per visit. The die comes after the first drag: a
 // stranger first learns that the world turns, then that it can be rerolled.
 //
-//   const hints = mountAppHints({ canvas, hud, isOpening: () => intro?.active ?? false });
+//   const hints = mountAppHints({ canvas, hud, isOpening: () => intro?.active ?? false, canHold: brushes.touches });
 //   mountHud(app, { hud: { diceHintMs: 0 } });   // the schedule owns the die hint
 //   // each frame:
 //   hints.update(dt);
 //
-// Gestures are read from the canvas with the same thresholds the pointer
-// forces use, and never consumed, so this file needs no hooks in the camera.
+// Gestures are read from the canvas with the same thresholds and the same
+// "is there a sheet to touch here" test the pointer forces use, and never
+// consumed, so this file needs no hooks in the camera.
 
 import { GESTURE_DEFAULTS, GestureCore, type PointerSample } from './gestures';
 import { DEFAULT_HINTS, HintScheduler, createHintView, loadMemory, saveMemory, type HintDef } from './hints';
@@ -39,6 +40,12 @@ export interface AppHintsOptions {
   hud?: HintHud;
   /** True while the opening plays. */
   isOpening?: () => boolean;
+  /**
+   * Whether a still press at this point of the page (client pixels) touches a
+   * sheet, as the pointer forces see it (EngineBrushes.touches). Without it,
+   * every still press counts as a hold.
+   */
+  canHold?: (x: number, y: number) => boolean;
   /** Touch wording. Defaults to the (pointer: coarse) media query. */
   touch?: boolean;
   /** Where the hint line goes. Default document.body. */
@@ -73,12 +80,14 @@ export function mountAppHints(opts: AppHintsOptions): AppHints {
     saveMemory({ ...m, learned: [...new Set([...m.learned, id])] });
   };
 
-  // Same hold delays as the pointer forces in engine-brushes.ts, so a press is
-  // classified the same way by both.
+  // Same hold delays and the same sheet test as the pointer forces in
+  // engine-brushes.ts, so a press is classified the same way by both. A hold
+  // counts once it has settled: one called off was a camera drag.
   const core = new GestureCore({
     onOrbit: () => learn('orbit'),
     onZoom: () => learn('zoom'),
-    onHoldStart: () => learn('hold'),
+    canHold: opts.canHold,
+    onHoldSettle: () => learn('hold'),
     onDoubleTap: () => learn('focus'),
   }, { holdSecondary: GESTURE_DEFAULTS.holdMouse });
 

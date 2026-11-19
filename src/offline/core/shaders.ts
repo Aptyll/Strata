@@ -40,7 +40,9 @@ struct Batch {
   rowStride: u32,
   gridWidth: u32,
   gridHeight: u32,
-  _pad: u32,
+  // Flux mode: units a particle at full weight adds, a power of two from 2^16
+  // to 2^31 (job.ts unitsPerParticle). Unused in count mode.
+  fluxOne: f32,
   // Law time (seconds) at the middle of the shutter, and the shutter length.
   time: f32,
   shutterSpan: f32,
@@ -66,11 +68,18 @@ struct Batch {
 @group(0) @binding(2) var<storage, read_write> accHi: array<atomic<u32>>;
 // Exact 64-bit counts, counted on the GPU as the work happens:
 // [0..1] particles whose position landed inside the frame (low, high word),
-// [2..3] particles evaluated (low, high word).
-@group(0) @binding(3) var<storage, read_write> tally: array<atomic<u32>, 4>;
+// [2..3] particles evaluated (low, high word),
+// [4..5] particles inside the frame that added at least one unit of light.
+@group(0) @binding(3) var<storage, read_write> tally: array<atomic<u32>, 6>;
 
 var<workgroup> wgLanded: atomic<u32>;
 var<workgroup> wgEvaluated: atomic<u32>;
+var<workgroup> wgDrawn: atomic<u32>;
+
+// This invocation's particles that landed in the frame and added light. Equal
+// to its landed count in count mode. In flux mode a weight below one unit is
+// rounded at random, and a particle rounded to nothing is landed, not drawn.
+var<private> drawn: u32 = 0u;
 
 fn tallyAdd(slot: u32, v: u32) {
   let old = atomicAdd(&tally[slot], v);
@@ -131,32 +140,39 @@ ${
     let oy = min(u32((s.y - f32(B.selA.y)) * B.selB.y), B.selA.w - 1u);
     idx = oy * B.selA.z + ox;
   }
-  // Weight in units of 1/65536 of a particle.
+  // Count mode: 65536 units, one particle.
   var w = 65536u;
   if (B.fluxRef2 > 0.0) {
     let f = min(1.0, B.fluxRef2 / (c.z * c.z));
-    // Unbiased stochastic rounding to an integer weight.
-    w = u32(f * 65536.0 + u01(draw(key, 7u)));
+    // A whole number of units of 1 / fluxOne of a particle, with unbiased
+    // stochastic rounding of the fraction. fluxOne is a power of two, so the
+    // product is exact, and it stays below 2^32.
+    w = u32(f * B.fluxOne + u01(draw(key, 7u)));
     if (w == 0u) { return true; }
   }
   combine(idx, w);
+  drawn++;
   return true;`
     : /* wgsl */ `
   // Particles just outside the frame still spread light onto its edge pixels.
   if (!(s.x > -1.0 && s.y > -1.0 && s.x < size.x + 1.0 && s.y < size.y + 1.0)) { return false; }
-  // Weight in units of 1/65536 of a particle, spread over 4 pixels with 4-bit
-  // subpixel weights: 256 * wx * wy per pixel, the 4 summing to exactly 65536.
-  // Flux mode scales each pixel's weight and rounds it on its own, with its
-  // own 8 bits of draw 7 as dither (unbiased to within 1/256 of a unit), so a
-  // dim particle still spreads fractions of its light instead of being
-  // rounded to whole 1/256ths of a particle.
+  // One particle spread over 4 pixels with 4-bit subpixel weights wx * wy,
+  // which sum to 256 over the 4. Count mode: 256 * wx * wy units per pixel,
+  // exactly 65536 in all. Flux mode: the pixel's share of fluxOne units,
+  // scaled by the particle's weight and rounded on its own, with its own 8
+  // bits of draw 7 as dither (unbiased to within 1/256 of a unit), so a dim
+  // particle still spreads fractions of its light.
   let flux = B.fluxRef2 > 0.0;
   var f = 1.0;
   var dither = 0u;
+  var tapOne = 256.0;
   if (flux) {
     f = min(1.0, B.fluxRef2 / (c.z * c.z));
     dither = draw(key, 7u);
+    // Exact: a power of two times 1/256.
+    tapOne = B.fluxOne * (1.0 / 256.0);
   }
+  var added = false;
   let q = s - vec2f(0.5);
   let fl = floor(q);
   let fr = min(vec2u((q - fl) * 16.0), vec2u(16u));
@@ -174,12 +190,14 @@ ${
     var w = 256u * wx * wy;
     if (flux) {
       let r = (f32((dither >> (8u * t)) & 0xffu) + 0.5) * (1.0 / 256.0);
-      w = u32(f * f32(w) + r);
+      w = u32(f * (f32(wx * wy) * tapOne) + r);
     }
     if (w != 0u && x >= 0 && y >= 0 && x < gw && y < gh) {
       add64(u32(y) * B.gridWidth + u32(x), w);
+      added = true;
     }
   }
+  if (inFrame && added) { drawn++; }
   return inFrame;`
 }
 }
@@ -210,10 +228,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
   // WORKGROUP_SIZE * perInvocation <= 2^18 per workgroup, so u32 is enough.
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgEvaluated, evaluated);
+  atomicAdd(&wgDrawn, drawn);
   workgroupBarrier();
   if (lid == 0u) {
     tallyAdd(0u, atomicLoad(&wgLanded));
     tallyAdd(2u, atomicLoad(&wgEvaluated));
+    tallyAdd(4u, atomicLoad(&wgDrawn));
   }
 }
 `;

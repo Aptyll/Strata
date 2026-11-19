@@ -6,8 +6,15 @@
  * 0.07% precision, so the look (exposure, contrast, labels) is decided later
  * by the grade step without re-rendering anything.
  *
- *   code = round(LOG_SCALE * log2(1 + units))      units = weight units in the pixel
+ *   code = round(LOG_SCALE * log2(1 + units))      units = light in the pixel, in
+ *                                                   ONE units (1/65536 particle)
+ *
+ * A flux render accumulates in finer units than ONE (job.ts unitsPerParticle).
+ * develop() scales the grid to ONE units first, as a real number, so stored
+ * frames, exposure and the grade mean the same in every mode, and a pixel
+ * holding less than one ONE unit still gets a code in proportion.
  */
+import { ONE } from "./job";
 import { accumulationSum, type KernelChoice } from "./renderer";
 
 /** Codes per stop (doubling of light). */
@@ -27,13 +34,27 @@ export interface FrameStats {
   evaluated: string;
   /** "gpu": counted by the shader (every kernel now). "host": summed from dispatch sizes, in stats from the trillion kernel before it had its own tally. */
   evaluatedBy?: "gpu" | "host";
-  /** Exact sum of the grid in weight units, as a decimal string. */
+  /**
+   * Exact sum of the grid in its own units, as a decimal string. One particle
+   * of light is `unitsPerParticle` of them.
+   */
   unitSum: string;
+  /**
+   * Grid units a particle at full weight adds. Absent means 65536 (ONE): count
+   * mode, the trillion kernel, and flux frames from before weights got finer.
+   */
+  unitsPerParticle?: number;
   /**
    * Exact number of particles whose position fell inside the frame, as a
    * decimal string. evaluated - landed were behind the camera or off frame.
    */
   landed: string;
+  /**
+   * Exact number of particles in the frame that added at least one unit of
+   * light, counted on the GPU, as a decimal string. Equal to `landed` in count
+   * mode. Absent in stats written before it was counted.
+   */
+  drawn?: string;
   /** Output pixels that received any light. */
   litPixels: number;
   /** Largest code in the frame. */
@@ -67,17 +88,23 @@ export interface FrameStats {
 export const encodeLog = (units: number): number => Math.min(65535, Math.round(LOG_SCALE * Math.log2(1 + units)));
 export const decodeLog = (code: number): number => Math.pow(2, code / LOG_SCALE) - 1;
 
-/** Sum the supersampled grid down to output pixels and log-encode. */
+/**
+ * Sum the supersampled grid down to output pixels and log-encode.
+ * `unitsPerParticle` is the grid's own scale (Accumulation.unitsPerParticle).
+ */
 export function develop(
   lo: Uint32Array,
   hi: Uint32Array,
   width: number,
   height: number,
   ssaa: number,
+  unitsPerParticle: number = ONE,
 ): { codes: Uint16Array; litPixels: number; maxCode: number; hist: number[] } {
   const codes = new Uint16Array(width * height);
   const hist = new Array<number>(HIST_BINS).fill(0);
   const gw = width * ssaa;
+  // A power of two for every grid the renderer makes, so this is exact.
+  const toOne = ONE / unitsPerParticle;
   let litPixels = 0;
   let maxCode = 0;
   for (let y = 0; y < height; y++) {
@@ -88,7 +115,8 @@ export function develop(
         for (let sx = 0; sx < ssaa; sx++) units += lo[row + sx] + hi[row + sx] * 4294967296;
       }
       if (units > 0) {
-        const code = encodeLog(units);
+        // Code 0 means no light at all, so a lit pixel gets at least 1 however faint.
+        const code = Math.max(1, encodeLog(units * toOne));
         codes[y * width + x] = code;
         hist[code >> 8]++;
         litPixels++;
@@ -101,7 +129,7 @@ export function develop(
 
 export function frameStats(
   frame: number,
-  acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint },
+  acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint; drawn?: bigint; unitsPerParticle?: number },
   developed: { litPixels: number; maxCode: number; hist: number[] },
   run: { evaluated: bigint; seconds: number; batches: number; resumes?: number; evaluatedBy?: "gpu" | "host" },
 ): FrameStats {
@@ -110,7 +138,10 @@ export function frameStats(
     evaluated: run.evaluated.toString(),
     evaluatedBy: run.evaluatedBy,
     unitSum: accumulationSum(acc.lo, acc.hi).toString(),
+    // Left out when it is ONE, so count-mode stats read as they always did.
+    unitsPerParticle: acc.unitsPerParticle === undefined || acc.unitsPerParticle === ONE ? undefined : acc.unitsPerParticle,
     landed: acc.landed.toString(),
+    drawn: acc.drawn?.toString(),
     litPixels: developed.litPixels,
     maxCode: developed.maxCode,
     hist: developed.hist,

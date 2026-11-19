@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Ramp } from "./ramp";
-import { measureRefresh, refreshFromIntervals, screenLimit } from "./refresh";
+import { capDisproved, measureRefresh, refreshFromIntervals, screenLimit } from "./refresh";
 
 const near = (value, want, tolerance, what) =>
   assert.ok(Math.abs(value - want) <= tolerance, `${what}: ${value} is not within ${tolerance} of ${want}`);
@@ -134,4 +134,19 @@ test("the strict test on a capped screen is the failure this guards against", ()
     if (ramp.record < 20 * M) lost++;
   }
   assert.ok(lost >= 8, `expected the strict rule to lose the limit, it did in ${lost} of 12 runs`);
+});
+
+test("a misread refresh is undone by the first window that beats it", () => {
+  // A 60 Hz screen measured as 30 while the page started (late frames).
+  const misread = screenLimit(30, 30);
+  assert.equal(misread.screenHz, 30);
+  // The first window of the search runs a small count and shows every refresh: 60 fps disproves the cap.
+  assert.equal(capDisproved(misread.screenHz, 59.8), true);
+  // On a screen that really is capped, a window reads at most about one frame over the refresh.
+  for (const [hz, fps] of [[30, 30.9], [30, 31.5], [29.97, 30.8], [24, 25], [60, 61]]) {
+    assert.equal(capDisproved(hz, fps), false, `${hz} Hz read as ${fps} fps`);
+  }
+  assert.equal(capDisproved(null, 144), false, "a screen that was never capped has nothing to undo");
+  // Undone, the search is the plain one: the target itself, no blind climb.
+  assert.deepEqual(screenLimit(0, 30), { screenHz: null, passFps: 30 });
 });

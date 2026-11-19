@@ -32,8 +32,10 @@ record: [docs/proof/reproduce.md](../../docs/proof/reproduce.md). Brief:
 | `frames[].evaluatedBy` | who counted `evaluated`: `gpu` (every kernel now) or `host` (trillion-kernel stats from before its GPU tally, summed from dispatch sizes); `null` in stats from before the field |
 | `frames[].kernel` | the kernel that rendered the frame (`offline`, `trillion` or `trillion-strata`), so `verify` re-renders with the same one; `null` in older stats |
 | `frames[].gridSha256` | SHA-256 commitment to the exact 64-bit grid; `null` in older stats or without WebCrypto |
-| `frames[].signature` | 16 x 9 tile brightness, `round(256 log2(1 + particles in tile))`, for comparing renders across GPU models |
-| `drawing` | `weighting` and `splat`, and what they mean: `count` = exactly one unit per particle in frame; `flux` = randomly rounded weights, drawn on average only |
+| `frames[].signature` | 16 x 9 tile brightness, `round(256 log2(1 + particles of light in tile))`, for comparing renders across GPU models |
+| `drawing` | `weighting` and `splat`, and what they mean: `count` = exactly one unit per particle in frame; `flux` = light falls with distance, and the sentence says whether every particle in frame added light, from the GPU's `drawn` counts |
+| `frames[].drawn`, `everyLandedDrawn` | the GPU's count of landed particles that added light to the grid, and whether it equals `landed`. `null` in manifests of frames rendered before the count existed, where far flux particles were drawn on average only |
+| `frames[].unitsPerParticle` | grid units one full-weight particle adds: 65536, or more for flux frames with finer weights. `lightParticles` is `unitSum` divided by it |
 | `frames[].eachLandedAddedOnce` | count + point only: `unitSum == landed x 65536`, proving every landed particle added exactly one unit. `null` when not provable |
 | `totals` | frames complete, `allEvaluated` (GPU tally equals the job in every frame), `countedOnGpu`, summed evaluated, GPU seconds, measured particles/s |
 | `video` | the published MP4's file name, size and sha256 (`make --mp4`, or `<job name>.mp4` in the folder) |

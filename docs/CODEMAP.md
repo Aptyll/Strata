@@ -124,7 +124,7 @@ CPU twins for the perf format are in `src/perf/packing.ts`.
 | `SplatAccumulator`, `compute` mode | `array<atomic<u32>>` | `fixedScale` = 256 units per unit of energy, split over 2x2 pixels, stochastic rounding (`src/render/splat.ts`) |
 | `ChallengeEngine` | `array<atomic<u32>>` | `unitsForCount(count)` units, scaled by 1 / distance^2 when `attenuate` is on, dithered |
 | `TrillionKernel` | `acc`: u32 hot counters, folded into `counts`: 64-bit, lo at 2i and hi at 2i + 1 (`CountToneMapper` `words: 2`) | exactly 1, counted with probability `keep` |
-| offline renderer | `accLo` and `accHi`: two separate u32 arrays over the supersampled grid, a wrap of lo carries into hi | `ONE` = 65536 (`src/offline/core/job.ts`), less with `flux` weighting |
+| offline renderer | `accLo` and `accHi`: two separate u32 arrays over the supersampled grid, a wrap of lo carries into hi | `ONE` = 65536 with `count` weighting; with `flux`, a share of `unitsPerParticle(job)`, 2^16 to 2^31 (`src/offline/core/job.ts`) |
 
 ## Shared code: reuse it instead of copying
 
@@ -354,8 +354,8 @@ pass uses it yet: depth cues come from the compute rasterizer's `?depth=1`
 option, the depth sprites rasterizer and the parallax camera.
 
 **Rasterizers**, stage `rasterize`. Exactly one is enabled and it clears the
-HDR target. Pick it with the URL or the Esc menu's "render" setting (the
-list is `RASTERIZERS` in `src/app/graph.ts`).
+HDR target. Pick it with the URL or the Esc menu's "draw with" setting (perf
+page, under advanced; the list is `RASTERIZERS` in `src/app/graph.ts`).
 
 | pass | file | how it draws | where counting stops |
 | --- | --- | --- | --- |
@@ -418,9 +418,13 @@ cell of the supersampled grid (`width * ssaa` by `height * ssaa`, row major);
 `add64` in `shaders.ts` carries a wrap of the low word into the high one. A
 particle at full weight adds `ONE` = 65536 units (`src/offline/core/job.ts`):
 `point` splat to one cell, `bilinear` over four cells with weights that sum to
-exactly `ONE`. `flux` weighting scales that by min(1, (fluxRef / depth)^2) with
-stochastic rounding. With `count` weighting and `point` splat, the grid sum
-divided by 65536 equals the landed tally exactly.
+exactly `ONE`. `flux` weighting adds min(1, (fluxRef / depth)^2) of
+`unitsPerParticle(job)` units instead: 2^`fluxBits`, as fine as the 64-bit grid
+holds for the job's particle count (2^23 for a trillion), with stochastic
+rounding of the last unit, and `develop` scales such a grid back to `ONE`
+units. The GPU counts `drawn`, the landed particles that added light, next to
+`landed` and `evaluated`. With `count` weighting and `point` splat, the grid
+sum divided by 65536 equals the landed tally exactly.
 
 `TrillionKernel` (`src/trillion`, design in `docs/trillion.md`) is the faster
 splat for the same keys. Each counted particle adds exactly 1 (a landed
@@ -463,6 +467,7 @@ Each step is a small module in `src/app/`:
 | `context.ts` | the `AppContext` handed to UI code; each member forwards to its owner |
 | `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat (shown, with the count named "active", only while the two differ) and the app keys |
 | `keys.ts` | `KEYS`: every key, its owner and its label, plus the router that gives the camera every key nobody else owns |
+| `menu.ts` | `MENU`: the Esc menu's table of contents. Every control by id with its page, section, position, name, one line hint and the switch it depends on; which sections start folded ("advanced"). `menuLayout()` hands it to the HUD. Also the menu's links to the benchmark, the offline renderer and the proof shots |
 | `intro.ts` | runs the first-run opening on the app's camera and budget |
 | `loop.ts` | the frame loop, the fps meter and the hooks features plug into |
 
@@ -476,8 +481,9 @@ Boot order, and where it matters:
    HUD's idle timer listens for those moves on the same window listener phase.
 5. Frame loop and hooks, capture, record, `loop.start()`.
 
-HUD menu entries and keys sheet rows appear in registration order, so new
-entries go at the end of their group.
+Keys sheet rows appear in registration order, so a new key goes at the end of
+its owner's rows. Where a menu entry appears, and what it is called there, is
+decided by `MENU` in `src/app/menu.ts`, not by when it registered.
 
 ### One frame (`src/app/loop.ts`)
 
@@ -496,8 +502,13 @@ is what input, scenes, the intro and the world move.
 ### Recipes
 
 - **Esc menu setting**: a `hud.registerParam` in `registerMenu` in
-  `src/app/hud.ts`, at the end of its group. A feature that owns its settings
-  registers them in its own mount function instead, as capture does.
+  `src/app/hud.ts` (a feature that owns its settings registers them in its
+  own mount function instead, as capture does), plus a row in `MENU`
+  (`src/app/menu.ts`): which page and section it sits in, where in the
+  section, what it is called, a one line hint, and `needs` if it does nothing
+  while some switch is off. Rarely needed controls go in the page's folded
+  "advanced" section. Without a row the control still shows, in the section
+  named by its `group`, after the listed rows.
 - **Key**: a row in `KEYS` (`src/app/keys.ts`), registered from that row with
   `hud.registerShortcut(shortcut(KEYS.x, run))`. The camera stops seeing it
   automatically.

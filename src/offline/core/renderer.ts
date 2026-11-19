@@ -8,7 +8,7 @@
  * trip a GPU watchdog, and the frame can be checkpointed between batches.
  */
 import { CameraPath } from "./camera";
-import { ONE, totalParticles, validateJob, type LawId, type OfflineJob, type OfflinePlane } from "./job";
+import { ONE, totalParticles, unitsPerParticle, validateJob, type LawId, type OfflineJob, type OfflinePlane } from "./job";
 import { cameraBasis, planeHomography, type CameraBasis } from "./math";
 import { BATCH_UNIFORM_BYTES, WORKGROUP_SIZE, accumulateShader } from "./shaders";
 import { TrillionKernel, type TrillionPlane } from "../../trillion/kernel";
@@ -17,8 +17,9 @@ import { STATELESS_LAWS, strataVariant } from "../../stateless/laws";
 
 /**
  * Which kernel adds particles to the grid.
- *   offline   this folder's accumulate shader: returning 64-bit atomics, exact
- *             per-particle flux weights, GPU-counted evaluated and landed.
+ *   offline   this folder's accumulate shader: returning 64-bit atomics,
+ *             per-particle flux weights as fine as the 64-bit grid allows,
+ *             GPU-counted evaluated, landed and drawn.
  *   trillion  src/trillion's splat kernel: fire-and-forget u32 atomics folded
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
@@ -52,13 +53,26 @@ export interface FrameCursor {
   offset: number;
 }
 
-/** The state of a frame: the light grid and the in-frame tally. */
+/** The state of a frame: the light grid and the tallies. */
 export interface Accumulation {
   /** Accumulation grid, low and high words, gridWidth * gridHeight each. */
   lo: Uint32Array;
   hi: Uint32Array;
+  /**
+   * Grid units a particle at full weight adds: ONE in count mode, finer in
+   * flux mode (job.ts unitsPerParticle). develop() needs it to bring the grid
+   * to ONE units; code that reads `lo` and `hi` directly must divide by it.
+   */
+  unitsPerParticle: number;
   /** Exact number of evaluated particles whose position fell inside the frame. */
   landed: bigint;
+  /**
+   * Exact number of those that added at least one unit of light, counted on
+   * the GPU. Equal to `landed` in count mode. Lower in flux mode when weights
+   * fall below one grid unit and are rounded to nothing at random, or with the
+   * trillion kernel, which keeps a random share of a dim sheet's particles.
+   */
+  drawn: bigint;
   /**
    * Particles evaluated for this frame (includes work restored from a
    * checkpoint). Equals the world's total when the frame is done. Counted on
@@ -66,6 +80,13 @@ export interface Accumulation {
    */
   gpuEvaluated: bigint;
 }
+
+/**
+ * A grid and its tallies as a checkpoint holds them. The grid is in the units
+ * of the renderer that saved it, which the job and kernel fix, so a checkpoint
+ * does not carry them.
+ */
+export type SavedAccumulation = Omit<Accumulation, "unitsPerParticle">;
 
 /**
  * The work a frame has cost so far. It travels with a checkpoint, so a frame
@@ -89,7 +110,7 @@ export interface FrameHooks {
    * that was saved with it, or the frame's time and batch count start again
    * from zero and understate the frame.
    */
-  resume?: { cursor: FrameCursor } & Accumulation & Partial<FrameProgress>;
+  resume?: { cursor: FrameCursor } & SavedAccumulation & Partial<FrameProgress>;
   /** Save a partial frame every `everyMs` so a crash loses little. */
   checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation, progress: FrameProgress): Promise<void> };
   /**
@@ -108,6 +129,11 @@ export interface FrameResult extends Accumulation, FrameProgress {
 }
 
 const now = (): number => performance.now();
+
+/** The offline kernel's tally: landed, evaluated and drawn, 64 bits each. */
+const TALLY_BYTES = 24;
+/** Readback buffer for either kernel's tally. The trillion kernel's has four 64-bit counts. */
+const READ_TALLY_BYTES = 32;
 
 export class StatelessRenderer {
   readonly gridWidth: number;
@@ -143,6 +169,10 @@ export class StatelessRenderer {
   get evaluatedBy(): "gpu" | "host" {
     return "gpu";
   }
+  /** Grid units per full-weight particle. The trillion kernel counts whole particles, ONE each. */
+  get unitsPerParticle(): number {
+    return this.tk ? ONE : unitsPerParticle(this.job);
+  }
 
   private constructor(
     private readonly device: GPUDevice,
@@ -172,8 +202,8 @@ export class StatelessRenderer {
     this.accHi = device.createBuffer({ label: "offline accHi", size: bytes, usage: acc });
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
-    this.tally = device.createBuffer({ label: "offline tally", size: 16, usage: acc });
-    this.readTally = device.createBuffer({ label: "offline readTally", size: 32, usage: read });
+    this.tally = device.createBuffer({ label: "offline tally", size: TALLY_BYTES, usage: acc });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: READ_TALLY_BYTES, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -287,8 +317,8 @@ export class StatelessRenderer {
       cursor = { ...hooks.resume.cursor };
       device.queue.writeBuffer(this.accLo, 0, hooks.resume.lo.buffer as ArrayBuffer, hooks.resume.lo.byteOffset, hooks.resume.lo.byteLength);
       device.queue.writeBuffer(this.accHi, 0, hooks.resume.hi.buffer as ArrayBuffer, hooks.resume.hi.byteOffset, hooks.resume.hi.byteLength);
-      const { landed, gpuEvaluated } = hooks.resume;
-      const words = [landed & 0xffffffffn, landed >> 32n, gpuEvaluated & 0xffffffffn, gpuEvaluated >> 32n].map(Number);
+      const { landed, gpuEvaluated, drawn } = hooks.resume;
+      const words = [landed, gpuEvaluated, drawn].flatMap((v) => [Number(v & 0xffffffffn), Number(v >> 32n)]);
       device.queue.writeBuffer(this.tally, 0, new Uint32Array(words));
     } else {
       const enc = device.createCommandEncoder();
@@ -375,7 +405,7 @@ export class StatelessRenderer {
       const sel = job.select;
       u32[25] = sel ? sel.width : this.gridWidth;
       u32[26] = sel ? sel.height : this.gridHeight;
-      u32[27] = 0;
+      f32[27] = this.unitsPerParticle;
       f32[28] = time;
       f32[29] = shutterSpan;
       f32[30] = job.weighting === "flux" ? job.fluxRef * job.fluxRef : 0;
@@ -452,7 +482,7 @@ export class StatelessRenderer {
   }
 
   /** Load a checkpoint into the trillion kernel's u64 counts and tally. */
-  private restoreTrillion(tk: TrillionKernel, acc: Accumulation): void {
+  private restoreTrillion(tk: TrillionKernel, acc: SavedAccumulation): void {
     const cells = acc.lo.length;
     const counts = new Uint32Array(cells * 2);
     let sum = 0n;
@@ -499,12 +529,14 @@ export class StatelessRenderer {
       hi[i] = ((chi << 16) | (clo >>> 16)) >>> 0;
     }
     const t = new Uint32Array(this.readTally.getMappedRange());
+    // Kernel tally: [0..1] particles it added to the grid, [2..3] in view.
+    const drawn = BigInt(t[0]) + (BigInt(t[1]) << 32n);
     const landed = BigInt(t[2]) + (BigInt(t[3]) << 32n);
     // Counted by the kernel, one atomic per workgroup (src/trillion, #82).
     const gpuEvaluated = BigInt(t[6]) + (BigInt(t[7]) << 32n);
     read.unmap();
     this.readTally.unmap();
-    return { lo, hi, landed, gpuEvaluated };
+    return { lo, hi, unitsPerParticle: ONE, landed, drawn, gpuEvaluated };
   }
 
   /**
@@ -534,7 +566,7 @@ export class StatelessRenderer {
     const enc = device.createCommandEncoder();
     enc.copyBufferToBuffer(this.accLo, 0, this.readLo, 0, bytes);
     enc.copyBufferToBuffer(this.accHi, 0, this.readHi, 0, bytes);
-    enc.copyBufferToBuffer(this.tally, 0, this.readTally, 0, 16);
+    enc.copyBufferToBuffer(this.tally, 0, this.readTally, 0, TALLY_BYTES);
     device.queue.submit([enc.finish()]);
     await Promise.all([
       this.readLo.mapAsync(GPUMapMode.READ),
@@ -547,10 +579,11 @@ export class StatelessRenderer {
     const t = new Uint32Array(this.readTally.getMappedRange());
     const landed = BigInt(t[0]) + (BigInt(t[1]) << 32n);
     const gpuEvaluated = BigInt(t[2]) + (BigInt(t[3]) << 32n);
+    const drawn = BigInt(t[4]) + (BigInt(t[5]) << 32n);
     this.readLo.unmap();
     this.readHi.unmap();
     this.readTally.unmap();
-    return { lo, hi, landed, gpuEvaluated };
+    return { lo, hi, unitsPerParticle: this.unitsPerParticle, landed, drawn, gpuEvaluated };
   }
 
   dispose(): void {

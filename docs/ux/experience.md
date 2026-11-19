@@ -125,7 +125,7 @@ thin Pointer Events binding.
 | --- | --- | --- | --- |
 | Turn the world | Press and move | One finger, drag | Arrows |
 | Dive in / out | Wheel, trackpad pinch | Two-finger pinch | `+` `-` |
-| Pull particles | Press, stay still 170 ms, then drag | Press, stay still 230 ms, then drag | |
+| Pull particles | Press on a sheet and stay still: the pull starts after 170 ms, and after 220 ms more it can be dragged | The same, with 230 ms and then 220 ms | |
 | Push particles | Right button, or Shift/Alt + hold (in the app, right button + hold, since right drag pans) | (see open questions) | |
 | Face a sheet | Double click it | Double tap it | `[` `]` |
 | Back to wide shot | Double click empty space | Double tap empty space | Home |
@@ -134,6 +134,22 @@ A press that travels more than 5 px (10 px for a finger) before the hold
 delay is a camera drag, and the travel inside that radius is not lost. A
 second finger turns anything in progress into a pinch, and lifting one
 finger of a pinch does not fire a tap.
+
+Two rules keep the hold from stealing camera drags, which it did: measured
+in the app, a press that paused 300 ms before moving did not turn the camera
+at all, on a sheet or over open space.
+
+- **A hold needs something to touch.** A still press over open space never
+  becomes a hold (`canHold`), so it turns the camera whenever it sets off.
+- **A hold settles before it can be dragged.** The pull starts at the hold
+  delay, so a still press answers at once. For the next 220 ms
+  (`holdSettle`) a press that sets off was a camera drag that began with a
+  pause: the hold is called off, with no release burst, and the camera gets
+  all the travel since the press. After that the hold is settled: moving
+  drags the force, the camera stays put, and the cursor is a ring.
+
+So a drag turns the camera when it starts within about 0.4 s of the press
+(0.45 s for a finger), and a deliberate hold still pulls after 0.17 s.
 
 ### Hints
 
@@ -153,7 +169,9 @@ die and a text line never compete and nothing plays during the opening. It
 also waits while the settings menu is open or a long job runs. The HUD's own
 die timer is turned off with `diceHintMs: 0`, and the schedule starts and
 stops the breathing with `hud.hintDice()`. Gestures are read from the canvas
-with the same thresholds as the pointer forces and are never consumed.
+with the same thresholds and the same sheet test as the pointer forces
+(`canHold: brushes.touches`) and are never consumed. `hold to pull` is
+retired when a hold settles, not when one merely starts.
 
 ## When WebGPU is not available
 
@@ -255,9 +273,9 @@ What already fits the shared contracts in `src/core/contracts.ts`:
 - Ignition needs no new GPU state: scale each plane's `activeCount`. One
   active particle on the first plane is the opening spark.
 - Exposure is a multiplier on `RenderSettings.brightness`.
-- Hints and the fallback use the monochrome palette. They predate `TOKENS`
-  and use their own letter-spacing; they should be moved onto `TOKENS` when
-  the UI threads settle the look.
+- Hints and the no-WebGPU note are styled from the design tokens
+  (`src/ux/design`, `docs/ux/design.md`): the caption role with the halo for
+  a hint, a caption, a body line and the shared button for the note.
 
 Pointer forces on the GPU (added in the follow-up PR): `Globals` ends with
 four `Brush` slots, and the engine adds `brushAccel(p.pos)` to every particle
@@ -297,9 +315,10 @@ These need a person looking at a real screen. None of them block the engine.
 2. **Repel on touch.** There is no touch gesture for it yet. Candidates: a
    two-finger hold, or making the release burst the only push. The second is
    simpler and may be enough.
-3. **Hold delay.** 170 ms (mouse) and 230 ms (touch) separate "look" from
-   "touch". Too short and camera drags turn into wells; too long and the
-   wells feel laggy. Needs tuning by hand.
+3. **Hold delay.** 170 ms (mouse) and 230 ms (touch) start the pull, and
+   220 ms more (`holdSettle`) settle it, which is the point where "look"
+   and "touch" part ways. Too short and hesitant camera drags turn into
+   wells; too long and dragging a well feels laggy. Needs tuning by hand.
 4. **Which sheet the ray picks in the wide shot.** Currently the nearest lit
    sheet under the cursor. With hundreds of mostly empty sheets, picking the
    nearest sheet that actually has particles near the hit may feel better;

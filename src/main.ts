@@ -123,7 +123,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       : null;
 
   // One-line gesture hints and the die's breathing, on one schedule; never during the opening.
-  const hints = mountAppHints({ canvas, hud: ui.hud, isOpening: () => intro?.active ?? false });
+  const hints = mountAppHints({ canvas, hud: ui.hud, isOpening: () => intro?.active ?? false, canHold: brushes.touches });
 
   // ---- frame loop ----------------------------------------------------------
   const loop = createFrameLoop({

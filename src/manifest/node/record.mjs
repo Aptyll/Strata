@@ -48,7 +48,7 @@ function summary(m) {
     `Evaluated total ${t.evaluated} in ${t.gpuSeconds.toFixed(1)} s (${(t.particlesPerSecond / 1e9).toFixed(2)} billion/s), ` +
       (t.countedOnGpu === true ? "counted on the GPU" : t.countedOnGpu === false ? "NOT all counted on the GPU (some frames summed dispatch sizes)" : "counter not recorded"),
     `Weighting: ${m.drawing?.meaning ?? "unknown"}${t.eachLandedAddedOnce === true ? " (verified: grid sum = landed x 65536 in every frame)" : t.eachLandedAddedOnce === false ? " (FAILED: grid sum != landed x 65536)" : ""}`,
-    last ? `last frame ${last.frame}: landed ${last.landed}, outside ${last.outside}` : "",
+    last ? `last frame ${last.frame}: landed ${last.landed}${last.drawn != null ? `, of which ${last.drawn} added light` : ""}, outside ${last.outside}` : "",
     `Fingerprints (exact grid hash and tile signature): ${hashed} of ${m.frames.length} frames`,
     m.video ? `Video: ${m.video.file}, ${m.video.bytes} bytes, sha256 ${m.video.sha256}` : "Video: none (pass --mp4 <file>, or put <job name>.mp4 in the folder)",
     `GPU: ${m.gpu ? gpuName(m.gpu) : "not recorded (pass --gpu)"}; commit ${m.source.commit ?? "unknown"}`,

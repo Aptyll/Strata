@@ -20,7 +20,7 @@ import type { Quat, Vec2, Vec3 } from "../../core/contracts";
 import type { CameraKey, LawId, OfflineJob, OfflinePlane } from "./job";
 import { pcg } from "./laws";
 import { add, cameraBasis, dot, quatFromAxisAngle, quatMul, scale, sub } from "./math";
-import { lawParams, randomRotation, rng, type ClusterOptions } from "./world";
+import { fluxBitsField, lawParams, randomRotation, rng, type ClusterOptions } from "./world";
 
 /** Most particles one plane (layer) may hold. */
 const LAYER_MAX = 3_900_000_000;
@@ -115,6 +115,7 @@ function buildJob(
     splat: o.splat ?? "bilinear",
     weighting: o.weighting ?? "flux",
     fluxRef: look.fluxRef,
+    ...fluxBitsField(o),
     shutter: o.shutter ?? 0.5,
     near: look.near,
     planes,
