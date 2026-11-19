@@ -1,6 +1,10 @@
 // Frame graph adapters: the render modules as `Pass` objects for the engine
 // described in src/core/contracts.ts. Nothing here is registered
 // automatically; whoever builds the frame graph adds the passes it wants.
+//
+// In the app today (src/main.ts):
+//   createDensityTonemapPass  the default tone map, built by src/passes/tonemap.pass.ts
+//   createDensitySplatPass    one of the rasterizers, picked with ?raster=splat
 
 import type { FrameContext, GpuContext, Mat4, Pass, PlaneDesc } from '../core/contracts';
 import { SplatAccumulator, type SplatBatch, type SplatMode } from './splat';
@@ -9,7 +13,12 @@ import { DensityPost, type DensitySettings } from './post';
 type Dyn<T> = T | (() => T);
 const get = <T>(v: Dyn<T>): T => (typeof v === 'function' ? (v as () => T)() : v);
 
-/** Plane-local to world: translate * rotate * scale(halfSize). Column major. */
+/**
+ * Plane-local to world: translate * rotate * scale(halfSize). Column major.
+ * The same matrix the simulation uploads as `plane.model`
+ * (fromTRS(position, rotation, [halfSize.x, halfSize.y, 1]) in src/math.ts),
+ * written into `out` so a per-frame caller allocates nothing.
+ */
 export function planeModelMatrix(d: PlaneDesc, out: Mat4 = new Float32Array(16)): Mat4 {
   const [x, y, z, w] = d.rotation;
   const [sx, sy] = d.halfSize;
@@ -32,7 +41,10 @@ export function planeModelMatrix(d: PlaneDesc, out: Mat4 = new Float32Array(16))
   return out;
 }
 
-/** out = a * b, column major. */
+/**
+ * out = a * b, column major. `out` may be the same array as `b` (each column
+ * of b is read before that column of out is written), but not as `a`.
+ */
 export function mulMat4(a: ArrayLike<number>, b: ArrayLike<number>, out: Mat4 = new Float32Array(16)): Mat4 {
   for (let c = 0; c < 4; c++) {
     const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];

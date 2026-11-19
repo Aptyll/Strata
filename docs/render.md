@@ -35,13 +35,33 @@ dust and the dense cores keep visible structure.
 | `bloom.ts` | `Bloom`: threshold, down chain, additive up chain |
 | `tonemap.ts` | `ToneMap`: density curve, display curve, sRGB, dither |
 | `post.ts` | `DensityPost`: trails + bloom + tone map on any density view |
+| `counts.ts` | `CountToneMapper`: integer hit counters to density, auto exposure, then `DensityPost` |
 | `pipeline.ts` | `DensityRenderer`: splat + post in one object |
 | `passes.ts` | `Pass` adapters for the frame graph in `src/core/contracts.ts` |
-| `demo/` | standalone page with its own throwaway particle source |
+| `common.ts` | shared WGSL (fullscreen triangle, hash, `Tone` uniform, counter loader and resolve) and constants |
+| `demo/` | standalone pages: `index.html` with its own throwaway particle source, `counts.html` for `CountToneMapper` |
 
 Each class takes a `GPUDevice`, has `resize(width, height)`, encodes into a
 `GPUCommandEncoder` you pass in, and has `destroy()`. None of them touch the
 canvas or own a frame loop.
+
+### Buffers and formats
+
+Everything the module allocates, in the order data flows through it.
+
+| buffer | owner | format | holds |
+| --- | --- | --- | --- |
+| density target | `SplatAccumulator` (or the caller) | `r32float` with `float32-blendable`, else `r16float`; the engine's is `rgba16float` | energy per pixel in red, additive, never clamped |
+| counter grid | `SplatAccumulator`, `compute` mode | `u32` per pixel, row major | fixed point energy, `fixedScale` units per unit, resolved into the density target every frame |
+| counter buffer | the caller of `CountToneMapper` | `u32` per pixel, or two words per pixel low word first | hits (or fixed point energy, `scale` units per unit) |
+| resolved density | `CountToneMapper` | `r32float` | counts divided by `scale` |
+| trail history | `Trails` (two, ping-pong) | `r32float` by default | density blended over time |
+| bloom chain | `Bloom` | `r16float`, half size, then halving | luma above the threshold, summed back into level 0 |
+| output | the caller | any color format, usually the canvas | white on black, sRGB encoded unless the format is `-srgb` |
+
+Uniform layouts are written next to their WGSL structs: `Tone` in
+`common.ts` (48 bytes), `Batch` in `splat.ts` (112 bytes), `CounterLayout`
+in `common.ts` (32 bytes).
 
 ## Using it
 
@@ -242,11 +262,12 @@ Checked in headless Chromium on a software GPU (SwiftShader), 1M particles at
 saturated.
 
 Not checked: `point` mode was not rendered (it shares its projection and
-energy code with `quad`, but that run was cut short), the two frame graph
-passes in `passes.ts` have only been type checked because there is no engine
-to run them in yet, and nothing here was run on real hardware. The statements
-above about which mode is faster come from how the techniques work, not from
-measurements.
+energy code with `quad`, but that run was cut short). The two frame graph
+passes in `passes.ts` are wired into the app (the density tone map by
+default, the splat pass behind `?raster=splat`) but have only been type
+checked, not rendered in the running app. Nothing here was run on real
+hardware. The statements above about which mode is faster come from how the
+techniques work, not from measurements.
 
 ## Huge counts: integer hit counters
 

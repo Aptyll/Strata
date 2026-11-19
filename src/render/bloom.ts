@@ -5,8 +5,13 @@
 // density matters here: raw density spans several orders of magnitude, and a
 // blur of it would be nothing but the few densest cores. A down chain and an
 // additive up chain then spread the result over several octaves.
+//
+// Buffers: up to `levels` r16float textures, level 0 at half the source size
+// and each next level half again. They hold luma above the threshold, not
+// density. encode() returns level 0, the sum of every octave, which the tone
+// map samples with a linear filter.
 
-import { FULLSCREEN_VS, TONE_WGSL } from './common';
+import { ADDITIVE_BLEND, FULLSCREEN_VS, TONE_WGSL } from './common';
 
 const FORMAT: GPUTextureFormat = 'r16float';
 
@@ -87,10 +92,9 @@ export class Bloom {
         fragment: { module, entryPoint: 'fs', targets: [{ format: FORMAT, blend }] },
       });
     };
-    const add: GPUBlendComponent = { srcFactor: 'one', dstFactor: 'one', operation: 'add' };
     this._prefilter = mk(PREFILTER_WGSL);
     this._down = mk(DOWN_WGSL);
-    this._up = mk(UP_WGSL, { color: add, alpha: add });
+    this._up = mk(UP_WGSL, ADDITIVE_BLEND);
   }
 
   /** Number of levels actually in use. The composite divides by this. */

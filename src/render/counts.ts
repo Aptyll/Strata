@@ -8,7 +8,9 @@
 //   words = 1   array<u32>, counter i at word i
 //   words = 2   64 bit, low word first: counter i at words 2i (lo), 2i+1 (hi)
 //
-// Pixels are row major, top row first: i = y * stride + x.
+// Pixels are row major, top row first: i = offset + y * stride + x. The
+// loader and the resolve shader are shared with SplatAccumulator's compute
+// mode (counterLoadWgsl and counterResolveWgsl in common.ts).
 //
 // CountToneMapper turns that buffer into a picture in two steps.
 //
@@ -24,7 +26,7 @@
 // log2(count) on the GPU and reads back 1 KiB; `autoExpose()` places the
 // black and white points at percentiles of it.
 
-import { FULLSCREEN_VS } from './common';
+import { COUNTER_LAYOUT_BYTES, counterLoadWgsl, counterResolveWgsl, packCounterLayout } from './common';
 import { DensityPost, type DensityPostOptions } from './post';
 
 const BINS = 256;
@@ -33,33 +35,7 @@ const BINS_PER_OCTAVE = 4;
 const WORKGROUP = 256;
 const ROW_GROUPS = 16384;
 
-const loadWgsl = (words: 1 | 2): string => /* wgsl */ `
-struct Layout {
-  width: u32,
-  height: u32,
-  stride: u32,     // counters per row in the buffer
-  offset: u32,     // index of the first counter
-  invScale: f32,   // 1 / (counts per unit of energy)
-};
-@group(0) @binding(0) var<uniform> lay: Layout;
-@group(0) @binding(1) var<storage, read> counters: array<u32>;
-
-fn loadCount(x: u32, y: u32) -> f32 {
-  let i = lay.offset + y * lay.stride + x;
-  ${words === 2
-    ? 'return f32(counters[2u * i]) + f32(counters[2u * i + 1u]) * 4294967296.0;'
-    : 'return f32(counters[i]);'}
-}
-`;
-
-const resolveWgsl = (words: 1 | 2): string => FULLSCREEN_VS + loadWgsl(words) + /* wgsl */ `
-@fragment fn fs(i: VSOut) -> @location(0) vec4f {
-  let c = vec2u(i.pos.xy);
-  return vec4f(loadCount(c.x, c.y) * lay.invScale, 0.0, 0.0, 1.0);
-}
-`;
-
-const histogramWgsl = (words: 1 | 2): string => loadWgsl(words) + /* wgsl */ `
+const histogramWgsl = (words: 1 | 2): string => counterLoadWgsl(words) + /* wgsl */ `
 @group(0) @binding(2) var<storage, read_write> hist: array<atomic<u32>, ${BINS}>;
 
 @compute @workgroup_size(${WORKGROUP})
@@ -181,8 +157,8 @@ export class CountToneMapper {
     // wants them turns them back on.
     this.post.settings.trails.enabled = false;
     this.post.settings.tone.curve = 'log';
-    this._layout = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const module = device.createShaderModule({ code: resolveWgsl(this.words) });
+    this._layout = device.createBuffer({ size: COUNTER_LAYOUT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const module = device.createShaderModule({ code: counterResolveWgsl(this.words) });
     this._resolve = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module, entryPoint: 'vs' },
@@ -219,14 +195,8 @@ export class CountToneMapper {
   }
 
   private _writeLayout(): void {
-    const b = new ArrayBuffer(32);
-    const u = new Uint32Array(b);
-    u[0] = this.width;
-    u[1] = this.height;
-    u[2] = this.stride || this.width;
-    u[3] = this.offset;
-    new Float32Array(b)[4] = 1 / this.scale;
-    this.device.queue.writeBuffer(this._layout, 0, b);
+    const layout = packCounterLayout(this.width, this.height, 1 / this.scale, this.stride, this.offset);
+    this.device.queue.writeBuffer(this._layout, 0, layout);
   }
 
   /**
