@@ -86,7 +86,7 @@ Two very different modes, and the wording must keep them apart:
 | `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
 | `trillion/` | faster trillion splat kernel and laws, with its own demo; the offline renderer can run it (`kernel: "trillion"`), the default is still the offline kernel |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
-| `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
+| `manifest/` | per-render JSON manifest (GPU tallies, job hash, exact grid hash, tile signature) and `npm run record` (job, make, check, verify, render; `docs/proof/reproduce.md`) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find, ladder, collapse) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
@@ -110,7 +110,7 @@ npm run typecheck    # tsc only
 npm test             # every *.test.* file under src/: a few seconds, no GPU
 npm run smoke        # after a build: opens every built page headless, fails on errors
 npm run check:docs   # do the maps and the paths named in the docs still match the code
-npm run record       # render manifests: make, check, reproduce (src/manifest)
+npm run record       # record manifests: job, make, check, verify (docs/proof/reproduce.md)
 ```
 
 | URL (under `npm run dev`) | what |

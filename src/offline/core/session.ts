@@ -13,6 +13,7 @@
  * and continue later, run out of order, or be split across several machines.
  */
 import { develop, frameStats, type FrameStats } from "./develop";
+import { gridSha256, gridSignature } from "./fingerprint";
 import { DEFAULT_LOOK, drawLabel, exposureTrack, gradeFrame, toneTable, withCommas, type Look } from "./grade";
 import { totalParticles, type OfflineJob } from "./job";
 import { pcg } from "./laws";
@@ -243,6 +244,12 @@ export async function renderJob(
         batches: result.batches,
         resumes: result.resumes,
       });
+      // Fingerprints for the render manifest: a hash of the exact grid, and
+      // tile brightness that survives the one-pixel differences between GPUs.
+      const gridSha = await gridSha256(result.lo, result.hi, job.width * job.ssaa, job.height * job.ssaa);
+      if (gridSha) stats.gridSha256 = gridSha;
+      stats.signature = gridSignature(result.lo, result.hi, job.width * job.ssaa, job.height * job.ssaa, result.unitsPerParticle);
+      stats.kernel = renderer.kernel;
       await store.write(frameImageName(frame), await encodeGrayPng(developed.codes, job.width, job.height, zlib));
       await store.write(frameStatsName(frame), text.encode(JSON.stringify(stats)));
       // Always, not only when the frame started from a checkpoint: checkpoints
