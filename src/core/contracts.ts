@@ -255,6 +255,13 @@ export interface ParticleBudget {
 
 // ------------------------------------------------------------------- ui ----
 
+/** A new rule for a live plane. Omitted params mean the behavior's defaults; an omitted seed keeps the current one. */
+export interface PlaneBehaviorChange {
+  behaviorId: string;
+  params?: Record<string, number>;
+  seed?: number;
+}
+
 /** What UI code may touch. */
 export interface AppContext extends PlaneHost {
   gpu: GpuContext;
@@ -265,6 +272,13 @@ export interface AppContext extends PlaneHost {
   getScene(): Scene;
   /** Rebuild the world from a scene. */
   loadScene(scene: Scene): void;
+  /**
+   * Optional. Change the behavior of a live plane while keeping its particles
+   * where they are, so the old pattern flows into the new one instead of
+   * cutting. Updates the plane's desc (behaviorId, params, seed) to match.
+   * Callers must fall back to loadScene when an engine does not provide it.
+   */
+  setPlaneBehavior?(plane: PlaneInstance, change: PlaneBehaviorChange): void;
   /** Smoothed frames per second and particles active this frame. */
   stats(): { fps: number; particles: number; planes: number };
   /**

@@ -98,5 +98,6 @@ the budget only changes how many particles are stepped and drawn.
 ## UI
 
 DOM panels implement `UIPanel` and talk to the engine only through
-`AppContext`. Keep the default view empty: black void, white particles, a tiny
+`AppContext`. `AppContext.setPlaneBehavior` (optional) changes a live
+plane's behavior while keeping its particles, for smooth transitions. Keep the default view empty: black void, white particles, a tiny
 stats readout.
