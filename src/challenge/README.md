@@ -24,6 +24,10 @@ says "TIER 1 REACHED" when all of this holds:
   no culling of whole sheets. Each particle is also projected and splatted
   every frame. A particle outside the view is still simulated.
 - **Sustained.** The count must pass three one-second windows in a row.
+  While searching, a failed window is measured again before it counts (three
+  failed windows in a row make a fail), because a garbage collection or a
+  busy compositor can spoil one window. That only steers the search: the
+  record still needs its three passing windows in a row.
 - **Honest frame rate.** Frames are counted between two moments at which the
   GPU had finished all submitted work, so a queue backlog cannot inflate it.
 - **Counted on the GPU.** The kernels count the particles they actually process
@@ -54,6 +58,8 @@ it is. What was checked there:
 - Particles move and velocities change from frame to frame.
 - The ramp logic converges to within 2 percent of a simulated device's limit
   and handles the memory ceiling and "cannot hold the target at all" cases.
+  `npm test -- challenge` runs it against a simulated RTX 2070, also with one
+  window in five spoiled by a hiccup.
 - One preview frame of each mode looks right.
 
 Not checked: presenting to a real canvas (the headless software GPU cannot),
