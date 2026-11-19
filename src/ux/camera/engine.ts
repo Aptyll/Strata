@@ -22,20 +22,19 @@ import { CameraRig } from "./rig";
 import type { CameraOptionsInput, CameraPose, PlaneTarget } from "./rig";
 
 /**
- * Orientation for a CameraState yaw and pitch. Matches the convention the
- * engine's first camera (src/camera.ts) established for scenes: yaw turns
- * around +Y, and a positive pitch lifts the eye above the target so the
- * camera looks down.
+ * Orientation for a CameraState yaw and pitch. Yaw turns around +Y. Pitch is
+ * the pitch of the view direction: negative looks down, with the eye above
+ * the target. This is the convention scenes on main use.
  */
 export const orientationFromYawPitch = (yaw: number, pitch: number): Quat =>
-  quatMul(quatFromAxisAngle([0, 1, 0], yaw), quatFromAxisAngle([1, 0, 0], -pitch));
+  quatMul(quatFromAxisAngle([0, 1, 0], yaw), quatFromAxisAngle([1, 0, 0], pitch));
 
 /** Inverse of orientationFromYawPitch. Any roll in the orientation is dropped. */
 export const yawPitchFromOrientation = (q: Quat): { yaw: number; pitch: number } => {
   const f = quatRotate(q, [0, 0, -1]);
   return {
     yaw: Math.atan2(-f[0], -f[2]),
-    pitch: -Math.asin(Math.max(-1, Math.min(1, f[1]))),
+    pitch: Math.asin(Math.max(-1, Math.min(1, f[1]))),
   };
 };
 

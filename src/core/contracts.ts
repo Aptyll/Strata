@@ -78,6 +78,11 @@ export interface PlaneDesc {
   seed: number;
   /** Overrides for the behavior's param defaults. */
   params?: Record<string, number>;
+  /**
+   * Multiplies this plane's particle brightness. Default 1. Streaming fades
+   * planes in and out with it; call updatePlane after changing it.
+   */
+  brightness?: number;
 }
 
 /** Live GPU-side plane, owned by the simulation. */
@@ -88,6 +93,8 @@ export interface PlaneInstance {
   readonly capacity: number;
   /** Particles simulated and drawn this frame, 0..capacity. Set by the ParticleBudget. */
   activeCount: number;
+  /** When true the plane is still drawn but its particles are not stepped. */
+  paused?: boolean;
   /** 16 bytes per particle (pos.xy, vel.xy as f32). Usage: STORAGE | VERTEX | COPY_DST | COPY_SRC. */
   readonly particles: GPUBuffer;
   /** Plane uniform: model matrix, params, count, seed. */
@@ -96,6 +103,20 @@ export interface PlaneInstance {
   readonly simBindGroup: GPUBindGroup;
   /** group(1) for render pipelines: uniform only (bind `particles` as a vertex buffer). */
   readonly renderBindGroup: GPUBindGroup;
+}
+
+/**
+ * Adds and removes single planes while the world is running. The simulation
+ * implements it, and AppContext exposes it, so streaming can swap planes
+ * without rebuilding the whole scene.
+ */
+export interface PlaneHost {
+  /** Create a plane's GPU state. It joins the frame from the next step. */
+  addPlane(desc: PlaneDesc): PlaneInstance;
+  /** Destroy a plane's GPU state. The instance must not be used afterwards. */
+  removePlane(plane: PlaneInstance): void;
+  /** Push a plane's changed desc (transform, params, brightness) to the GPU. */
+  updatePlane(plane: PlaneInstance): void;
 }
 
 // ---------------------------------------------------------------- scene ----
@@ -234,8 +255,15 @@ export interface ParticleBudget {
 
 // ------------------------------------------------------------------- ui ----
 
+/** A new rule for a live plane. Omitted params mean the behavior's defaults; an omitted seed keeps the current one. */
+export interface PlaneBehaviorChange {
+  behaviorId: string;
+  params?: Record<string, number>;
+  seed?: number;
+}
+
 /** What UI code may touch. */
-export interface AppContext {
+export interface AppContext extends PlaneHost {
   gpu: GpuContext;
   camera: CameraController;
   planes: readonly PlaneInstance[];
@@ -244,8 +272,13 @@ export interface AppContext {
   getScene(): Scene;
   /** Rebuild the world from a scene. */
   loadScene(scene: Scene): void;
-  /** Push a plane's changed desc (transform, params) to the GPU. */
-  updatePlane(plane: PlaneInstance): void;
+  /**
+   * Optional. Change the behavior of a live plane while keeping its particles
+   * where they are, so the old pattern flows into the new one instead of
+   * cutting. Updates the plane's desc (behaviorId, params, seed) to match.
+   * Callers must fall back to loadScene when an engine does not provide it.
+   */
+  setPlaneBehavior?(plane: PlaneInstance, change: PlaneBehaviorChange): void;
   /** Smoothed frames per second and particles active this frame. */
   stats(): { fps: number; particles: number; planes: number };
   /**

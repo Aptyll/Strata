@@ -120,7 +120,7 @@ Run the checks with `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm
 
 Verified by the self-test: matrices agree with the screen rays, orbit keeps distance and a level horizon, smoothing is frame-rate independent, flicks coast and settle, a held stop leaves no drift, pan and zoom keep the grabbed point under the pointer, look-around does not move the eye, focus frames a sheet inside the viewport with no jumps along the way, interruption and drift takeover do not jump, tour visits every sheet, reduced motion removes animation, bad frame times do not produce NaN.
 
-The engine in `src/main.ts` now uses this camera. `[`, `]` and Esc are left alone because the engine and the HUD use them.
+The engine in `src/main.ts` uses this camera. `[`, `]` and Esc are left alone because the engine and the HUD use them. In `CameraState`, pitch is the pitch of the view direction: negative looks down.
 
 A standalone demo runs without the engine or WebGPU: `npm run dev`, then open `/src/ux/camera/demo/`. It draws stand-in sheets of dots on the CPU. Add `?tour=1` for the idle tour or `?free=1` for the trackball.
 

@@ -137,9 +137,12 @@ export function createHud(options = {}) {
   const foot = el('div', 'sh-foot');
   const resetBtn = el('button', null, 'reset');
   resetBtn.type = 'button';
+  const statsBtn = el('button', null, 'stats');
+  statsBtn.type = 'button';
+  statsBtn.setAttribute('aria-pressed', 'false');
   const hint = el('button', null, '? keys');
   hint.type = 'button';
-  foot.append(resetBtn, hint);
+  foot.append(resetBtn, statsBtn, hint);
   panel.append(groupsEl, foot);
   const dot = el('button', 'sh-dot');
   dot.type = 'button';
@@ -454,6 +457,8 @@ export function createHud(options = {}) {
     if (on === state.stats) return;
     state.stats = on;
     root.classList.toggle('stats-on', on);
+    statsBtn.setAttribute('aria-pressed', String(on));
+    if (opt.persist) { try { localStorage.setItem(opt.persist + '.stats', on ? '1' : '0'); } catch { /* private mode */ } }
     left.setAttribute('aria-hidden', String(!on));
     right.setAttribute('aria-hidden', String(!on));
     if (on) flushStats();
@@ -473,6 +478,7 @@ export function createHud(options = {}) {
     root.classList.toggle('help-open', state.help);
   };
   hint.addEventListener('click', () => setHelp(true));
+  statsBtn.addEventListener('click', () => setStats(!state.stats));
   help.addEventListener('click', () => setHelp(false));
   dot.addEventListener('click', () => setPanel(!state.panel));
 
@@ -532,7 +538,8 @@ export function createHud(options = {}) {
     if (idle === state.idle) return;
     state.idle = idle;
     root.classList.toggle('is-idle', idle);
-    if (opt.hideCursor) parent.style.cursor = idle ? 'none' : '';
+    // A class, not an inline style, so it also beats a cursor set on a child such as the canvas.
+    if (opt.hideCursor) parent.classList.toggle('strata-hud-idle', idle);
   };
   const wake = () => {
     setIdle(false);
@@ -627,7 +634,12 @@ export function createHud(options = {}) {
   };
   raf = requestAnimationFrame(loop);
 
-  if (opt.stats) setStats(true);
+  // An explicit option wins; otherwise restore what the visitor last chose.
+  let statsOn = !!opt.stats;
+  if (options.stats === undefined && opt.persist) {
+    try { statsOn = localStorage.getItem(opt.persist + '.stats') === '1'; } catch { /* private mode */ }
+  }
+  if (statsOn) setStats(true);
   if (opt.panelOpen) setPanel(true);
   wake();
 
@@ -672,7 +684,7 @@ export function createHud(options = {}) {
       cancelAnimationFrame(raf);
       clearTimeout(idleTimer); clearTimeout(announceTimer); clearTimeout(saveTimer); clearInterval(rollTimer);
       disposers.forEach((d) => d());
-      if (opt.hideCursor) parent.style.cursor = '';
+      parent.classList.remove('strata-hud-idle');
       root.remove();
     },
   };

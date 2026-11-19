@@ -112,7 +112,7 @@ help.textContent =
   "WASD QE fly   F nearest   , . prev next   H home   space drift";
 
 const camera = createCamera(
-  { target: [0, 0, -20], yaw: 0.6, pitch: 0.3, distance: 70, fovY: (50 * Math.PI) / 180 },
+  { target: [0, 0, -20], yaw: 0.6, pitch: -0.3, distance: 70, fovY: (50 * Math.PI) / 180 },
   {
     upMode: query.get("free") ? "free" : "turntable",
     bounds: { center: [0, 0, -20], radius: 120 },

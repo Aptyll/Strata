@@ -49,6 +49,7 @@ struct Plane {
   params: Params,  // 8 x f32, named after the behavior's params
   count: u32,      // active particles this frame
   seed: f32,
+  brightness: f32, // per-plane multiplier, PlaneDesc.brightness, default 1
 }
 @group(1) @binding(0) var<uniform> plane: Plane;
 @group(1) @binding(1) var<storage, read_write> particles: array<Particle>; // compute only
@@ -97,5 +98,6 @@ the budget only changes how many particles are stepped and drawn.
 ## UI
 
 DOM panels implement `UIPanel` and talk to the engine only through
-`AppContext`. Keep the default view empty: black void, white particles, a tiny
+`AppContext`. `AppContext.setPlaneBehavior` (optional) changes a live
+plane's behavior while keeping its particles, for smooth transitions. Keep the default view empty: black void, white particles, a tiny
 stats readout.
