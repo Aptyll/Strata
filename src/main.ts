@@ -69,6 +69,16 @@ async function start(): Promise<void> {
     },
     getScene: () => ({ ...scene, camera: structuredClone(camera.state) }),
     loadScene,
+    addPlane: (desc) => {
+      const plane = sim.addPlane(desc);
+      total += plane.capacity;
+      return plane;
+    },
+    removePlane: (plane) => {
+      if (!sim.planes.includes(plane)) return;
+      total -= plane.capacity;
+      sim.removePlane(plane);
+    },
     updatePlane: (plane) => sim.updatePlane(plane),
     stats: () => ({
       fps: overlay.fps,

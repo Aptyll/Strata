@@ -3,17 +3,32 @@ import { GLOBALS_WGSL, PARTICLE_STRIDE } from "../gpu/shaderLib";
 
 const WGSL = /* wgsl */ `
 ${GLOBALS_WGSL}
-struct Plane { model: mat4x4f }
+struct Plane {
+  model: mat4x4f,
+  params0: vec4f,
+  params1: vec4f,
+  count: u32,
+  seed: f32,
+  brightness: f32,
+}
 @group(1) @binding(0) var<uniform> plane: Plane;
 
+struct VsOut {
+  @builtin(position) position: vec4f,
+  @location(0) @interpolate(flat) light: f32,
+}
+
 @vertex
-fn vs(@location(0) pos: vec2f) -> @builtin(position) vec4f {
-  return globals.viewProj * plane.model * vec4f(pos, 0.0, 1.0);
+fn vs(@location(0) pos: vec2f) -> VsOut {
+  var out: VsOut;
+  out.position = globals.viewProj * plane.model * vec4f(pos, 0.0, 1.0);
+  out.light = globals.brightness * plane.brightness;
+  return out;
 }
 
 @fragment
-fn fs() -> @location(0) vec4f {
-  return vec4f(vec3f(globals.brightness), 1.0);
+fn fs(in: VsOut) -> @location(0) vec4f {
+  return vec4f(vec3f(in.light), 1.0);
 }
 `;
 
