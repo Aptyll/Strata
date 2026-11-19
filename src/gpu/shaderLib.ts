@@ -24,6 +24,11 @@
  *     100 seed        f32     in [0, 1), unique per plane
  *     104 brightness  f32     multiplies globals.brightness for this plane
  *
+ * CPU writers: packGlobals and packPlane fill these two uniforms for every
+ * engine path (the app, PerfEngine, the perf self test), so a layout change
+ * touches this file only. planeParamValues turns a plane's params into slot
+ * order.
+ *
  * Shaders built here:
  *   buildSimShader(behavior)       the engine's per-plane compute shader (src/sim)
  *   behaviorPreludeWGSL(behavior)  the same scope without an entry point, for
@@ -37,7 +42,7 @@
  * triangle, tone curve) are in ./wgsl.ts.
  */
 
-import { MAX_BEHAVIOR_PARAMS, MAX_BRUSHES, type Behavior } from "../core/contracts";
+import { BRUSH_FLOATS, MAX_BEHAVIOR_PARAMS, MAX_BRUSHES, type Behavior } from "../core/contracts";
 import { PCG_WGSL } from "./wgsl";
 
 // ------------------------------------------------------------- dispatch ----
@@ -68,6 +73,10 @@ export function dispatchSize(count: number): [number, number] {
 
 /** Globals uniform: viewProj (64) + time, dt, frame, brightness (16) + 4 brushes (128). */
 export const GLOBALS_SIZE = 208;
+export const GLOBALS_TIME_OFFSET = 64;
+export const GLOBALS_DT_OFFSET = 68;
+export const GLOBALS_FRAME_OFFSET = 72;
+export const GLOBALS_BRIGHTNESS_OFFSET = 76;
 /** Byte offset of the first brush in the Globals uniform. */
 export const GLOBALS_BRUSHES_OFFSET = 80;
 /** Acceleration, in sheet units per second squared, of a full-strength brush. */
@@ -140,6 +149,89 @@ export function paramSlotNames(behavior: Behavior): string[] {
   const names = Object.keys(behavior.params);
   while (names.length < MAX_BEHAVIOR_PARAMS) names.push(`unused${names.length}`);
   return names;
+}
+
+// -------------------------------------------------------------- packing ----
+//
+// CPU writers for the two uniforms. Each writes little-endian through a
+// DataView at a byte offset into a buffer the caller keeps, so a per-frame
+// caller allocates nothing.
+
+/** The values of one Globals uniform. */
+export interface GlobalsValues {
+  /** World to clip, 16 numbers, column-major. */
+  viewProj: ArrayLike<number>;
+  /** Seconds since start. */
+  time: number;
+  /** Seconds this step simulates. */
+  dt: number;
+  /** Frame counter, stored as u32. */
+  frame: number;
+  /** Light added per particle per pixel, before tone mapping. */
+  brightness: number;
+  /**
+   * MAX_BRUSHES x BRUSH_FLOATS floats in the field order of `Brush`
+   * (src/core/contracts.ts). Omit for no pointer forces.
+   */
+  brushes?: ArrayLike<number>;
+}
+
+/** Every brush unused (all zero, `plane` -1): what packGlobals writes when `brushes` is omitted. */
+const NO_BRUSHES = new Float32Array(MAX_BRUSHES * BRUSH_FLOATS);
+for (let k = 0; k < MAX_BRUSHES; k++) NO_BRUSHES[k * BRUSH_FLOATS + 6] = -1; // field 6 is Brush.plane
+
+/** Writes a Globals uniform (GLOBALS_SIZE bytes, layout in the header) at `byteOffset` of `out`. */
+export function packGlobals(out: DataView, byteOffset: number, g: GlobalsValues): void {
+  for (let k = 0; k < 16; k++) out.setFloat32(byteOffset + 4 * k, g.viewProj[k], true);
+  out.setFloat32(byteOffset + GLOBALS_TIME_OFFSET, g.time, true);
+  out.setFloat32(byteOffset + GLOBALS_DT_OFFSET, g.dt, true);
+  out.setUint32(byteOffset + GLOBALS_FRAME_OFFSET, g.frame, true);
+  out.setFloat32(byteOffset + GLOBALS_BRIGHTNESS_OFFSET, g.brightness, true);
+  const brushes = g.brushes ?? NO_BRUSHES;
+  for (let k = 0; k < MAX_BRUSHES * BRUSH_FLOATS; k++) {
+    out.setFloat32(byteOffset + GLOBALS_BRUSHES_OFFSET + 4 * k, brushes[k] ?? 0, true);
+  }
+}
+
+/** The values of one Plane uniform. */
+export interface PlaneValues {
+  /** Plane-local to world, half size baked in as scale: planeModelMatrix in src/math.ts. */
+  model: ArrayLike<number>;
+  /** Param values in slot order (planeParamValues). Missing slots are written as 0. */
+  params: ArrayLike<number>;
+  /** Particles active this frame, stored as u32. */
+  count: number;
+  /** PlaneDesc.seed, in [0, 1). */
+  seed: number;
+  /** PlaneDesc.brightness, 1 when it is unset. */
+  brightness: number;
+}
+
+/** Writes a Plane uniform (PLANE_UNIFORM_SIZE bytes, layout in the header) at `byteOffset` of `out`. */
+export function packPlane(out: DataView, byteOffset: number, p: PlaneValues): void {
+  for (let k = 0; k < 16; k++) out.setFloat32(byteOffset + 4 * k, p.model[k], true);
+  for (let k = 0; k < MAX_BEHAVIOR_PARAMS; k++) {
+    out.setFloat32(byteOffset + PLANE_PARAMS_OFFSET + 4 * k, p.params[k] ?? 0, true);
+  }
+  out.setUint32(byteOffset + PLANE_COUNT_OFFSET, p.count, true);
+  out.setFloat32(byteOffset + PLANE_SEED_OFFSET, p.seed, true);
+  out.setFloat32(byteOffset + PLANE_BRIGHTNESS_OFFSET, p.brightness, true);
+}
+
+/**
+ * A plane's param values in uniform slot order (paramSlotNames): the value
+ * set in `values`, else the param's default, else 0. Values are not clamped
+ * to the param's min and max.
+ */
+export function planeParamValues(
+  behavior: Behavior,
+  values?: Record<string, number>,
+  out: Float32Array = new Float32Array(MAX_BEHAVIOR_PARAMS),
+): Float32Array {
+  paramSlotNames(behavior).forEach((name, i) => {
+    out[i] = values?.[name] ?? behavior.params[name]?.default ?? 0;
+  });
+  return out;
 }
 
 // -------------------------------------------------------------- shaders ----
