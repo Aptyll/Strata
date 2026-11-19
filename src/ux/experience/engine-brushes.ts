@@ -11,7 +11,7 @@
 import { BRUSH_FLOATS, MAX_BRUSHES, type CameraController, type PlaneInstance } from '../../core/contracts';
 import { planeFromDesc, type Plane } from './camera-rig';
 import { BRUSH_DEFAULTS, ForceBrush } from './force-brush';
-import { GestureCore, type PointerSample } from './gestures';
+import { GESTURE_DEFAULTS, GestureCore, type PointerSample } from './gestures';
 import { m4, v3 } from './math';
 import { clientToNdc, pickPlane, screenToRay, worldPerPixel } from './pointer-ray';
 
@@ -88,6 +88,11 @@ export function attachBrushes(
       holding.delete(id);
       entries.get(id)?.brush.release();
     },
+  }, {
+    // The app camera pans on a right drag (src/ux/camera/input.ts). A push that
+    // started at once would swallow that drag, so the right button waits for the
+    // hold like any other press: right drag pans, right hold pushes.
+    holdSecondary: GESTURE_DEFAULTS.holdMouse,
   });
 
   const sample = (e: PointerEvent): PointerSample => ({

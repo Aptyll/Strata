@@ -16,6 +16,12 @@ export const GESTURE_DEFAULTS = Object.freeze({
   /** Milliseconds a pointer must stay put to become a hold. */
   holdMouse: 170,
   holdTouch: 230,
+  /**
+   * Milliseconds the right button must stay put to become a push. 0 pushes at
+   * once, which suits a host where a right drag means nothing. The app's
+   * camera pans on a right drag, so it waits like any other press there.
+   */
+  holdSecondary: 0,
   /** Two taps within this time and distance make a double tap. */
   doubleTapMs: 320,
   doubleTapPx: 28,
@@ -61,6 +67,8 @@ interface Tracked {
   y0: number;
   t0: number;
   touch: boolean;
+  /** Pressed with the right button. */
+  secondary: boolean;
   state: 'pending' | 'drag' | 'hold' | 'pinch';
   mode: HoldMode;
 }
@@ -83,13 +91,13 @@ export class GestureCore {
     const secondary = e.button === 2 || !!e.shift || !!e.alt;
     const p: Tracked = {
       id: e.id, x: e.x, y: e.y, x0: e.x, y0: e.y, t0: now,
-      touch, state: 'pending', mode: secondary ? 'repel' : 'attract',
+      touch, secondary: e.button === 2, state: 'pending', mode: secondary ? 'repel' : 'attract',
     };
     this.pointers.set(e.id, p);
     this.h.onIntent?.('press');
 
-    if (e.button === 2) {
-      // The secondary button has no camera meaning, so it need not wait.
+    if (p.secondary && this.cfg.holdSecondary <= 0) {
+      // No camera meaning for a right drag in this host, so the push need not wait.
       this.startHold(p);
       return;
     }
@@ -160,7 +168,7 @@ export class GestureCore {
   tick(now: number): void {
     for (const p of this.pointers.values()) {
       if (p.state !== 'pending') continue;
-      const delay = p.touch ? this.cfg.holdTouch : this.cfg.holdMouse;
+      const delay = p.secondary ? this.cfg.holdSecondary : p.touch ? this.cfg.holdTouch : this.cfg.holdMouse;
       if (now - p.t0 >= delay) this.startHold(p);
     }
   }
