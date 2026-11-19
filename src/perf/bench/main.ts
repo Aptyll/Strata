@@ -14,6 +14,8 @@
  *   bilinear=1   2x2 splats
  *   density=4    LOD target particles per pixel
  *   sim=0        draw only
+ *   draw=0       simulate only (profiling: splits sim cost from raster cost)
+ *   modes=brute  sweep only these modes (cull+lod, brute)
  *   auto=0       stop the camera orbit
  *   res=1920x1080  fixed drawing buffer size
  *   timer=0      do not use GPU timestamp queries
@@ -53,6 +55,7 @@ const cfg = {
   bilinear: flag('bilinear', false),
   density: parseFloat(q.get('density') ?? '4'),
   sim: flag('sim', true),
+  draw: flag('draw', true),
   auto: flag('auto', true),
   res: /^(\d+)x(\d+)$/.exec(q.get('res') ?? ''),
 };
@@ -135,6 +138,7 @@ async function setup(
     throw new Error(`Out of GPU memory at ${fmt(n)} particles: ${oom.message}`);
   }
   engine.simulate = cfg.sim;
+  engine.draw = cfg.draw;
   engine.bilinear = cfg.bilinear;
   engine.resize(canvas.width, canvas.height);
   // Keep the picture readable as density grows: dimmer particles, same look.
@@ -280,6 +284,8 @@ async function sweep(device: GPUDevice, target: () => GPUTextureView, format: GP
     ['cull+lod', true, true],
     ['brute', false, false],
   ];
+  const onlyModes = q.get('modes')?.split(',');
+  const sweepModes = onlyModes ? modes.filter(([m]) => onlyModes.includes(m)) : modes;
   const batch = Math.max(1, count(q.get('batch'), 30));
   const rows: Record<string, number | string>[] = [];
   report.style.display = 'block';
@@ -290,7 +296,7 @@ async function sweep(device: GPUDevice, target: () => GPUTextureView, format: GP
   print('running...');
 
   outer: for (const n of counts) {
-    for (const [name, cull, lod] of modes) {
+    for (const [name, cull, lod] of sweepModes) {
       let s: Setup;
       try {
         s = await setup(device, format, n, cfg.planes, cull, lod);

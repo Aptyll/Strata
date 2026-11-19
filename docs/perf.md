@@ -32,18 +32,40 @@ and not a capped 60 fps.
 
 ## Measured so far
 
-**No real GPU numbers yet.** The development machine for this work has no GPU,
-so everything was run on Chromium's software WebGPU (SwiftShader, 4 CPU cores).
-That proves correctness, not speed:
+RTX 2070 (8 GB, 448 GB/s), 1920x1080, `?bench=1`, ms per frame without vsync,
+measured on 2026-11-19. Self test 25 of 25 on the same device.
 
-- Self test: 25 of 25 pass.
-- 50M particles in 64 planes allocate (7 pages, 448 MB), simulate and render
-  with no validation errors.
-- Software throughput is about 18M particles per second, which says nothing
-  about a real GPU.
+| particles | cull+lod | brute |
+| ---: | ---: | ---: |
+| 1M | 0.65 | 0.57 |
+| 10M | 1.37 | 1.40 |
+| 50M | 3.02 | 4.73 |
+| 100M | 4.39 | 8.99 |
+| 200M | 6.92 | 17.33 |
+| 400M | 11.39 | 34.92 |
+| 800M | 18.53 | 68.25 |
 
-Please run `?bench=1` on real hardware and paste the table here. That is the
-number this document is missing.
+Adapter: 2 GiB storage bindings, subgroups (32), shader-f16, timestamp-query.
+800M particles (6.4 GB) allocate fine.
+
+What the numbers say:
+
+- **Brute force is linear** at about 85 ps per particle (11.6B particles per
+  second), with every particle simulated and splatted every frame. 60 fps
+  holds up to about 190M.
+- **Particle traffic is only 41% of peak bandwidth.** 16 bytes per particle
+  (read and write 8) at 11.6B per second is about 185 GB/s of 448. The rest of
+  the time is not explained yet. My guess, not measured: the random
+  `atomicAdd` into the 8.3 MB framebuffer, which is twice the 2070's 4 MB L2,
+  so most atomics go to memory. `draw=0` and `sim=0` split the two costs.
+- **With culling and LOD, memory is the cap, not speed.** From 400M to 800M
+  each extra particle costs about 18 ps, which is the off-screen and thinned
+  particles still being simulated at their reduced rate. 800M runs at 54 fps,
+  and the 8 GB card holds about 900M at 8 bytes. Past that, more particles
+  need fewer bytes each (see "4 bytes per particle" below).
+
+To profile: `?bench=1&modes=brute&counts=200M` with `draw=0`, then `sim=0`,
+then `res=640x360` (a framebuffer that fits in L2).
 
 ## Design
 
@@ -175,7 +197,6 @@ same into a caller-owned encoder, for frame graphs.
 
 ## Not done yet
 
-- **Real GPU measurements.** See above.
 - **Sub-plane culling.** A very large plane seen up close still processes all of
   its particles and rejects most per particle. Fix: keep particles binned into
   tiles and cull tiles.
