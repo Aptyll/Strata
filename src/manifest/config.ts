@@ -90,6 +90,33 @@ export function expandJob(config: RecordConfig): OfflineJob {
   return job;
 }
 
+/**
+ * A record's job thinned for a quick check on another GPU (proof/tolerance).
+ * Every sheet but those in `keep` holds only its first `perSheet` particles,
+ * which are the same particles the record draws first (same sheet seeds, same
+ * indices). The sheets in `keep`, by default sheet 0, the hero the shot ends
+ * on, keep all of theirs, so the close-ups stay as dense as the record's.
+ * `frames` frames are spread evenly over the clip, and frame k is the record
+ * at that moment: fps and shutter are scaled so the camera pose, the law time
+ * and the shutter window all match the record's.
+ */
+export function thinJob(job: OfflineJob, perSheet: number, frames: number, keep: readonly number[] = [0]): OfflineJob {
+  if (!Number.isSafeInteger(perSheet) || perSheet <= 0) throw new Error("perSheet must be a positive integer");
+  if (job.frames < 2) throw new Error("only a clip of 2 or more frames can be thinned");
+  if (!Number.isInteger(frames) || frames < 2 || frames > job.frames) throw new Error(`frames must be an integer from 2 to ${job.frames}`);
+  const scale = (frames - 1) / (job.frames - 1);
+  const thin: OfflineJob = {
+    ...job,
+    name: `${job.name}-thin-${shortCount(perSheet)}-${frames}f`,
+    fps: job.fps * scale,
+    frames,
+    shutter: job.shutter * scale,
+    planes: job.planes.map((p, i) => ({ ...p, particleCount: keep.includes(i) ? p.particleCount : Math.min(p.particleCount, perSheet) })),
+  };
+  validateJob(thin);
+  return thin;
+}
+
 /** Throws a readable error for anything a hand-edited config can get wrong. */
 export function validateConfig(value: unknown): RecordConfig {
   const fail = (m: string): never => {

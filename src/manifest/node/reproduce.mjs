@@ -30,7 +30,7 @@ import { totalParticles } from "../../offline/core/job";
 import { StatelessRenderer } from "../../offline/core/renderer";
 import { claimDirectory, frameStatsName, loadJob, renderJob } from "../../offline/core/session";
 import { nodeStore, nodeZlib } from "../../offline/node/platform.mjs";
-import { expandJob, validateConfig } from "../config";
+import { expandJob, thinJob, validateConfig } from "../config";
 import { SAME_PICTURE, buildManifest, checkManifest, compareFrame, compareManifests, gpuName, sha256OfText } from "../manifest.mjs";
 import { gitCommit, hostInfo, output, printChecks, repo, shown, userPath } from "./common.mjs";
 import { makeManifest, videoInfo } from "./folder.mjs";
@@ -80,14 +80,23 @@ async function loadConfig(file) {
 export async function job(args) {
   const configFile = userPath(String(args._[1] ?? path.join(repo, "proof/trillion-4k.json")));
   const config = await loadConfig(configFile);
-  const j = expandJob(config);
+  const record = expandJob(config);
+  // --thin: the record with fewer particles per sheet and a few frames at its own moments (proof/tolerance).
+  const thin = args.thin !== undefined ? { perSheet: Number(args.thin), frames: Number(args.sample ?? 8) } : null;
+  const j = thin ? thinJob(record, thin.perSheet, thin.frames) : record;
   const out = userPath(String(args.out ?? path.join(repo, "proof/out", j.name)));
   await claimDirectory(nodeStore(out), j);
   const total = totalParticles(j);
   const evaluations = total * j.frames;
   console.log(
     [
-      `${config.title}`,
+      `${config.title}${thin ? ", thinned" : ""}`,
+      ...(thin
+        ? [
+            `  every sheet but the hero keeps its first ${withCommas(thin.perSheet)} particles; ${thin.frames} frames,`,
+            `  each the record at the same moment (frame k = record frame ${+((record.frames - 1) / (thin.frames - 1)).toFixed(2)} x k)`,
+          ]
+        : []),
       `  ${withCommas(total)} particles per frame on ${j.planes.length} sheets, seed ${config.world.seed}`,
       `  ${j.width}x${j.height}, ${j.frames} frames at ${j.fps} fps, ${j.weighting} weighting, ${j.splat} splats`,
       `  job sha256 ${await sha256OfText(JSON.stringify(j))}`,

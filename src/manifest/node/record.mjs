@@ -4,10 +4,12 @@
  * npm run record: make, check and verify render manifests. Walkthrough:
  * docs/proof/reproduce.md.
  *
- *   npm run record -- job [config.json] [--out dir]
+ *   npm run record -- job [config.json] [--out dir] [--thin N [--sample F]]
  *       Write the job of a record config (default proof/trillion-4k.json) as
  *       <dir>/job.json. Choose that folder in /src/offline/web/ and press
  *       render to render exactly that job. Needs tsx (npm ci --prefix src/offline), no GPU.
+ *       --thin N keeps N particles on every sheet but the hero and F frames
+ *       (default 8) at the record's own moments: proof/tolerance/job.json.
  *   npm run record -- make <dir> [--gpu "RTX 2070"] [--look look.json] [--entry "how it was launched"] [--mp4 file]
  *       Read job.json and frame-*.json (written by src/offline) in <dir> and
  *       write <dir>/manifest.json, with the video's SHA-256 when there is one.
@@ -117,6 +119,7 @@ async function gpuHalf(needsDawn) {
 
 const HELP = [
   "npm run record -- job [config.json] [--out dir]                 write a record config's job.json, to render in /src/offline/web/",
+  "        [--thin N] [--sample F]                                  the record thinned to N particles per sheet, F frames (proof/tolerance)",
   "npm run record -- make <dir> [--gpu NAME] [--look look.json] [--mp4 file]   write <dir>/manifest.json from a finished render",
   "npm run record -- check <reference.json> <dir|manifest.json>    compare frames: identical, same picture or different",
   "npm run record -- verify <reference.json|dir> [--frames N | --at 0,300] [--seed S]   re-render frames here and compare (Node + Dawn)",
