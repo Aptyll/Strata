@@ -1,14 +1,19 @@
 /**
  * Every production shader the app, the challenge mode, the perf path and the
  * offline renderer build, compiled with the real WGSL compiler and linted.
+ * (The density pipeline in src/render builds its own pipelines in
+ * src/render/render.verify.ts.)
  * Compile-only, so the whole file runs in well under a second. A behavior
  * that breaks any engine's shader shows up here by name.
  */
 
 import { behaviors } from "../../behaviors";
 import { initWgsl, procWgsl, resolveWgsl, simWgsl } from "../../challenge/shaders";
+import { DEPTH_SPRITE_WGSL } from "../../depth/sprite-pass";
 import { buildSimShader } from "../../gpu/shaderLib";
 import { accumulateShader } from "../../offline/core/shaders";
+import { POINTS_WGSL } from "../../passes/points.pass";
+import { BASIC_TONEMAP_WGSL } from "../../passes/tonemap.pass";
 import { buildSimRasterWGSL, INIT_WGSL, RESOLVE_WGSL } from "../../perf/shaders";
 import { shaderCase } from "../shader-case";
 import type { VerifyCase } from "../types";
@@ -16,6 +21,9 @@ import type { VerifyCase } from "../types";
 const cases: VerifyCase[] = [
   ...behaviors.map((b) => shaderCase(`engine sim: ${b.id}`, () => buildSimShader(b))),
   ...behaviors.map((b) => shaderCase(`perf sim+raster: ${b.id}`, () => buildSimRasterWGSL(b))),
+  shaderCase("points pass (?raster=points)", POINTS_WGSL),
+  shaderCase("depth sprite pass (?raster=sprites)", DEPTH_SPRITE_WGSL),
+  shaderCase("basic tone map pass (?tonemap=basic)", BASIC_TONEMAP_WGSL),
   shaderCase("perf init", INIT_WGSL),
   shaderCase("perf resolve", RESOLVE_WGSL),
   ...[64, 256].flatMap((wg) => [

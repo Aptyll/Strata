@@ -8,9 +8,10 @@
 // particles on a pixel brightens it by the same step as going from 100 to
 // 1000, so structure stays readable in both the dust and the cores.
 
-import { FULLSCREEN_VS, HASH_WGSL, TONE_UNIFORM_BYTES, TONE_WGSL, CURVES, DISPLAYS, type Curve, type Display } from './common';
+import { FULLSCREEN_VS_WGSL, PCG_WGSL, U01_WGSL } from '../gpu/wgsl';
+import { TONE_UNIFORM_BYTES, TONE_WGSL, CURVES, DISPLAYS, type Curve, type Display } from './common';
 
-const WGSL = FULLSCREEN_VS + HASH_WGSL + TONE_WGSL + /* wgsl */ `
+const WGSL = FULLSCREEN_VS_WGSL + PCG_WGSL + U01_WGSL + TONE_WGSL + /* wgsl */ `
 @group(0) @binding(0) var<uniform> t: Tone;
 @group(0) @binding(1) var hdr: texture_2d<f32>;
 @group(0) @binding(2) var bloom: texture_2d<f32>;
