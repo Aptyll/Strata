@@ -14,10 +14,12 @@ brightness instead of disappearing behind the nearest dot.
 [Render the trillion yourself](#render-the-trillion-yourself) ·
 [Docs](#docs)
 
-![One 3840x2160 frame with 1,000,000,000,000 particles](docs/media/trillion-still.png)
+![One 3840x2160 frame with 1,000,000,000,000 particles](docs/record/trillion-key1-f0.png)
 
-<sub>One 3840x2160 frame from the offline renderer: 1,000,000,000,000 particles,
-every one of them evaluated for this frame. Rendered on an RTX 2070 (8 GB).</sub>
+<sub>One 3840x2160 frame from the offline renderer. The positions of all
+1,000,000,000,000 particles were computed for this frame, and about 843 billion
+of them land in view. Rendered on an RTX 2070 (8 GB) in under a minute. More
+frames in [docs/record](docs/record).</sub>
 
 ## The numbers
 
@@ -27,7 +29,7 @@ Measured on one RTX 2070 (8 GB, 2018) on 2026-11-19.
 | --- | ---: | --- | --- |
 | Realtime, simulated | 100,000,000 | stepped and drawn every frame | 111 fps |
 | Realtime, simulated | 800,000,000 | stepped and drawn every frame | 15 fps, or 54 fps with culling and LOD |
-| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time, then drawn | about 5 minutes per 4K frame (first run) |
+| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time, then drawn if in view | 26 to 52 seconds per 4K frame |
 
 The realtime rows come from the benchmark page at 1920x1080 without vsync, and
 the full table is in [docs/perf.md](docs/perf.md). The brute force path moves
@@ -42,10 +44,20 @@ A trillion particles cannot be stored: at 4 bytes each they would need 4 TB,
 and the card has 8 GB. So the offline renderer keeps no state per particle.
 Each particle's position is the closed-form solution of an equation of motion
 (Kepler orbits, a vortex shear flow, Lissajous oscillators), computed from the
-particle's index, its sheet's seed and the time. For every frame, all 10^12
-particles are evaluated and added into a 64-bit accumulation grid, and nothing
-about any of them is kept for the next frame. They follow their laws exactly,
-but they do not interact with each other.
+particle's index, its sheet's seed and the time. For every frame, the positions
+of all 10^12 particles are computed, exactly 1,000,000,000,000 evaluations.
+Each particle that lands in view is added into a 64-bit accumulation grid; for
+the ones that fall off screen or behind the camera, only that final add is
+skipped. Nothing about any particle is kept for the next frame. They follow
+their laws exactly, but they do not interact with each other.
+
+A 4K frame takes 26 to 52 seconds on the RTX 2070, depending on how spread out
+the hits are.
+
+![A closer 3840x2160 frame: 107,787,615,440 of the trillion land in view](docs/record/trillion-key2-f0.png)
+
+<sub>Closer in, fewer particles land in the picture: 107,787,615,440 here. The
+rest are still computed; they just fall outside the frame.</sub>
 
 The realtime rows are true simulations. Every particle's position and velocity
 live in GPU memory and are stepped forward every frame.
