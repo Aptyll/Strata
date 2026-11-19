@@ -1,10 +1,10 @@
 // WGSL for the trillion particle splat kernel. See docs/trillion.md.
-
-import { STATELESS_RNG_WGSL } from '../stateless/rng';
 //
 // One invocation evaluates `perThread` stateless particles of one plane and
 // adds exactly 1 to exactly one pixel counter for each particle that lands
 // in the frame. Nothing is stored per particle.
+
+import { STATELESS_RNG_WGSL } from '../stateless/rng';
 
 /** Bytes per batch record in the uniform ring (minUniformBufferOffsetAlignment). */
 export const SLOT_BYTES = 256;
