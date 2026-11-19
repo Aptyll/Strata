@@ -26,7 +26,7 @@ Two very different modes, and the wording must keep them apart:
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
   Per 4K frame on the 2070: 26 to 52 s with flux weighting when the sheets
-  fill part of the frame, 172 to 205 s with flux when they fill it
+  fill part of the frame, 161 to 205 s with flux when they fill it
   (composition A), about 160 to 193 s with count weighting (exactly one unit
   per particle in view, the proof shots). Flux draws far particles only on
   average; the record stills were most likely flux.

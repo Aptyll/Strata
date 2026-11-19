@@ -78,11 +78,22 @@ descriptions 50 to 160, and no clause that calls the trillion "simulated"
 `share/strata-1t.jpg` is the picture chat apps and social sites show next to a
 pasted link. It is a real frame, `docs/record/trillion-key2-f0.png`, scaled
 down with only empty rows and columns trimmed (and the bottom darkened behind
-the type), and the two numbers on it are that frame's GPU tallies:
-1,000,000,000,000 particles evaluated and 107,787,615,440 landed in the frame.
-It used to be `trillion-A.png`, which is not a trillion distinct particles (see
-`docs/record/README.md`). To change it, edit `share/make-card.py` (frame, numbers,
-type) and run it; it needs Python with Pillow and the Inter font.
+the type). The two numbers on it are the ones on that frame's own label, and
+they are not the same kind of number:
+
+- **107,787,615,440 in this frame** is the GPU's count of the particles that
+  landed in the picture.
+- **1,000,000,000,000** is the particle count of the render job. Every
+  position is computed, because the renderer culls nothing, but this still was
+  most likely rendered before the renderer counted evaluated particles on the
+  GPU, so it is not a GPU count
+  ([journal, page 07](../../docs/journal/rendering/2026-11-18-07-first-trillion-frames.md)).
+
+When a frame re-rendered on current main, with a manifest, replaces this one,
+build the card from it: then both numbers are GPU counts. The card used to be
+`trillion-A.png`, which is not a trillion distinct particles (see
+`docs/record/README.md`). To change it, edit `share/make-card.py` (frame,
+numbers, type) and run it; it needs Python with Pillow and the Inter font.
 
 The published file name contains a hash of the image's bytes
 (`share/strata-1t-<hash>.jpg`). Sites that show previews cache the image by
