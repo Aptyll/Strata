@@ -46,7 +46,10 @@ world is never a still image.
 **Taking over early.** The first press, scroll or key releases the camera
 within 0.4 s and plays the rest of the ignition in 1.4 s. It never cuts, so
 the person who grabs the camera at second three still sees the world light
-up, just faster, and around their own gesture.
+up, just faster, and around their own gesture. In the app (`src/app/intro.ts`)
+a press, a scroll or a camera key lets go of the camera on that same frame,
+because easing out would overwrite the start of the drag; other keys (H, Esc,
+R) keep the 0.4 s ease.
 
 **Returning visitors** get the same story at 3.2x speed (about 6 s). The hold
 is kept at full length, because black still matters.

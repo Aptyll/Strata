@@ -104,7 +104,9 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.
   const intro =
     options.intro && options.world === null
-      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height))
+      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height), {
+          cameraKeys: keys.cameraTarget,
+        })
       : null;
 
   // One-line gesture hints and the die's breathing, on one schedule; never during the opening.

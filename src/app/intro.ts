@@ -27,7 +27,7 @@ export interface MountedIntro {
   step(dt: number, planes: readonly PlaneInstance[]): number;
   /** Thin a budget's per-plane counts to what the opening has revealed so far. In place. */
   reveal(counts: number[]): void;
-  /** The person did something: let go of the camera and finish quickly. */
+  /** Fast-forward the rest of the opening; the camera eases out of it. */
   skip(): void;
   dispose(): void;
 }
@@ -42,11 +42,20 @@ const lerpAngle = (a: number, b: number, t: number) => {
 const gainToCount = (count: number, gain: number) =>
   gain <= 0 ? 0 : gain >= 1 ? count : Math.max(1, Math.round(count * gain * gain));
 
+export interface MountIntroOptions {
+  /**
+   * Where the camera's own key presses arrive (the key router's cameraTarget).
+   * A camera key hands the camera over at once, like a press or a scroll.
+   */
+  cameraKeys?: EventTarget;
+}
+
 export function mountIntro(
   target: HTMLElement,
   camera: IntroCamera,
   planes: readonly PlaneInstance[],
   aspect: () => number,
+  options: MountIntroOptions = {},
 ): MountedIntro {
   const memory = loadMemory();
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -64,17 +73,34 @@ export function mountIntro(
   let gain: Float32Array | null = null;
   let heroFraction = 1;
 
+  /** Set once the person moves the camera themselves: from then on the opening never steers it. */
+  let released = false;
   const skip = () => runner?.skip();
-  const events = ["pointerdown", "wheel", "keydown"] as const;
-  target.addEventListener("pointerdown", skip);
-  target.addEventListener("wheel", skip, { passive: true });
-  window.addEventListener("keydown", skip);
+  // A press, a scroll or a camera key means the person is moving the camera right now. Let go
+  // at once: easing out over the director's 0.4 s release would overwrite the start of their drag.
+  const takeOver = () => {
+    released = true;
+    skip();
+  };
+  const onCameraKey = (e: Event) => {
+    const k = e as KeyboardEvent;
+    // Shift on its own and Ctrl, Alt or Meta shortcuts move nothing, so those only fast-forward.
+    if (k.ctrlKey || k.altKey || k.metaKey || k.code.startsWith("Shift")) skip();
+    else takeOver();
+  };
+  const listeners: Array<[EventTarget, string, (e: Event) => void, AddEventListenerOptions?]> = [
+    [target, "pointerdown", takeOver],
+    [target, "wheel", takeOver, { passive: true }],
+    // Every key fast-forwards the opening. Keys that are not the camera's (H, Esc, R) let the
+    // camera ease out of it; camera keys arrive below and let go of it at once.
+    [window, "keydown", skip],
+  ];
+  if (options.cameraKeys) listeners.push([options.cameraKeys, "keydown", onCameraKey]);
+  for (const [t, type, fn, o] of listeners) t.addEventListener(type, fn, o);
   const dispose = () => {
     runner = null;
     gain = null;
-    target.removeEventListener(events[0], skip);
-    target.removeEventListener(events[1], skip);
-    window.removeEventListener(events[2], skip);
+    for (const [t, type, fn, o] of listeners) t.removeEventListener(type, fn, o);
   };
 
   return {
@@ -93,7 +119,7 @@ export function mountIntro(
       const s = runner.step(dt);
       gain = s.planeGain;
       heroFraction = s.heroFraction;
-      if (s.cameraWeight > 0) {
+      if (s.cameraWeight > 0 && !released) {
         const w = Math.min(1, s.cameraWeight);
         const now = camera.state;
         camera.state = {

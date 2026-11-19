@@ -8,6 +8,9 @@
  * HUD or a feature, add a row to KEYS and register it from that row; the
  * camera stops seeing it automatically.
  *
+ * A key the focused element uses stays with it: typing in a field, arrows and
+ * Home or End on a slider, Space or Enter on a button or switch.
+ *
  * Camera keys (owned by src/ux/camera/input.ts, everything not in KEYS):
  *   W A S D, arrows, Q E   fly          Shift   faster
  *   , .                    previous / next plane
@@ -68,6 +71,34 @@ export const shortcut = (binding: KeyBinding, run: ShortcutSpec["run"]): Shortcu
 /** KeyboardEvent.code values some module other than the camera owns. */
 const OWNED = new Set<string>(Object.values(KEYS).map((k) => k.code));
 
+/** Keys a focused slider uses itself: one step, or a jump to either end. */
+const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** Keys that press whatever button, switch or checkbox has focus. */
+const PRESS_KEYS = new Set(["Space", "Enter", "NumpadEnter"]);
+
+/**
+ * True when the focused element takes this key press itself, so the camera
+ * must not act on it as well. With nothing focused (the page or the canvas),
+ * every key not in KEYS is the camera's.
+ */
+function keptByFocus(e: KeyboardEvent): boolean {
+  // Its own handler used it already: a HUD slider steps on the arrows and cancels the default.
+  if (e.defaultPrevented) return true;
+  const t = e.target as HTMLElement | null;
+  const tag = t?.tagName;
+  if (!t || !tag || tag === "BODY" || tag === "HTML" || tag === "CANVAS") return false;
+  // Typing in a field must not fly the camera.
+  if (t.isContentEditable || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") {
+    const type = (t as HTMLInputElement).type;
+    if (type === "range") return SLIDER_KEYS.has(e.code);
+    if (type !== "checkbox") return true;
+  }
+  // Space and Enter press the focused control: Tab to a menu switch, Space flips it.
+  // Letters and the other arrows still fly the camera from a button or a slider.
+  return PRESS_KEYS.has(e.code);
+}
+
 export interface KeyRouter {
   /** Pass as `keyTarget` to attachCameraInput. */
   cameraTarget: HTMLElement;
@@ -79,11 +110,9 @@ export function createKeyRouter(source: Window = window): KeyRouter {
 
   const forward = (e: KeyboardEvent) => {
     if (OWNED.has(e.code)) return;
-    // Typing in a settings field must not fly the camera. Sliders and switches are fine.
-    const t = e.target as HTMLElement | null;
-    const tag = t?.tagName;
-    if (t?.isContentEditable || tag === "TEXTAREA" || tag === "SELECT") return;
-    if (tag === "INPUT" && !["range", "checkbox"].includes((t as HTMLInputElement).type)) return;
+    // Key-ups always go through, so the camera is never left holding a key whose
+    // release happened while focus sat in a field.
+    if (e.type === "keydown" && keptByFocus(e)) return;
 
     const copy = new KeyboardEvent(e.type, {
       key: e.key, code: e.code, repeat: e.repeat, cancelable: true,
