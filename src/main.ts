@@ -1,6 +1,7 @@
 import { mountIntro } from "./app/intro";
 import { createKeyRouter } from "./app/keys";
 import { mountCapture } from "./capture/app";
+import { mountRecord } from "./record";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
 import { type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
@@ -33,6 +34,7 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 //   &tonemap=basic   plain exponential tone map instead of the density look (bloom, trails)
 //   &interplane=0    no particles crossing between planes
 //   &intro=0         skip the opening
+//   ?record          render a record-scale still or clip with the offline renderer (src/record/index.ts lists options)
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
 //   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
@@ -347,6 +349,14 @@ async function start(): Promise<void> {
     setOffline: (on) => (offline = on),
     setResolution: (size) => (graph.fixedSize = size),
   });
+
+  // ---- record: 1 trillion particle stills and clips via src/offline, in the menu or from ?record ----
+  const record = mountRecord({ hud });
+  // The record job has the GPU to itself: the world stops drawing while it runs.
+  hud.on("job", (id, running) => {
+    if (id === "record") offline = running;
+  });
+  if (query.has("record")) setTimeout(() => record.start(), 500);
 
   const tick = (now: number) => {
     // Clamp dt so a background tab or a hitch does not explode the simulation.
