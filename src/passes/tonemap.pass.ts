@@ -1,4 +1,5 @@
 import type { FrameContext, GpuContext, Pass } from "../core/contracts";
+import { DEFAULT_TONE, createDensityTonemapPass } from "../render";
 
 const WGSL = /* wgsl */ `
 @group(0) @binding(0) var hdr: texture_2d<f32>;
@@ -18,8 +19,35 @@ fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
 }
 `;
 
-/** Maps the HDR accumulation target to the canvas. */
+/**
+ * Maps the HDR accumulation target to the canvas.
+ *
+ * Default: the density look from src/render (log tone curve, subtle bloom,
+ * short trails; see docs/render.md), so thousands of overlapping particles
+ * read as a gradient instead of flat white. Tune it live from the console
+ * through `strataLook`, for example `strataLook.tone.white = 400`.
+ *
+ * `?tonemap=basic` in the URL selects the plain exponential curve below.
+ */
 export default function createTonemapPass(gpu: GpuContext): Pass {
+  if (new URLSearchParams(globalThis.location?.search ?? "").get("tonemap") !== "basic") {
+    const pass = createDensityTonemapPass({
+      settings: {
+        // Particles add `brightness` (1 by default) each: one particle is a
+        // clear grey dot and about 64 on one pixel reach full white.
+        tone: { ...DEFAULT_TONE, exposure: 2, white: 128 },
+        trails: { enabled: true, mode: "max", halfLife: 0.08 },
+      },
+    });
+    pass.name = "tonemap";
+    pass.resize(gpu, Math.max(1, gpu.canvas.width), Math.max(1, gpu.canvas.height));
+    Object.assign(globalThis, { strataLook: pass.post!.settings });
+    return pass;
+  }
+  return createBasicTonemapPass(gpu);
+}
+
+function createBasicTonemapPass(gpu: GpuContext): Pass {
   const { device } = gpu;
   const module = device.createShaderModule({ label: "tonemap", code: WGSL });
   const pipeline = device.createRenderPipeline({
