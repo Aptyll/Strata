@@ -80,8 +80,8 @@ The site opens straight into the simulation. Everything else sits behind a key.
 | --- | --- |
 | Left drag | orbit |
 | Right drag, or Shift + drag | pan |
-| Wheel or pinch | zoom toward the cursor |
-| Double click | fly to that sheet |
+| Wheel or pinch | zoom toward what is under the cursor, and on through it |
+| Double click a sheet | fly to it |
 | `W` `A` `S` `D`, `Q` `E` | fly, hold Shift to go faster |
 | `,` `.` | previous or next sheet |
 | `R` | roll the dice: new behaviors, new system |
@@ -95,7 +95,7 @@ The site opens straight into the simulation. Everything else sits behind a key.
 | `P` | screenshot |
 | `V` | record a video |
 | Space | idle drift on or off |
-| Home | fly home |
+| Home, or double click open space | fly home |
 
 You need a browser with WebGPU, such as current Chrome or Edge on desktop.
 Without it the page explains what is missing instead of rendering.
