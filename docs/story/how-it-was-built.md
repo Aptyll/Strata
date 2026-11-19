@@ -355,8 +355,9 @@ land off screen only skip the final atomic add. The gap with the benchmark is
 the cache. The first still's cluster lit only 4% of the 4K frame, so its hits
 stayed in the 2070's 4 MB L2 cache, while the benchmark's single camera-filling
 sheet spreads hits over the whole grid and pays a trip to video memory for most
-of them. Real trillion frames took 26 to 52 seconds, depending on framing, with flux
-weighting (far particles drawn on average). Count weighting, one exact unit
+of them. With flux weighting (far particles drawn on average), real trillion frames
+took 26 to 52 seconds when the sheets covered part of the frame and 172 to 205
+seconds when they filled it (composition A). Count weighting, one exact unit
 per particle in view, took about 160 to 193 seconds per frame.
 
 The first trillion frame was also honest about how it looked. The agent that
@@ -401,7 +402,8 @@ As of about 7:38 PM:
    mode, camera feel, depth cues and world streaming had not been measured or
    tuned on the 2070.
 2. **The trillion counts, but it is not yet a picture.** The frame stats show
-   all 10^12 particles evaluated in 26 to 52 seconds per frame. The first wide
+   all 10^12 particles evaluated in 26 to 52 seconds per frame for the
+   wide and medium views (flux weighting; frame-filling shots took about 3 minutes). The first wide
    shot still read as grey confetti, and the framed hero stills and the moving
    clip were rendering when this was written.
 3. **The trillion is choreography, not emergence.** Stateless particles follow
