@@ -6,14 +6,18 @@
 
 The card is what chat apps and social sites show when someone pastes the site's
 address: 1200x630, the size Open Graph and X cards both expect. The site plugin
-(src/site/plugin.ts) publishes strata-1t.jpg under a name that contains a hash
+(src/site/plugin.mjs) publishes strata-1t.jpg under a name that contains a hash
 of its bytes, so a changed card gets a new address and old cached previews
 cannot stick around.
 
 Honest counting: the picture is the frame itself (only empty rows and columns
-are trimmed, and it is scaled down), and both numbers on it are the GPU tallies
-burned into that frame's own label: particles evaluated, and particles that
-landed in the frame. Change the frame and you must change the numbers here.
+are trimmed, and it is scaled down), and both numbers on it are the ones burned
+into that frame's own label. "In this frame" is the GPU's count of the particles
+that landed in the picture. The big number is the particle count of the render
+job: every position is computed (the renderer culls nothing), but the stills in
+docs/record were most likely rendered before the renderer counted evaluated
+particles on the GPU, so for them it is not a GPU count (docs/journal/rendering,
+page 07). Change the frame and you must change the numbers here.
 
 Needs Python 3 with Pillow, and the Inter font (rsms.me/inter, OFL). The output
 is committed, so nobody has to run this unless the card should change.
