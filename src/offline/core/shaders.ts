@@ -54,11 +54,18 @@ struct Batch {
 // The 64-bit accumulator, split into low and high words.
 @group(0) @binding(1) var<storage, read_write> accLo: array<atomic<u32>>;
 @group(0) @binding(2) var<storage, read_write> accHi: array<atomic<u32>>;
-// Exact 64-bit count of particles whose position landed inside the frame:
-// [0] low word, [1] high word.
-@group(0) @binding(3) var<storage, read_write> tally: array<atomic<u32>, 2>;
+// Exact 64-bit counts, counted on the GPU as the work happens:
+// [0..1] particles whose position landed inside the frame (low, high word),
+// [2..3] particles evaluated (low, high word).
+@group(0) @binding(3) var<storage, read_write> tally: array<atomic<u32>, 4>;
 
 var<workgroup> wgLanded: atomic<u32>;
+var<workgroup> wgEvaluated: atomic<u32>;
+
+fn tallyAdd(slot: u32, v: u32) {
+  let old = atomicAdd(&tally[slot], v);
+  if (old > 0xffffffffu - v) { atomicAdd(&tally[slot + 1u], 1u); }
+}
 
 // Exact 64-bit atomic add. atomicAdd returns the value before the add, so a
 // wrap of the low word is detected exactly once, by the thread that caused it.
@@ -136,7 +143,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
   if (first < B.count) { n = min(B.perInvocation, B.count - first); }
   let p = array<f32, 8>(B.pa.x, B.pa.y, B.pa.z, B.pa.w, B.pb.x, B.pb.y, B.pb.z, B.pb.w);
   var landed = 0u;
+  var evaluated = 0u;
   for (var k = 0u; k < n; k++) {
+    evaluated++;
     let key = particleKey(B.start + first + k, B.seed);
     // Each particle has its own fixed instant inside the shutter window.
     let t = B.time + B.shutterSpan * (u01(draw(key, 6u)) - 0.5);
@@ -145,11 +154,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
   // One global atomic per workgroup, not per particle. At most
   // WORKGROUP_SIZE * perInvocation <= 2^18 per workgroup, so u32 is enough.
   atomicAdd(&wgLanded, landed);
+  atomicAdd(&wgEvaluated, evaluated);
   workgroupBarrier();
   if (lid == 0u) {
-    let total = atomicLoad(&wgLanded);
-    let old = atomicAdd(&tally[0], total);
-    if (old > 0xffffffffu - total) { atomicAdd(&tally[1], 1u); }
+    tallyAdd(0u, atomicLoad(&wgLanded));
+    tallyAdd(2u, atomicLoad(&wgEvaluated));
   }
 }
 `;
