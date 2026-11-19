@@ -12,8 +12,9 @@
  *   contains `pcg`, so code appended after it must not add PCG_WGSL again.
  * - These blocks depend on nothing else: no bindings, no structs from the
  *   engine. Engine layouts (Globals, Plane, Particle) live in ./shaderLib.ts.
- * - Changing a block changes every shader that uses it. src/gpu/shaders.verify.ts
- *   compiles the engine and perf shaders built from them (`npm run verify`).
+ * - Changing a block changes every shader that uses it.
+ *   src/verify/cases/shaders.verify.ts compiles every production shader built
+ *   from them (`npm run verify`).
  */
 
 /**
