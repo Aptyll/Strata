@@ -23,6 +23,11 @@ export interface MountHudOptions {
   maxParticles?: number;
   /** How many behaviors get a section of sliders, most used first. Default 3. */
   maxBehaviorGroups?: number;
+  /**
+   * Keep the current roll in the page link (#r=...) so a world can be shared,
+   * replay it on load, and add a "copy link" action to the menu. Default true.
+   */
+  shareLink?: boolean;
 }
 
 export interface MountedHud {
@@ -33,6 +38,7 @@ export interface MountedHud {
 }
 
 const PARTICLES = "particles";
+const HASH = /[#&]r=([0-9a-z]+)/i;
 const BRIGHTNESS = "brightness";
 
 /**
@@ -48,6 +54,10 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
   const maxGroups = opts.maxBehaviorGroups ?? 3;
   let roll: RollTransition | null = null;
   let sinceRefresh = interval; // refresh on the first frame
+  const share = opts.shareLink ?? true;
+  // Every roll starts from the behaviors the world opened with, not from the last roll,
+  // so a seed always gives the same world and a link is enough to share one.
+  const opening = app.getScene().planes.map((p) => ({ behaviorId: p.behaviorId, params: p.params, seed: p.seed }));
 
   const labelOf = (b: Behavior) => b.label ?? b.id;
   const planesOf = (behaviorId: string) => app.planes.filter((p) => p.behavior.id === behaviorId);
@@ -136,7 +146,10 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
 
   // ---- dice ---------------------------------------------------------------------
   hud.onRandomize(({ seed }) => {
-    const target = rollScene(app.getScene(), app.behaviors, seed, opts.roll);
+    const current = app.getScene();
+    const source = { ...current, planes: current.planes.map((p, i) => (opening[i] ? { ...p, ...opening[i] } : p)) };
+    const target = rollScene(source, app.behaviors, seed, opts.roll);
+    if (share) history.replaceState(history.state, "", `#r=${seed.toString(36)}`);
     // Starting a new roll mid-flight is safe: the old transition is simply dropped.
     roll = startRoll(app, target, opts.transition);
     syncMenu();
@@ -146,6 +159,21 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
     const name = lead ? labelOf(lead) : first.behaviorId;
     return target.name ? { name: target.name, detail: name } : name;
   });
+
+  if (share) {
+    hud.registerParam({
+      id: "share", label: "copy link", group: "share",
+      run: () => {
+        navigator.clipboard?.writeText(location.href).then(
+          () => hud.announce("link copied"),
+          () => hud.announce("copy the address bar"),
+        );
+      },
+    });
+    // Opened from a shared link: replay that roll.
+    const shared = HASH.exec(location.hash);
+    if (shared) hud.randomize(parseInt(shared[1], 36));
+  }
 
   return {
     hud,
