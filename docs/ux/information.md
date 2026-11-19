@@ -69,11 +69,12 @@ and no count appears without one of the two words (or "stored") beside it.
 - **Measured numbers come from the README.** The about card may quote only
   what is in `MEASURED` (`words.ts`), and `npm test` fails if `README.md` no
   longer has those numbers. A frame time for the trillion is always quoted
-  with the case it belongs to: about 160 to 193 seconds when every particle in
-  view adds exactly one unit (count weighting); when far particles are drawn
-  on average (flux weighting), 26 to 52 seconds if the sheets cover part of
-  the picture and 161 to 205 seconds if they fill it. A frame takes anywhere
-  from 26 to 205 seconds, so a time without its case misleads.
+  with the case it was measured for: about 160 to 193 seconds when every
+  particle in view adds exactly one unit (count weighting); 161 to 205
+  seconds when light falls with distance (flux weighting) and the sheets fill
+  the picture; 26 to 52 seconds for the first stills, where the sheets
+  covered part of the picture and most far particles added no light. A frame
+  takes anywhere from 26 to 205 seconds, so a time without its case misleads.
 - **Particles per pixel** in the about card is simulated particles divided by
   the pixels of the drawing buffer (`canvas.width × canvas.height`). Pointing
   at it shows the sum.
@@ -101,7 +102,9 @@ For any new label, hint, menu row or message:
   world's most common behavior is hidden: it said nothing about the sheet in
   view, and the sheet label does.
 - Esc menu: the `planes` slider is labelled `sheets`, `plane crossings` is
-  `sheet crossings`. `G` reads "go to nearest sheet".
+  `sheet crossings`, and the row hints say "sheet". `G` reads "go to nearest
+  sheet". A test fails when a menu row, a key label or a control row says
+  "plane".
 - Keys sheet: gained the pointer gestures and the camera keys, in named
   groups. Before, it listed only HUD shortcuts, so turning, panning, diving,
   facing a sheet and pushing particles could not be looked up anywhere.
@@ -119,10 +122,9 @@ For any new label, hint, menu row or message:
   rig which sheet it frames, so the label stays hidden during a tour. A tour
   with captions would be a good use of the label.
 - **Esc menu header** (`src/ux/hud/menu.js`) still says "simulating" and
-  "planes" and shows counts in lowercase (`2.00m`). It reads the same stats,
-  so only its own labels and one `text-transform` need to follow.
-- **Capture section of the menu:** "record" means two things there ("record
-  video" captures the screen; "render record", "record particles" and "record
-  shot" mean the record-scale trillion render).
+  "planes", shows counts in lowercase (`20.0k`) and names the world's most
+  common behavior as if it were the one on screen. It reads the same stats,
+  so only its own labels and one `text-transform` need to follow. Passed to
+  the Esc menu threads on 2026-11-19.
 - **Challenge mode** (`/?challenge`) has its own readout and does not mount
   this layer.

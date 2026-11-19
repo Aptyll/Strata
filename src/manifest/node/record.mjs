@@ -95,7 +95,7 @@ function summary(m) {
     `${t.framesComplete} of ${m.job.frames} frames complete; every particle evaluated in every complete frame: ${t.allEvaluated ? "yes" : "NO"}`,
     `GPU-evaluated total ${t.evaluated} in ${t.gpuSeconds.toFixed(1)} s (${(t.particlesPerSecond / 1e9).toFixed(2)} billion/s)`,
     `Weighting: ${m.drawing?.meaning ?? "unknown"}${t.eachLandedAddedOnce === true ? " (verified: grid sum = landed x 65536 in every frame)" : t.eachLandedAddedOnce === false ? " (FAILED: grid sum != landed x 65536)" : ""}`,
-    last ? `last frame ${last.frame}: landed ${last.landed}, outside ${last.outside}` : "",
+    last ? `last frame ${last.frame}: landed ${last.landed}${last.drawn != null ? `, of which ${last.drawn} added light` : ""}, outside ${last.outside}` : "",
     `GPU: ${m.gpu ? Object.values(m.gpu).filter(Boolean).join(" ") : "not recorded (pass --gpu)"}; commit ${m.source.commit ?? "unknown"}`,
     "Rendered, not simulated (stateless).",
   ].filter(Boolean).join("\n");

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { KEYS } from "../../app/keys";
+import { MENU } from "../../app/menu";
 import { TOKENS_CSS } from "../design";
 import { CAMERA_KEYS, POINTER_CONTROLS, TOUCH_CONTROLS, controlSections } from "./controls";
 import {
@@ -79,17 +80,17 @@ test("the measured numbers the about card quotes are the ones in the README", (t
   const readme = resolve(process.cwd(), "README.md");
   if (!existsSync(readme)) return t.skip("run from the repository root to check against README.md");
   const text = readFileSync(readme, "utf8");
-  const { exact, averaged, averagedFull } = MEASURED.trillionFrameSeconds;
+  const { count, flux, quickFlux } = MEASURED.trillionFrameSeconds;
   const hint = "README.md and MEASURED in src/ux/info/words.ts must quote the same measurement";
   assert.ok(text.includes(MEASURED.gpu), `${MEASURED.gpu} is not in the README. ${hint}`);
   assert.ok(text.includes(exactCount(MEASURED.trillion)), `the trillion is not written out in the README. ${hint}`);
   // Each time belongs to one way of adding light, so it must sit on a README line that names that way.
   const lines = text.split("\n");
-  const quoted = ([from, to], weighting) => lines.some((line) => line.includes(`${from} to ${to}`) && line.includes(weighting));
-  const missing = (range, weighting) => `"${range[0]} to ${range[1]}" seconds with ${weighting} weighting is not in the README. ${hint}`;
-  assert.ok(quoted(exact, "count"), missing(exact, "count"));
-  assert.ok(quoted(averaged, "flux"), missing(averaged, "flux"));
-  assert.ok(quoted(averagedFull, "flux"), missing(averagedFull, "flux"));
+  const quoted = ([from, to], ...words) => lines.some((line) => line.includes(`${from} to ${to}`) && words.every((w) => line.includes(w)));
+  const missing = ([from, to], what) => `"${from} to ${to}" seconds for ${what} is not in the README. ${hint}`;
+  assert.ok(quoted(count, "count"), missing(count, "count weighting"));
+  assert.ok(quoted(flux, "flux"), missing(flux, "flux weighting"));
+  assert.ok(quoted(quickFlux, "flux", "quick"), missing(quickFlux, "quick flux"));
 });
 
 // ---- sheets ----------------------------------------------------------------------------
@@ -199,6 +200,23 @@ test("no key listed as a camera key is owned by the HUD or a feature in the app"
 });
 
 // ---- styles ----------------------------------------------------------------------------
+
+test("the Esc menu, the keys and the control rows say sheet, never plane", () => {
+  // "plane" is the code's word. A viewer reads "sheet" everywhere (docs/ux/information.md, "The words").
+  const texts = [];
+  for (const page of MENU) {
+    texts.push([`menu page "${page.id}"`, page.label]);
+    for (const section of page.sections) {
+      texts.push([`menu section "${section.group}" on ${page.id}`, section.label ?? section.group]);
+      for (const row of section.rows ?? []) texts.push([`menu row "${row.id}"`, `${row.label ?? ""} ${row.hint ?? ""}`]);
+    }
+  }
+  for (const [name, row] of Object.entries(KEYS)) texts.push([`key "${name}"`, row.label]);
+  for (const row of [...POINTER_CONTROLS, ...TOUCH_CONTROLS, ...CAMERA_KEYS]) texts.push([`control "${row.input}"`, `${row.input} ${row.does}`]);
+  for (const [where, text] of texts) {
+    assert.doesNotMatch(text, /\bplanes?\b/i, `${where} says "plane". Viewers read "sheet": see docs/ux/information.md`);
+  }
+});
 
 test("the stylesheet is built from design tokens that exist, with no colors or timings of its own", () => {
   const defined = new Set([...TOKENS_CSS.matchAll(/(--st-[a-z0-9-]+)\s*:/g)].map((m) => m[1]));

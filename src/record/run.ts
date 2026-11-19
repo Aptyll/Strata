@@ -69,6 +69,8 @@ export interface FrameTally {
   evaluated: number;
   /** Particles that landed inside the picture, counted on the GPU. */
   landed: string;
+  /** Those of them that added light, counted on the GPU. Equal to landed with count weighting. */
+  drawn?: string;
   /** evaluated - landed: behind the camera or outside the frame. */
   outside: string;
   /** Exact sum of the accumulation grid in weight units. */
@@ -90,6 +92,7 @@ export function frameTally(stats: FrameStats, job: OfflineJob): FrameTally {
     particles,
     evaluated,
     landed: stats.landed,
+    drawn: stats.drawn,
     outside: (BigInt(stats.evaluated) - BigInt(stats.landed)).toString(),
     unitSum: stats.unitSum,
     weighting: job.weighting,
@@ -102,7 +105,9 @@ export function frameTally(stats: FrameStats, job: OfflineJob): FrameTally {
 export function tallyLine(t: FrameTally): string {
   return (
     `frame ${t.frame + 1}: ${withCommas(t.evaluated)} of ${withCommas(t.particles)} particles evaluated` +
-    `${t.allEvaluated ? " (all)" : " (NOT all)"}, ${withCommas(t.landed)} in frame, ` +
+    `${t.allEvaluated ? " (all)" : " (NOT all)"}, ${withCommas(t.landed)} in frame` +
+    // Flux frames only: say so when some particles in frame were too faint to add light.
+    `${t.drawn !== undefined && t.drawn !== t.landed ? ` (${withCommas(t.drawn)} added light)` : ""}, ` +
     `${t.seconds.toFixed(1)} s at ${fmtRate(t.rate)}`
   );
 }
@@ -179,8 +184,12 @@ async function browserStore(job: OfflineJob, fresh: boolean): Promise<{ store: F
  * point follows a percentile of the partial grid, so early previews look like
  * the final picture, only noisier, and sharpen as batches land.
  */
-export function gradePartial(acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint }, job: OfflineJob, frame: number): Uint8Array {
-  const developed = develop(acc.lo, acc.hi, job.width, job.height, job.ssaa);
+export function gradePartial(
+  acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint; unitsPerParticle?: number },
+  job: OfflineJob,
+  frame: number,
+): Uint8Array {
+  const developed = develop(acc.lo, acc.hi, job.width, job.height, job.ssaa, acc.unitsPerParticle);
   const stats = frameStats(frame, acc, developed, { evaluated: 0n, seconds: 0, batches: 0 });
   const white = exposureTrack([stats], { ...DEFAULT_LOOK, smoothFrames: 0 })[0];
   return gradeFrame(developed.codes, toneTable(white, DEFAULT_LOOK), frame);

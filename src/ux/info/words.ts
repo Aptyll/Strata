@@ -65,12 +65,12 @@ export const MEASURED = {
    * time is never quoted without saying which case it belongs to.
    */
   trillionFrameSeconds: {
-    /** Count weighting: every particle in view adds exactly one unit (the proof shots). */
-    exact: [160, 193],
-    /** Flux weighting, sheets cover part of the frame: far particles get a randomly rounded weight, often zero (the wide and medium stills). */
-    averaged: [26, 52],
-    /** Flux weighting, sheets fill the frame (the close-up). */
-    averagedFull: [161, 205],
+    /** Count weighting: every particle in view adds exactly one unit (the proof shots, the far opener). */
+    count: [160, 193],
+    /** Flux weighting: a particle's light falls with its distance. Sheets fill the frame (the close-up). */
+    flux: [161, 205],
+    /** The first record stills: quick flux (16-bit weights), where most far particles add no light. Sheets cover part of the frame. */
+    quickFlux: [26, 52],
   },
 } as const;
 

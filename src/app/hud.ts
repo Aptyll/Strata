@@ -4,9 +4,10 @@
  * color themes (src/ux/theme: a "theme" menu section and T), then adds what
  * only the app knows about:
  *
- *   menu      sheets, render (which rasterizer), look (bloom, trails, white
- *             point, contrast, pointer parallax, sheet crossings), performance
- *             (hold frame rate, target fps, challenge)
+ *   menu      sheets, the rasterizer choice, the look (bloom, trails, white
+ *             point, contrast, depth cues, sub-pixel splats), pointer
+ *             parallax, sheet crossings, performance (hold frame rate, target
+ *             fps, challenge)
  *   keys      ] [ particles, = - brightness, G nearest sheet (rows in ./keys.ts)
  *
  * Last, the information layer (src/ux/info) gives the stats line its words
@@ -15,11 +16,15 @@
  * about card behind I.
  *
  * With ?world the sheets and particles sliders and ] [ are left out: the
- * streamer sizes that world. Options the URL sets explicitly (?raster,
- * ?parallax, ?interplane, ?adaptive, ?fps) are not overridden by saved settings.
+ * streamer sizes that world. Options the URL sets explicitly (?raster, ?depth,
+ * ?subpixel, ?parallax, ?interplane, ?adaptive, ?fps) are not overridden by
+ * saved settings.
  *
  * Capture adds its own "capture" section and keys (src/capture/app.ts).
- * Registration order is menu order, so keep new entries at the end of their group.
+ *
+ * Where each entry appears in the menu (page, section, order) and what it is
+ * called there is decided by the table in ./menu.ts, not by the order of the
+ * calls below. A new entry gets a row there.
  */
 import type { AppContext } from "../core/contracts";
 import type { ParallaxCamera } from "../depth";
@@ -33,6 +38,7 @@ import type { BudgetChoice } from "./budget";
 import type { RenderGraph } from "./graph";
 import { RASTERIZERS } from "./graph";
 import { KEYS, shortcut } from "./keys";
+import { menuLayout, registerMenuLinks } from "./menu";
 import type { AppOptions } from "./options";
 import type { SceneHost } from "./scene";
 
@@ -63,17 +69,22 @@ export interface AppHud {
 export function mountAppHud({ app, canvas, scenes, render, budget, camera, view, options }: AppHudDeps): AppHud {
   const { hud, update } = mountHud(app, {
     // The die's breathing hint is scheduled with the gesture hints (src/ux/experience/app-hints.ts).
-    hud: { autoFps: false, diceHintMs: 0 },
+    // The menu's pages, sections, order and names come from the table in ./menu.ts.
+    hud: { autoFps: false, diceHintMs: 0, layout: menuLayout() },
     // A streamed world sizes itself (its streamer holds the particle budget), so there is no count to scale.
     particles: options.world === null,
     minParticles: MIN_PARTICLES,
     maxParticles: MAX_PARTICLES,
+    // Sliders for every behavior in the world, not only the three most used: on the behaviors
+    // page each one is a section tab, so a plane's behavior is never without its sliders.
+    maxBehaviorGroups: 6,
     // Particles stay where they are and start obeying the new rule, instead of a hard cut.
     transition: { swapBehavior: (plane, target) => render.sim.setBehavior(plane, target) },
   });
   mountThemes(hud, canvas); // color themes: Esc menu, T to cycle, ?theme=red
 
   registerMenu(hud, { scenes, render, budget, view, options });
+  registerMenuLinks(hud); // the benchmark, the offline renderer and the proof shots pages
   registerKeys(hud, { scenes, camera, options });
   // What the words on screen say: labelled counts, the sheet label, every control behind ?, about behind I.
   mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
@@ -137,6 +148,17 @@ function registerMenu(
       value: look.tone.contrast ?? 1, onChange: (v) => (look.tone.contrast = v),
     });
   }
+  // Two options of the default compute rasterizer (src/raster), each switchable every frame.
+  // They change nothing while another rasterizer draws.
+  const compute = render.computeRaster;
+  hud.registerParam({
+    id: "depth", label: "depth cues", type: "toggle", group: "look", persist: saved("depth"),
+    value: compute.depth, onChange: (on) => (compute.depth = on),
+  });
+  hud.registerParam({
+    id: "subpixel", label: "sub-pixel splats", type: "toggle", group: "look", persist: saved("subpixel"),
+    value: compute.subpixel, onChange: (on) => (compute.subpixel = on),
+  });
   hud.registerParam({
     id: "parallax", label: "pointer parallax", type: "toggle", group: "look", persist: saved("parallax"),
     value: view.parallax.enabled, onChange: (on) => (view.parallax.enabled = on),

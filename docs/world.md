@@ -204,5 +204,5 @@ Limits to know about:
   `/src/world/demo/index.html`. It draws each resident plane as dots on a 2D
   canvas. Options: `?seed=strata&planes=400&awake=100&only=cathedral,fan&auto=0`.
   Drag to look, WASD and QE to move, shift for speed, space toggles the drift.
-- Tests: `node src/world/test/run.mjs` (bundles with the esbuild that ships
-  with Vite, then runs Node's test runner).
+- Tests: `npm test -- world` (bundles with the esbuild that ships with Vite,
+  then runs Node's test runner).

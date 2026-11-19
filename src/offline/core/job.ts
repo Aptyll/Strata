@@ -71,12 +71,24 @@ export interface OfflineJob {
   /**
    * "count": every particle adds exactly ONE. The buffer sum is then an exact
    * count of the particles in view.
-   * "flux": a particle adds ONE * min(1, (fluxRef / depth)^2), like a point
-   * light of fixed luminosity, with unbiased stochastic rounding.
+   * "flux": a particle adds min(1, (fluxRef / depth)^2) of a particle's light,
+   * like a point light of fixed luminosity. The weight is an integer number of
+   * units of 2^-fluxBits of a particle, rounded at random (unbiased).
    */
   weighting: Weighting;
   /** Depth (world units) inside which a particle is at full weight in flux mode. */
   fluxRef: number;
+  /**
+   * Flux mode only: the finest weight unit asked for, as a power of two. A
+   * particle at full weight adds 2^fluxBits units (see fluxBitsUsed() for what a
+   * job gets). Absent means 16, the first renders' behaviour: a particle
+   * dimmer than 1/65536 was rounded at random to one unit or to nothing, so in
+   * a wide shot most particles in view added no light and the picture was
+   * drawn by a random fraction of them. The job builders ask for
+   * MAX_FLUX_BITS, with which every particle in view adds light down to a
+   * weight of 2^-fluxBitsUsed(job).
+   */
+  fluxBits?: number;
   /**
    * Shutter open time as a fraction of the frame interval. Each particle is
    * evaluated at its own fixed instant inside the shutter window, so motion
@@ -125,13 +137,46 @@ export interface ProjectionWindow {
   y1: number;
 }
 
-/** One unit of light. A particle at full weight adds this to the 64-bit accumulator. */
+/**
+ * One unit of light: what a particle adds to the 64-bit accumulator in count
+ * mode. Stored frames, exposure and the grade are all in these units.
+ */
 export const ONE = 65536;
+
+/** The shader's weights are u32, so a full-weight particle can add at most 2^31. */
+export const MAX_FLUX_BITS = 31;
+
+/** Most particles a job can hold: 2^47 of them at ONE each still fit 2^63. */
+export const MAX_PARTICLES = 2 ** 47;
 
 export function totalParticles(job: OfflineJob): number {
   let n = 0;
   for (const p of job.planes) n += p.particleCount;
   return n;
+}
+
+/**
+ * Bits of a flux weight below one particle that this job's accumulator uses:
+ * what the job asks for, lowered until the whole world at full weight in a
+ * single pixel still fits the 64-bit accumulator with a bit to spare
+ * (particles * 2^bits <= 2^63). A trillion particles get 23 bits, so a
+ * particle 8 million times dimmer than a near one still adds a whole unit.
+ * A pure function of the job: every batch, resume and machine agrees on it.
+ */
+export function fluxBitsUsed(job: OfflineJob): number {
+  let bits = Math.min(job.fluxBits ?? 16, MAX_FLUX_BITS);
+  const total = totalParticles(job);
+  while (bits > 16 && total * 2 ** bits > 2 ** 63) bits--;
+  return bits;
+}
+
+/**
+ * Units a particle at full weight adds to the accumulator: ONE in count mode,
+ * 2^fluxBitsUsed(job) in flux mode. Divide a grid value by this for particles of
+ * light. develop() brings every frame back to ONE units.
+ */
+export function unitsPerParticle(job: OfflineJob): number {
+  return job.weighting === "flux" ? 2 ** fluxBitsUsed(job) : ONE;
 }
 
 export function validateJob(job: OfflineJob): void {
@@ -153,6 +198,9 @@ export function validateJob(job: OfflineJob): void {
   if (!(job.shutter >= 0 && job.shutter <= 1)) fail("shutter must be in [0, 1]");
   if (!(job.near > 0)) fail("near must be positive");
   if (job.weighting === "flux" && !(job.fluxRef > 0)) fail("fluxRef must be positive");
+  if (job.fluxBits !== undefined && !(Number.isInteger(job.fluxBits) && job.fluxBits >= 16 && job.fluxBits <= MAX_FLUX_BITS)) {
+    fail(`fluxBits must be an integer from 16 to ${MAX_FLUX_BITS}`);
+  }
   if (job.planes.length === 0) fail("no planes");
   if (job.camera.length === 0) fail("no camera keys");
   job.planes.forEach((p, i) => {
@@ -162,6 +210,8 @@ export function validateJob(job: OfflineJob): void {
     if (p.params.length !== LAW_PARAM_COUNT) fail(`plane ${i}: params must have ${LAW_PARAM_COUNT} entries`);
     if (!LAW_IDS.includes(p.law)) fail(`plane ${i}: unknown law ${p.law}`);
   });
+  // Past this the 64-bit accumulator could wrap if everything landed in one pixel.
+  if (totalParticles(job) > MAX_PARTICLES) fail("more than 2^47 particles do not fit the 64-bit accumulator");
   // Distinct seeds give every sheet its own particle identities.
   const seeds = new Set(job.planes.map((p) => p.seed));
   if (seeds.size !== job.planes.length) fail("plane seeds must be unique");

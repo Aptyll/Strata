@@ -73,6 +73,7 @@ function jobFromArgs(args) {
   if (args.ssaa) o.ssaa = parseCount(args.ssaa);
   if (args.splat) o.splat = args.splat;
   if (args.weighting) o.weighting = args.weighting;
+  if (args["flux-bits"]) o.fluxBits = Number(args["flux-bits"]);
   if (args["time-scale"]) o.timeScale = Number(args["time-scale"]);
   if (args.shutter !== undefined) o.shutter = Number(args.shutter);
   return composition ? composition.build(o) : clusterJob(o);
@@ -453,6 +454,8 @@ Hero compositions (1T 4K stills by default): ${Object.keys(COMPOSITIONS).join(",
 Job overrides: --particles 1T --planes 1024 --width 3840 --height 2160 --fps 60
                --frames 600 | --seconds 10, --ssaa 1, --splat point|bilinear,
                --weighting flux|count, --seed 1, --time-scale 1, --shutter 0.5
+               --flux-bits 16 (flux only: the first renders' coarse weights, quicker,
+               most far particles add no light; default: as fine as the grid holds)
 Render: --frame N | --range a:b | --shard i/n, --checkpoint 300 (seconds),
         --batch-ms 250, --per-invocation 64, --dawn backend=vulkan
 Look:   --white <particles per pixel>, --contrast 256, --gamma 1,

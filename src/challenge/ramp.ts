@@ -47,6 +47,13 @@ export interface RampOptions {
   confirmWindows?: number;
   /** Failed windows in a row before a count counts as failed. Default 3. */
   failWindows?: number;
+  /**
+   * The frame rate cannot rise above the target (a screen that refreshes at
+   * it, see refresh.ts), so a passing window says nothing about headroom:
+   * double the count while it passes instead of scaling by the measured rate.
+   * Default false.
+   */
+  blind?: boolean;
 }
 
 /**
@@ -84,6 +91,7 @@ export class Ramp {
   private readonly tolerance: number;
   private readonly confirmWindows: number;
   private readonly failWindows: number;
+  private readonly blind: boolean;
 
   constructor(options: RampOptions) {
     this.target = options.targetFps;
@@ -91,6 +99,7 @@ export class Ramp {
     this.tolerance = options.tolerance ?? 0.04;
     this.confirmWindows = options.confirmWindows ?? 3;
     this.failWindows = options.failWindows ?? 3;
+    this.blind = options.blind ?? false;
     this.count = this.quantize(options.start);
   }
 
@@ -164,7 +173,7 @@ export class Ramp {
     }
 
     if (this.phase === "climb") {
-      this.count = this.quantize(applied * this.growth(fps));
+      this.count = this.climbFrom(applied, fps);
       return this.count;
     }
 
@@ -180,8 +189,19 @@ export class Ramp {
 
   /** Climb step: scale by the measured headroom, between 1.25x and 2x. */
   private growth(fps: number): number {
+    // A screen that refreshes at the target shows no headroom at all: double.
+    if (this.blind) return 2;
     // A frame rate pinned at the display refresh hides the real headroom, so cap at 2x.
     return Math.min(2, Math.max(1.25, (fps / this.target) * 0.9));
+  }
+
+  /**
+   * The next count of a climb. At least one quantum more than the last:
+   * 1.25 times a count under four quanta rounds back down to itself, and the
+   * climb would try that count for ever.
+   */
+  private climbFrom(applied: number, fps: number): number {
+    return Math.max(this.quantize(applied * this.growth(fps)), applied + this.quantum);
   }
 
   /** The middle of the bracket, or settle on its low end once it is tight. */
@@ -214,7 +234,7 @@ export class Ramp {
     this.stop = null;
     if (this.hi === Infinity) {
       this.phase = "climb";
-      this.count = this.quantize(applied * this.growth(fps));
+      this.count = this.climbFrom(applied, fps);
     } else {
       this.phase = "refine";
       this.bisect();
