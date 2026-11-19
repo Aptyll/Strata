@@ -18,7 +18,7 @@ import { DEFAULT_LOOK, drawLabel, exposureTrack, gradeFrame, toneTable, withComm
 import { totalParticles, type OfflineJob } from "./job";
 import { pcg } from "./laws";
 import { decodeGrayPng16, encodeGrayPng, type Zlib } from "./png";
-import { StatelessRenderer, type Accumulation, type FrameCursor, type FrameProgress, type RendererOptions, type SavedAccumulation } from "./renderer";
+import { StatelessRenderer, type Accumulation, type FrameCursor, type FrameProgress, type KernelChoice, type RendererOptions, type SavedAccumulation } from "./renderer";
 
 /** A directory of files. Implemented over node:fs and over the browser's File System Access API. */
 export interface FileStore {
@@ -45,23 +45,32 @@ export function jobFingerprint(job: OfflineJob): number {
   return h >>> 0;
 }
 
-// Version 5: landed tally in header words 6 and 7, GPU evaluated count in 8
+// Version 6: landed tally in header words 6 and 7, GPU evaluated count in 8
 // and 9, the work spent so far in 10 to 12 (milliseconds, dispatches,
-// resumes), so a continued frame reports its whole time, and the drawn tally
-// in 13 and 14. A checkpoint from an older version has a shorter header, fails
-// the length check below and the frame starts over. The grid is in the units
-// of the renderer that saved it, which the job (pinned by the fingerprint) and
-// the kernel fix.
+// resumes), so a continued frame reports its whole time, the drawn tally in
+// 13 and 14, and the kernel that saved it in 15. A checkpoint from an older
+// version has a shorter header, fails the length check below and the frame
+// starts over. The grid is in the units of the renderer that saved it, which
+// the job (pinned by the fingerprint) and the kernel (pinned by word 15) fix.
 const PARTIAL_MAGIC = 0x53545243;
-const PARTIAL_HEADER_WORDS = 15;
+const PARTIAL_HEADER_WORDS = 16;
 const U32_MAX = 0xffffffff;
 
-function packPartial(
+// The kernel is a renderer option, not part of the job, so the offline page
+// or the CLI can switch it between a stop and a continue. Kernels differ in
+// each particle's sample, in what they tally and, for flux, in grid units, so
+// a frame continued on another kernel would add two different pictures
+// together. Its checkpoint is refused and the frame starts over.
+const KERNEL_CODES: Record<KernelChoice, number> = { offline: 0, trillion: 1, "trillion-strata": 2 };
+
+/** Exported for tests. */
+export function packPartial(
   job: OfflineJob,
   frame: number,
   cursor: FrameCursor,
   { lo, hi, landed, gpuEvaluated, drawn }: SavedAccumulation,
   progress: FrameProgress,
+  kernel: KernelChoice,
 ): Uint8Array {
   const out = new Uint32Array(PARTIAL_HEADER_WORDS + lo.length + hi.length);
   const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
@@ -79,22 +88,26 @@ function packPartial(
     u32(progress.batches),
     u32(progress.resumes),
     ...split(drawn),
+    KERNEL_CODES[kernel],
   ]);
   out.set(lo, PARTIAL_HEADER_WORDS);
   out.set(hi, PARTIAL_HEADER_WORDS + lo.length);
   return new Uint8Array(out.buffer);
 }
 
-function unpackPartial(
+/** Exported for tests. Null when the file is not a checkpoint of this job, frame and kernel. */
+export function unpackPartial(
   job: OfflineJob,
   frame: number,
   file: Uint8Array,
+  kernel: KernelChoice,
 ): ({ cursor: FrameCursor } & SavedAccumulation & FrameProgress) | null {
   if (file.byteLength < PARTIAL_HEADER_WORDS * 4 || file.byteLength % 4) return null;
   const words = new Uint32Array(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
   const cells = job.width * job.height * job.ssaa * job.ssaa;
   if (words[0] !== PARTIAL_MAGIC || words[1] !== jobFingerprint(job) || words[2] !== frame) return null;
   if (words[5] !== cells || words.length !== PARTIAL_HEADER_WORDS + 2 * cells) return null;
+  if (words[15] !== KERNEL_CODES[kernel]) return null;
   return {
     cursor: { plane: words[3], offset: words[4] },
     lo: words.slice(PARTIAL_HEADER_WORDS, PARTIAL_HEADER_WORDS + cells),
@@ -186,7 +199,7 @@ export async function renderJob(
         continue;
       }
       const partialFile = await store.read(partialName(frame));
-      const resume = partialFile ? (unpackPartial(job, frame, partialFile) ?? undefined) : undefined;
+      const resume = partialFile ? (unpackPartial(job, frame, partialFile, renderer.kernel) ?? undefined) : undefined;
 
       let rate = 0;
       // shouldStop is checked after every batch, not only between frames: it
@@ -207,7 +220,7 @@ export async function renderJob(
             (opts.checkpointSeconds ?? 300) > 0
               ? {
                   everyMs: (opts.checkpointSeconds ?? 300) * 1000,
-                  save: (cursor, acc, progress) => store.write(partialName(frame), packPartial(job, frame, cursor, acc, progress)),
+                  save: (cursor, acc, progress) => store.write(partialName(frame), packPartial(job, frame, cursor, acc, progress, renderer.kernel)),
                 }
               : undefined,
           onProgress: (done, total, batchSize, batchMs) => {

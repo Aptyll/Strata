@@ -45,7 +45,10 @@ A frame in progress is checkpointed every 5 minutes. A checkpoint carries the
 time and batches spent so far, so `seconds` and `batches` in a frame's stats
 cover the whole frame however often it was stopped, and `resumes` says how
 often. Particles per second from those stats is then right for a continued
-frame too.
+frame too. A frame only continues on the kernel that started it: kernels
+differ in each particle's sample and, for flux, in grid units, so switching
+`--kernel` (or the page's kernel select) between a stop and a continue starts
+the frame in progress over. Finished frames are kept.
 
 ## Running it (Node)
 
