@@ -60,3 +60,11 @@ from the manifests.
 These are 8-bit PNG exports of the developed frames. The particles are
 rendered, not simulated: see "Rendered, not simulated" in the
 [README](../../README.md#rendered-not-simulated).
+
+## Web-sized copies
+
+`web/` holds half-size JPEG copies of the frames that the main README shows
+inline, made by `src/site/share/make-web-frames.py`. They are there so that
+page loads fast (444 kB for its two pictures, where the PNGs are 3.3 MB), and
+each one links to its PNG here. A copy is a picture of a frame, not the frame:
+counts, comparisons and zooming in belong to the PNGs.
