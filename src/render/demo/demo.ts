@@ -200,13 +200,16 @@ function draw(target: GPUTextureView, dt: number): void {
   const pixels = canvas.width * canvas.height;
   const s = renderer.settings;
   renderer.mode = state.mode;
-  s.tone.exposure = state.exposure;
   s.tone.curve = state.curve;
   s.tone.display = state.display;
-  // Auto white point: a multiple of the mean energy per pixel, so the picture
-  // keeps its balance when the particle count changes.
+  // Auto black and white points from the mean energy per pixel, so the
+  // picture keeps its balance when the particle count changes. Without the
+  // black point the log curve's toe stays at one particle and dense frames
+  // drift toward white (docs/render.md, "Tone mapping").
   const mean = (sim.count * state.energy * Math.min(state.size, 64) ** 2) / pixels;
-  s.tone.white = state.white || Math.max(12, mean * 24);
+  const black = state.white ? 1 : Math.max(1, mean / 4);
+  s.tone.exposure = state.exposure / black;
+  s.tone.white = state.white || Math.max(12, mean * 24) / black;
   s.bloom.strength = state.bloom;
   s.bloom.threshold = state.threshold;
   s.trails.halfLife = state.trail;
