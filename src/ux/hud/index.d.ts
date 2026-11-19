@@ -28,7 +28,7 @@ export interface HudOptions {
   parent?: HTMLElement;
   /** Pass TOKENS from src/core/contracts.ts so the HUD follows the shared design tokens. */
   tokens?: HudTokens;
-  /** Show the stats line on load. Default false: the page opens on the simulation alone. */
+  /** Show the stats line on load. Default: off on a first visit, then whatever the visitor last chose. */
   stats?: boolean;
   /** Show the randomize dice. Default true. */
   dice?: boolean;
