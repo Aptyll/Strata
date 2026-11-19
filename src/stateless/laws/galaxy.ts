@@ -1,4 +1,4 @@
-import { TAU } from '../rng';
+import { TAU, u01 } from '../rng';
 import { clamp, defineLaw, fract } from './types';
 
 /**
@@ -35,10 +35,10 @@ export const galaxy = defineLaw({
     { name: 'seed', default: 0, min: 0, max: 1000, note: 'per-sheet variant: orientation and cluster layout' },
   ],
   cost: {
-    transcendental: 8,
+    transcendental: 6,
     fma: 38,
     stretch: 0.8,
-    note: 'floor and two fracts for slots, log for the radius, log for the spiral, cos for the arms, cos and sin for the orbit',
+    note: 'floor for the slot, log for the radius, log for the spiral, cos for the arms, cos and sin for the orbit',
   },
   // q.z picks the population and the sector, so neighbours in (q.x, q.y) scatter.
   coherent: false,
@@ -55,6 +55,7 @@ fn lawGalaxyQ(q: vec3f, t: f32, p: array<f32, 8>) -> vec2f {
   // Slots inside the band: a sector (disk, bulge) or a cluster id (clumps).
   let ss = (q.z - lo) * 2048.0;
   let slot = floor(ss);
+  let su = u32(slot);
   // Epicycle phase for disk and bulge stars; clusters keep theirs tight.
   let sc = select(2.0 * (ss - slot) - 1.0, 0.0, isClump);
   let cx = 2.0 * q.x - 1.0;
@@ -62,12 +63,14 @@ fn lawGalaxyQ(q: vec3f, t: f32, p: array<f32, 8>) -> vec2f {
   // Guiding radius. Disk: exponential profile, so the rim fades out.
   let rDisk = 0.02 - 0.19 * log(1.0 - 0.99 * q.y);
   let rBulge = 0.003 + 0.17 * q.y * q.y;
-  let rClump = 0.2 + 0.62 * fract(slot * 0.5698402910) + 0.003 * cy * cy * cy;
+  // Cluster places: the R2 sequence in u32 fixed point, exact on every device.
+  let rClump = 0.2 + 0.62 * u01(su * 0x91e10da5u) + 0.003 * cy * cy * cy;
   let r = select(select(rDisk, rClump, isClump), rBulge, isBulge);
-  // Starting angle. Disk and bulge: a sector of 1/8 turn walked by q.x, kept
-  // in [0, 2pi) for precision. Clusters: their own place plus a small spread.
-  let sector = fract(slot * 0.125) * 8.0;
-  let a0 = select((sector + q.x) * 0.7853981634, slot * 4.7430697 + 0.015 * cx * cx * cx, isClump);
+  // Starting angle, kept in [0, 2pi) so f32 resolves the small spreads. Disk
+  // and bulge: a sector of 1/8 turn walked by q.x. Clusters: their own place
+  // plus a small spread.
+  let sector = f32(su & 7u);
+  let a0 = select((sector + q.x) * 0.7853981634, TAU * u01(su * 0xc13fa9a9u) + 0.015 * cx * cx * cx, isClump);
   // Per-sheet variant: an orientation and a time offset, so clusters start
   // sheared rather than lined up.
   let spin0 = TAU * fract(p[7] * 0.1591549431);
@@ -94,15 +97,16 @@ fn lawGalaxyQ(q: vec3f, t: f32, p: array<f32, 8>) -> vec2f {
     const lo = isBulge ? 0 : isClump ? fb : f32(fb + fc);
     const ss = f32(f32(q[2] - lo) * 2048);
     const slot = Math.floor(ss);
+    const su = slot >>> 0;
     const sc = isClump ? 0 : 2 * (ss - slot) - 1;
     const cx = 2 * q[0] - 1;
     const cy = 2 * q[1] - 1;
     const rDisk = 0.02 - 0.19 * Math.log(1 - 0.99 * q[1]);
     const rBulge = 0.003 + 0.17 * q[1] * q[1];
-    const rClump = 0.2 + 0.62 * fract(slot * 0.569840291) + 0.003 * cy * cy * cy;
+    const rClump = 0.2 + 0.62 * u01(Math.imul(su, 0x91e10da5) >>> 0) + 0.003 * cy * cy * cy;
     const r = isBulge ? rBulge : isClump ? rClump : rDisk;
-    const sector = fract(slot * 0.125) * 8;
-    const a0 = isClump ? slot * 4.7430697 + 0.015 * cx * cx * cx : (sector + q[0]) * 0.7853981634;
+    const sector = su & 7;
+    const a0 = isClump ? TAU * u01(Math.imul(su, 0xc13fa9a9) >>> 0) + 0.015 * cx * cx * cx : (sector + q[0]) * 0.7853981634;
     const spin0 = TAU * fract(p[7] * 0.1591549431);
     const tt = t + 12 + 6 * fract(p[7] * 0.1234567);
     const theta = a0 + spin0 + p[3] * (2.2 - 1.6 * r) * tt;

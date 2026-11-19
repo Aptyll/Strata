@@ -1,6 +1,6 @@
 // Light checks on the motion laws, through their double-precision mirrors.
-// The WGSL is checked against the same mirrors on a GPU by the demo's
-// selftest (and by the offline renderer's own checks once it uses a law).
+// The WGSL is checked against the same mirrors on a GPU by
+// src/stateless/laws/laws.verify.ts (npm run verify -- stateless).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { STATELESS_LAWS, particleKey, qFromKey } from '../index';
@@ -21,6 +21,9 @@ for (const law of STATELESS_LAWS) {
     assert.equal(law.ranges.length, 8);
     assert.match(law.wgsl, new RegExp(`fn ${law.qFn}\\(q: vec3f, t: f32, p: array<f32, 8>\\) -> vec2f`));
     assert.match(law.wgsl, new RegExp(`fn ${law.fn}\\(key: Key, t: f32, p: array<f32, 8>\\) -> vec2f`));
+    assert.equal(typeof law.coherent, 'boolean');
+    // A coherent law must not read q.z.
+    if (law.coherent) assert.doesNotMatch(law.wgsl, /q\.z/, `${law.id} is marked coherent but reads q.z`);
     for (const p of law.params) assert.ok(p.min <= p.default && p.default <= p.max, `${law.id}.${p.name} default out of range`);
   });
 

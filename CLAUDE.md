@@ -73,7 +73,7 @@ Two very different modes, and the wording must keep them apart:
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
-| `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
+| `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
 | `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
