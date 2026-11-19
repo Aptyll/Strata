@@ -169,3 +169,7 @@ second record frames, which used other scenes and flux weighting. That A/B is
 - Noah had put the full 10 second 1T clip on hold until this kernel was
   ready. The first numbers do not show the speedup that hold was waiting for.
 - `docs/trillion.md` still says "Not yet measured on the 2070".
+
+*Later: [#171](https://github.com/Aptyll/Strata/pull/171) reworked the run
+merge in answer to these numbers, added camera motion blur and wrote the 2070
+results into `docs/trillion.md` ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)).*
