@@ -1,14 +1,16 @@
 // Readability and accessibility rules for the HUD, layered after styles.js by a11y.js.
 // They only override custom properties and sizes, so the look stays white on black.
 //
-// Contrast (WCAG 2.x, white text over a black void; the colour themes only remap the
-// canvas and keep the void black, so these hold for every theme):
-//   alpha 0.90 -> about 16.8:1  primary text, values
-//   alpha 0.70 -> about 9.9:1  labels in the menu
-//   alpha 0.62 -> about 7.8:1  stats labels, announce subtitle
-//   alpha 0.56 -> about 6.5:1  section titles, footer
-// The menu sits on a 0.9 black backing, so even over dense particles the background
-// stays near black and every label clears 4.5:1.
+// Type sizes and text contrast come from the design tokens (src/ux/design), which the
+// HUD's --hud-* properties in styles.js follow. Contrast (WCAG 2.x, the ink over the
+// black void; the colour themes only remap the canvas and keep the void black, so
+// these hold for every theme):
+//   strong 0.90 -> 16.7:1  values, anything active
+//   dim    0.65 ->  8.6:1  labels
+//   faint  0.48 ->  4.9:1  section titles, footer (the floor for text)
+//   stroke 0.36 ->  3.1:1  outlines of controls
+// The menu sits on a 0.88 black backing, so even over white-hot particles faint text
+// stays above 4.5:1 (src/ux/design/design.test.js checks these numbers).
 
 export const A11Y_CSS = `
 .strata-hud {
@@ -16,29 +18,9 @@ export const A11Y_CSS = `
   --hud-focus: rgb(var(--hud-fg));
 }
 
-/* ---- type scale ---------------------------------------------------------- */
-/* Base HUD text is 11px. Read-at-a-glance text grows: stats 12px, menu and keys 13px. */
-.strata-hud > .sh-stats { font-size: 12px; }
-.strata-hud .sh-panel, .strata-hud .sh-help { font-size: 13px; line-height: 1.5; }
-
-/* ---- contrast ------------------------------------------------------------ */
-.strata-hud > .sh-stats, .strata-hud > .sh-announce { --hud-a-dim: 0.62; }
-/* A dark halo keeps stats legible over bright, dense particles. Invisible over black. */
-.strata-hud > .sh-stats, .strata-hud > .sh-announce, .strata-hud > .sh-job {
-  text-shadow: 0 0 3px rgba(var(--hud-bg), 0.9), 0 0 8px rgba(var(--hud-bg), 0.6);
-}
-.strata-hud .sh-panel {
-  --hud-a-dim: 0.7;
-  --hud-a-ghost: 0.56;
-  --hud-a-line: 0.28;
-  background: rgba(var(--hud-bg), 0.9);
-  /* A visible scrollbar tells keyboard and mouse users there is more below. */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--hud-fg), 0.35) transparent;
-}
-/* With the tabbed menu only the pages scroll; give them the same visible scrollbar. */
-.strata-hud .sm-pages { scrollbar-width: thin; scrollbar-color: rgba(var(--hud-fg), 0.35) transparent; }
-.strata-hud .sh-help { background: rgba(var(--hud-bg), 0.82); --hud-a-dim: 0.7; }
+/* ---- scrollbars ----------------------------------------------------------- */
+/* A visible scrollbar tells keyboard and mouse users there is more below. With the tabbed menu only the pages scroll. */
+.strata-hud .sh-panel, .strata-hud .sm-pages { scrollbar-width: thin; scrollbar-color: rgba(var(--hud-fg), var(--hud-a-stroke)) transparent; }
 
 /* ---- target sizes (WCAG 2.2: 24px minimum) --------------------------------- */
 .strata-hud .sh-row { min-height: 28px; }
@@ -69,15 +51,18 @@ export const A11Y_CSS = `
   .strata-hud .sh-dice svg { transform: none !important; }
   .strata-hud *, .strata-hud *::before, .strata-hud *::after { animation: none !important; scroll-behavior: auto !important; }
 }
+/* The design tokens raise every level and make panels solid. These repeat their values for a page without the tokens. */
 @media (prefers-contrast: more) {
-  .strata-hud { --hud-a-strong: 1; --hud-a-dim: 0.85; --hud-a-ghost: 0.75; --hud-a-line: 0.6; }
-  .strata-hud .sh-panel, .strata-hud > .sh-stats, .strata-hud > .sh-announce {
-    --hud-a-strong: 1; --hud-a-dim: 0.85; --hud-a-ghost: 0.75; --hud-a-line: 0.6;
+  .strata-hud {
+    --hud-a-strong: var(--st-a-strong, 1); --hud-a-dim: var(--st-a-dim, 0.85); --hud-a-ghost: var(--st-a-faint, 0.75);
+    --hud-a-stroke: var(--st-a-stroke, 0.7); --hud-a-line: var(--st-a-hair, 0.5);
+    --hud-a-panel: var(--st-a-surface, 1); --hud-blur: var(--st-blur, 0px);
   }
-  .strata-hud .sh-panel { background: rgb(var(--hud-bg)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .strata-hud .sh-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .strata-hud .sh-panel { background: rgb(var(--hud-bg)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .strata-hud { --hud-a-panel: var(--st-a-surface, 1); --hud-blur: var(--st-blur, 0px); }
+  .strata-hud .sh-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (forced-colors: active) {
   .strata-hud { --hud-focus: Highlight; }

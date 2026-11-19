@@ -13,7 +13,12 @@
  * Wiring (main.ts): `mountThemes(hud, canvas)`. Adds a "theme" select to the
  * Esc menu (saved like other HUD settings), the T key to cycle, and
  * `?theme=<id>` in the URL to share or force a theme.
+ *
+ * The chrome follows in one way: the theme's signature color becomes the accent
+ * of the design tokens, so marks such as a slider's fill match the particles.
+ * Text stays white in every theme (docs/ux/design.md, "Themes").
  */
+import { accentOf, setAccent } from "../design";
 import type { Hud } from "../hud/index.js";
 
 /** A ramp from black (no particles) to the densest color, as [r, g, b] stops in 0..1. */
@@ -100,7 +105,9 @@ export function mountThemes(hud: Hud, target: HTMLElement): { set(id: string): v
   const fromUrl = new URLSearchParams(location.search).get("theme");
   let current = "white";
   const onChange = (id: string) => {
-    current = applyTheme(target, id).id;
+    const theme = applyTheme(target, id);
+    current = theme.id;
+    setAccent(accentOf(theme.stops));
     // Keep a shared link showing the theme; the dice own the hash, so this rides in the query.
     if (new URLSearchParams(location.search).has("theme") || current !== "white") {
       const url = new URL(location.href);
@@ -131,6 +138,7 @@ export function mountThemes(hud: Hud, target: HTMLElement): { set(id: string): v
     dispose: () => {
       off();
       target.style.filter = "";
+      setAccent(null);
     },
   };
 }

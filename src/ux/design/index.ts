@@ -33,11 +33,14 @@ export const DESIGN = {
    * hair [1.4] separators, decoration only
    */
   alpha: { strong: 0.9, dim: 0.65, faint: 0.48, stroke: 0.36, hair: 0.16 },
-  /** Black behind a panel and behind a full-screen sheet, and the blur under a panel in px. */
-  surface: { panel: 0.88, scrim: 0.72, blur: 10 },
+  /**
+   * Black behind a panel and behind a full-screen sheet, and the blur under a panel in px.
+   * With white-hot particles behind them, faint text still reads on a panel and dim text on a sheet.
+   */
+  surface: { panel: 0.88, scrim: 0.8, blur: 10 },
   font: {
     sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+    mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   },
   /** The whole type scale in px. Large text is thin, so every stroke stays near a pixel wide. */
   size: { xs: 11, sm: 13, md: 17, lg: 22, xl: 34 },
@@ -100,7 +103,7 @@ ${levels.map(([name]) => `  --st-${name}: rgba(var(--st-ink), var(--st-a-${name}
   --st-surface: rgba(var(--st-shade), var(--st-a-surface));
   --st-scrim: rgba(var(--st-shade), ${D.surface.scrim});
   --st-blur: ${D.surface.blur}px;
-  --st-halo: 0 0 3px rgba(var(--st-shade), 0.9), 0 0 8px rgba(var(--st-shade), 0.6);
+  --st-halo: 0 0 6px rgba(var(--st-shade), 0.9), 0 0 12px rgba(var(--st-shade), 0.9);
   --st-focus: 2px solid rgb(var(--st-ink));
 
   /* type: two families, six sizes, three trackings */
@@ -146,7 +149,7 @@ ${ROLES.map((r) => `.st-${r} { ${roleCss(r)} }`).join("\n")}
   :root { --st-medium: var(--st-fast); --st-slow: var(--st-fast); --st-travel: 0; }
 }
 @media (prefers-contrast: more) {
-  :root { --st-a-strong: 1; --st-a-dim: 0.85; --st-a-faint: 0.75; --st-a-stroke: 0.7; --st-a-hair: 0.5; --st-a-surface: 1; }
+  :root { --st-a-strong: 1; --st-a-dim: 0.85; --st-a-faint: 0.75; --st-a-stroke: 0.7; --st-a-hair: 0.5; --st-a-surface: 1; --st-blur: 0px; }
 }
 @media (prefers-reduced-transparency: reduce) { :root { --st-a-surface: 1; --st-blur: 0px; } }
 `;

@@ -1,7 +1,9 @@
 // Styles for the menu structure in menu.js: summary header, page tabs, section
 // tabs, and the optional corner fps readout. Sizes are in em so the panel's
-// type scale (set on .sh-panel) carries through. Same palette as styles.js:
-// white on black, one-pixel lines, no fills except the selected underline.
+// type scale (the HUD's base font) carries through. Same palette as styles.js:
+// the ink on black, one-pixel lines, no fills. Marks that show a value or a
+// selection (the graph's line, the selected underline) take --hud-mark, which
+// a color theme tints.
 
 export const MENU_CSS = `
 .sh-panel.sm-menu {
@@ -20,8 +22,9 @@ export const MENU_CSS = `
 }
 .sm-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1em; }
 .sm-fps { display: flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
+/* The one hero number of the menu: the figure role, thin so its strokes stay a pixel wide. */
 .sm-fps-num {
-  font-weight: 400; font-size: 2.6em; line-height: 1;
+  font: var(--hud-font-figure); letter-spacing: 0;
   color: rgba(var(--hud-fg), var(--hud-a-strong));
   font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right;
 }
@@ -29,7 +32,7 @@ export const MENU_CSS = `
 .sm-ms { color: rgba(var(--hud-fg), var(--hud-a-dim)); font-variant-numeric: tabular-nums; }
 .sm-graph {
   display: block; width: 11em; height: 2.6em; flex: 0 1 11em; min-width: 5em;
-  color: rgb(var(--hud-fg));
+  color: rgb(var(--hud-mark));
   border-bottom: 1px solid rgba(var(--hud-fg), var(--hud-a-line));
 }
 .sm-facts {
@@ -43,7 +46,7 @@ export const MENU_CSS = `
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.sm-fact dt { color: rgba(var(--hud-fg), var(--hud-a-ghost)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-fact dt { font: var(--hud-font-fine); color: rgba(var(--hud-fg), var(--hud-a-ghost)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- page tabs (first navbar) and section tabs (second navbar) ---- */
 .sm-tabs, .sm-subtabs {
@@ -67,7 +70,7 @@ export const MENU_CSS = `
 .sm-tab:hover, .sm-subtab:hover { color: rgba(var(--hud-fg), var(--hud-a-strong)); }
 .sm-tab[aria-selected=true], .sm-subtab[aria-selected=true] {
   color: rgb(var(--hud-fg));
-  border-bottom-color: rgb(var(--hud-fg));
+  border-bottom-color: rgb(var(--hud-mark));
 }
 
 /* ---- pages: the only part that scrolls ---- */
@@ -86,6 +89,7 @@ export const MENU_CSS = `
   position: absolute; left: var(--hud-edge); top: var(--hud-edge);
   color: rgba(var(--hud-fg), var(--hud-a-strong));
   font-variant-numeric: tabular-nums; white-space: pre;
+  text-shadow: var(--hud-halo);
   pointer-events: none;
 }
 
