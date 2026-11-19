@@ -1,15 +1,17 @@
 # Brief: honest counting
 
-Owners (2026-11-19): the offline renderer (exact landed counter in
-`src/offline`), the recorder (`src/record` tally and manifest), and the record
-script (`npm run record`). This brief is the shared definition they all build
-to, so the three pieces report the same numbers.
+Owners (2026-11-19): the offline renderer (`src/offline` in-frame tally), the
+recorder (`src/record`), the record script thread (`npm run record`), and the
+proof shots thread (`src/proof`). This brief is the shared definition they all
+build to, so every piece reports the same numbers.
 
 ## Context
 
 The headline is "one trillion particles". Skeptics will check three things:
 that the word is right, that every particle was really computed, and that no
-particle is a copy. A reflection review on 2026-11-19 listed the proof devices.
+particle is a copy. A reflection review on 2026-11-19 listed the proof devices:
+an exact tally, a deep zoom to single dots, a count ladder, and published
+seed, code and measured speed.
 
 ## Research conclusion
 
@@ -23,50 +25,52 @@ particle is a copy. A reflection review on 2026-11-19 listed the proof devices.
 2. **What the number means.** The claim is *evaluated per frame*: every id
    from 0 to N - 1 went through the kernel exactly once in that frame. Also
    report *landed*: how many passed the clip test and were added to the grid.
-   Evaluated is the headline; landed is shown next to it.
 3. **Weight one.** For the claim, every particle counts as exactly one. No
    level-of-detail multiplier (`PerfEngine` brightens a thinned plane by
    `count / k`, so it may never feed a record), no instancing, no copies (see
-   [64-bit-ids](64-bit-ids.md)). Flux weighting (dimmer when far) is fine for the
-   look, but then the grid sum is a light total, not a count, so the landed
-   count needs its own counter.
-4. **Count on the GPU, not in host bookkeeping.** The host knows how many it
-   dispatched; only the GPU can say how many ran. Each workgroup sums its
-   evaluated and landed counts in workgroup memory, then adds them once into a
-   64-bit counter (lo/hi with carry, the same `add64` as the grid). That is two
-   atomics per workgroup, a negligible cost.
+   [64-bit-ids](64-bit-ids.md)). Flux weighting (dimmer when far) changes the
+   grid sum into a light total, so use `weighting: "count"` wherever a number
+   is shown.
+4. **Count on the GPU.** The host only knows what it dispatched.
 5. **Prior art to credit.** Histogram renderers that accumulate billions of
    samples per image (fractal flames, the Buddhabrot), and compute-shader point
    rasterization (Schütz, Kerbl, Wimmer, 2021).
 
-## Steps
+## State on main (2026-11-19, after PR #51)
 
-1. Offline renderer: add the two GPU counters (evaluated, landed) to the
-   accumulate shader and to `FrameResult`; write them to each frame's stats
-   JSON. Fail the frame if evaluated is not exactly the job's total.
-2. Count mode check: when `weighting` is `count`, also assert
-   `grid sum == landed * ONE`.
-3. Recorder: burn a tally into the frame (evaluated, exact digits, for example
-   `1,000,000,000,000 particles this frame`) and keep the label that says
-   "rendered, not simulated". The tally must come from the stats JSON, not from
-   the job.
-4. Manifest per render (`src/record`): git commit, job JSON and its hash, seed,
-   GPU adapter string, measured particles per second, per-frame evaluated and
-   landed counts, wall time per frame. Published with the video.
-5. Record script: `npm run record` reproduces a short clip from the manifest
-   and compares per-frame counts and a grid hash.
+Done: an exact 64-bit `landed` tally, aggregated per workgroup (PR #43);
+64-bit particle keys (PRs #45, #47); proof shots that burn in GPU numbers with
+`count` weighting and `point` splats (PR #49, `src/proof`); record renders from
+the app with a tally per frame (PR #48, `src/record`).
+
+Open:
+
+1. **`evaluated` is host bookkeeping.** `FrameResult.evaluated` is the number
+   of particles dispatched. Add a GPU counter next to `landed`: each workgroup
+   adds its own evaluated count once (same carry trick), and the frame fails
+   if it differs from the job total.
+2. **Manifest per render**: git commit, job JSON and its fingerprint
+   (`jobFingerprint` exists in `src/offline/core/session.ts`), seed, GPU
+   adapter string, measured particles per second, per-frame evaluated and
+   landed, wall time per frame. Saved next to the frames and published with
+   the video.
+3. **Reproduction**: `npm run record` (record script thread) re-renders a short
+   clip from a manifest and compares per-frame counts and a grid hash.
+4. **Wording audit**: HUD, record labels, proof labels, video text. "Rendered",
+   never "simulated", for anything stateless.
 
 ## Files to touch
 
-- `src/offline/core/shaders.ts`, `src/offline/core/renderer.ts`,
-  `src/offline/core/develop.ts` (stats)
-- `src/record/*` (recorder thread), root `package.json` script (record thread)
+- `src/offline/core/shaders.ts`, `src/offline/core/renderer.ts` (GPU evaluated counter)
+- `src/record/index.ts`, `src/offline/core/session.ts` (manifest)
+- root `package.json` (record script)
 
 ## Done when
 
-- Every rendered frame's stats JSON holds GPU-counted `evaluated` and `landed`,
-  and `evaluated` equals the job total exactly.
-- The tally on screen is read from those stats.
+- Every frame's stats hold GPU-counted `evaluated` and `landed`, and
+  `evaluated` equals the job total exactly.
+- Every number on screen is read from those stats.
 - A manifest exists for every render, and `npm run record` reproduces a clip's
   counts and grid hash from it.
-- No text in the video, title or description says "simulated" about the 1T shot.
+- No text in the app, video, title or description says "simulated" about a
+  stateless shot.

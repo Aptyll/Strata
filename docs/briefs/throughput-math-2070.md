@@ -5,9 +5,18 @@
 The 1T render is stateless (`src/offline`, merged in PR #41): every frame
 evaluates all 10^12 particles from (seed, index, time) and adds each one into a
 64-bit integer grid with atomics. Memory is not the limit any more. Time is.
-Nobody has measured particles per second on a real GPU. The field guide's
-calculator defaults to 10 billion per second, which its own text calls a guess.
 The target card is Noah's RTX 2070 (8 GB).
+
+The first real numbers landed in PR #44 (`docs/perf.md`): the stateful
+`PerfEngine` at 1920 x 1080, brute force, runs about 11.6 billion particles
+per second (85 ps each, every particle simulated and splatted). Its author
+suspects the framebuffer atomics (an 8.3 MB grid, twice the 4 MB L2) for the
+time that memory traffic does not explain. The stateless 1T kernel at 4K is
+still unmeasured. It moves no particle data, but does more math per particle
+(a 64-bit Feistel key of about 27 integer ops, plus the law) and writes into a
+33 MB grid per word. Two 1T kernels exist on main: `src/offline/core/shaders.ts`
+(used by `src/record` and `src/proof`) and `src/trillion/kernel.ts` (PR #50).
+Measure the one the film uses.
 
 ## Research conclusion
 
@@ -23,6 +32,9 @@ render hours      = frames * 10^12 / R / 3600
 | 5 G/s | 200 s | 33.3 h | 16.7 h |
 | 10 G/s | 100 s | 16.7 h | 8.3 h |
 | 20 G/s | 50 s | 8.3 h | 4.2 h |
+
+The 11.6 G/s anchor makes the middle row plausible, but it is a different
+kernel at a quarter of the pixels.
 
 Ceilings on a 2070 (estimates from the spec sheet, to be replaced by the bench):
 

@@ -17,9 +17,12 @@ clears the HDR target:
 | `depth-sprites` | `src/passes/sprites.pass.ts`, `src/depth/sprite-pass.ts` | fog, depth of field, size falloff |
 | `density-splat` | `src/render/passes.ts`, `src/render/splat.ts` | sub-pixel bilinear splats |
 
-Separately, three fused kernels live outside the app: `PerfEngine`
-(`src/perf/engine.ts`, 8 bytes per particle, not wired into `src/main.ts`),
-`ChallengeEngine` (`src/challenge`), and the offline `StatelessRenderer`.
+Separately, fused kernels live outside the app: `PerfEngine`
+(`src/perf/engine.ts`, 8 bytes per particle, measured at 11.6 G/s on the 2070,
+not wired into `src/main.ts`), `ChallengeEngine` (`src/challenge`), and two
+stateless 1T kernels: the offline `StatelessRenderer`
+(`src/offline/core/shaders.ts`, used by `src/record` and `src/proof`) and
+`TrillionKernel` (`src/trillion`, PR #50, still on 32-bit keys).
 
 ## Research conclusion
 
@@ -52,7 +55,11 @@ mostly choosing it in place of `Simulation` plus the rasterize pass
 4. Decide `PerfEngine` in the app: either wire it behind `?engine=perf`
    (plane add/update/remove, brushes and brightness already match
    `PlaneHost`), or write in `docs/perf.md` that it stays bench-only and why.
-5. Update the splat-mode table in `docs/render.md` and the rasterizer notes in
+5. Pick one 1T kernel. `src/offline` is the one the record and proof paths
+   use. Either fold `src/trillion` into it, or keep `src/trillion` as the
+   engine's realtime stateless path on the shared keys (see
+   [64-bit-ids](64-bit-ids.md)). Write the decision in `docs/perf.md`.
+6. Update the splat-mode table in `docs/render.md` and the rasterizer notes in
    `docs/depth.md`.
 
 ## Files to touch
@@ -68,4 +75,5 @@ mostly choosing it in place of `Simulation` plus the rasterize pass
 - The default rasterizer never blends into `rgba16float`, so a dense core keeps
   counting past 2048 hits per pixel at 100M particles.
 - `PerfEngine` is either selectable in the app or documented as bench-only.
+- One 1T kernel is named as the film's kernel in `docs/perf.md`.
 - `npx tsc --noEmit` and `npm run build` pass.
