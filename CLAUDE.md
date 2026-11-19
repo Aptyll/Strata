@@ -1,8 +1,8 @@
 # CLAUDE.md: agent guide to Strata
 
 Read this first. It should make you productive in two minutes. Deeper docs are
-linked, not repeated. If `docs/CODEMAP.md` exists, it has the file-level map;
-this page only names folders.
+linked, not repeated. For the file-level map (pages, entry points, who owns
+what) read [docs/CODEMAP.md](docs/CODEMAP.md); this page only names folders.
 
 ## What Strata is
 
@@ -52,7 +52,7 @@ Two very different modes, and the wording must keep them apart:
   question.
 - MIT license, public repo.
 
-## Map of `src/`
+## Map of `src/` (details in [docs/CODEMAP.md](docs/CODEMAP.md))
 
 | folder | what lives there |
 | --- | --- |
