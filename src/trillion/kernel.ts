@@ -76,6 +76,12 @@ export interface TrillionFrameSettings {
    * default: the record claim is that every particle is evaluated.
    */
   cull: boolean;
+  /**
+   * Bench modes. 'full' (default) renders. 'math' evaluates and projects
+   * every particle but writes no counters (plain path). 'noTile' runs the
+   * strata path with run merging but without the shared memory tile.
+   */
+  mode: 'full' | 'math' | 'noTile';
 }
 
 export interface TrillionTally {
@@ -109,7 +115,7 @@ export class TrillionKernel {
   counts!: GPUBuffer;
   /** Landed and in-view totals as 64 bit (lo, hi) pairs, then strata patches run and tiled (u32). */
   readonly tallyBuffer: GPUBuffer;
-  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false };
+  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false, mode: 'full' };
   /** CPU side tally since the last `clear`. GPU side counts come from `readTally`. */
   evaluated = 0;
   culled = 0;
@@ -260,8 +266,9 @@ export class TrillionKernel {
     if (end <= start) return 0;
     const rect = this.footprint(plane);
     if (!rect && this.settings.cull) { this.culled += end - start; return 0; }
-    if (pipes.coherent) return this.encodeStrata(encoder, plane, pipes.strata, start, end);
-    const tiled = !!rect && rect.w * rect.h <= this.tileBins;
+    const math = this.settings.mode === 'math';
+    if (pipes.coherent && !math) return this.encodeStrata(encoder, plane, pipes.strata, start, end);
+    const tiled = !math && !!rect && rect.w * rect.h <= this.tileBins;
     const pipe = tiled ? pipes.tiled : pipes.direct;
     // Shared memory flushes cost up to tileBins atomics: give each workgroup
     // at least 8 particles per counter. Direct: 64 per invocation.
@@ -411,7 +418,7 @@ export class TrillionKernel {
     u[27] = keep >= 1 ? 0x1000000 : Math.max(0, Math.floor(keep * 0x1000000));
     u[28] = this.width;
     u[29] = this.height;
-    u[30] = this.settings.stochastic ? 1 : 0;
+    u[30] = (this.settings.stochastic ? 1 : 0) | (this.settings.mode === 'math' ? 2 : 0) | (this.settings.mode === 'noTile' ? 4 : 0);
     u[31] = 0;
     f[32] = this.settings.time;
     f[33] = this.settings.shutter;

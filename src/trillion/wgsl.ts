@@ -34,7 +34,7 @@ struct Batch {
   keep: u32,        // keep a particle when (hash >> 8) < keep; 2^24 keeps all
   width: u32,
   height: u32,
-  flags: u32,       // bit 0: stochastic sub-pixel splat
+  flags: u32,       // bit 0: stochastic sub-pixel splat, bit 1: math only (no counter writes, bench), bit 2: no tile (bench)
   _pad: u32,
   time: f32,        // seconds
   shutter: f32,     // seconds of exposure; 0 = no motion blur
@@ -137,6 +137,7 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
     inView += 1u;
     if (!kept(jr)) { continue; }
     landed += 1u;
+    if ((B.flags & 2u) != 0u) { continue; }   // math only: no counter write
     atomicAdd(&acc[u32(px.y) * B.width + u32(px.x)], 1u);
   }
   atomicAdd(&wgLanded, landed);
@@ -292,7 +293,7 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
       bx = min(i32(x1) + 2, i32(B.width));
       by = min(i32(y1) + 2, i32(B.height));
     }
-    if (bx > ax && by > ay && u32((bx - ax) * (by - ay)) <= TILE_BINS) {
+    if (bx > ax && by > ay && u32((bx - ax) * (by - ay)) <= TILE_BINS && (B.flags & 4u) == 0u) {
       tile = vec4i(ax, ay, bx - ax, by - ay);
     }
   }

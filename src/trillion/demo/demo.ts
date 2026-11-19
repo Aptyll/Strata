@@ -1,7 +1,9 @@
 // Standalone page for the trillion kernel: renders one frame progressively
 // and shows the exact tally. URL: ?n=1e12&planes=256&w=1920&h=1080&offscreen
 // Laws: default stand-ins, ?offline (src/offline laws), ?strat (the same
-// laws on the stratified fast path).
+// laws on the stratified fast path). &shot=close for the close-up camera.
+// ?bench&w=3840&h=2160&n=1e10: four-mode bench, wide and close-up.
+// __trillion.compare(): strata vs plain path, per pixel counts within noise.
 //
 // window.__trillion.selftest() checks that the counter sum equals the landed
 // tally and that two different batch sizes give bit-identical counts.
@@ -48,8 +50,13 @@ const PARAMS: Record<string, number[]> = {
 };
 
 /** A field of tilted sheets, deterministic. */
-function scene(width: number, height: number, n: number, planes: number, laws: string[]): TrillionPlane[] {
-  const vp = mul(perspective(0.9, width / height, 0.05, 200), lookAt([0, 2.5, 9], [0, 0, 0]));
+const SHOTS: Record<string, { eye: number[]; target: number[] }> = {
+  wide: { eye: [0, 2.5, 9], target: [0, 0, 0] },
+  close: { eye: [1.2, 0.6, 1.4], target: [2.2, 0, -1.6] },
+};
+
+function scene(width: number, height: number, n: number, planes: number, laws: string[], shot = SHOTS.wide): TrillionPlane[] {
+  const vp = mul(perspective(0.9, width / height, 0.05, 200), lookAt(shot.eye, shot.target));
   const out: TrillionPlane[] = [];
   let left = n;
   for (let i = 0; i < planes; i++) {
@@ -85,7 +92,14 @@ async function main(): Promise<void> {
   const kernel = await TrillionKernel.create(device, { width, height, laws: LAWS });
   const mapper = new CountToneMapper(device, { format, words: 2 });
   mapper.resize(width, height);
-  const planes = scene(width, height, N, PLANES, LAWS.map((l) => l.id));
+  const shot = SHOTS[q.get('shot') ?? 'wide'] ?? SHOTS.wide;
+  const planes = scene(width, height, N, PLANES, LAWS.map((l) => l.id), shot);
+
+  if (q.has('bench')) {
+    const rows = await bench(device, width, height, N, PLANES);
+    (window as unknown as Record<string, unknown>).__trillion = { bench: rows, device };
+    return;
+  }
 
   const show = async (): Promise<void> => {
     await mapper.measureAndExpose(kernel.counts);
@@ -122,7 +136,82 @@ async function main(): Promise<void> {
     const ok = sum === a.landed && identical && a.evaluated + a.culled === 2e7;
     return { ok, landed: a.landed, sum, identical };
   };
-  (window as unknown as Record<string, unknown>).__trillion = { kernel, tally, selftest, device };
+  // Statistical check of the strata path against the plain one: same laws,
+  // same distribution, so per pixel counts must agree within noise.
+  const compare = async (n = 2e7): Promise<Record<string, number>> => {
+    const plain = await TrillionKernel.create(device, { width, height, laws: OFFLINE_LAWS });
+    const strat = await TrillionKernel.create(device, { width, height, laws: STRATIFIED_OFFLINE_LAWS });
+    const sc = scene(width, height, n, 6, OFFLINE_LAWS.map((l) => l.id));
+    const ta = await renderFrame(plain, sc, { targetMs: 1e9, startBudget: 1 << 22 });
+    const a = await plain.readCounts();
+    const tb = await renderFrame(strat, sc, { targetMs: 1e9, startBudget: 1 << 22 });
+    const b = await strat.readCounts();
+    let m = 0, m2 = 0, k = 0, big = 0, worst = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] + b[i] < 200) continue;
+      const z = (b[i] - a[i]) / Math.sqrt(a[i] + b[i]);
+      m += z; m2 += z * z; k++;
+      worst = Math.max(worst, Math.abs(z));
+      if (Math.abs(z) > 5) big++;
+    }
+    const mean = m / Math.max(k, 1);
+    const out = {
+      landedPlain: ta.landed, landedStrata: tb.landed, landedRelDiff: (tb.landed - ta.landed) / Math.max(ta.landed, 1),
+      pixels: k, zMean: mean, zStd: Math.sqrt(Math.max(m2 / Math.max(k, 1) - mean * mean, 0)), zWorst: worst, over5: big,
+      tiledPatches: tb.tiledPatches, patches: tb.patches,
+    };
+    plain.destroy();
+    strat.destroy();
+    return out;
+  };
+  (window as unknown as Record<string, unknown>).__trillion = { kernel, tally, selftest, compare, device };
+}
+
+interface BenchRow { shot: string; mode: string; particles: number; seconds: number; billionPerSecond: number; secondsPer1T: number; tiled: string }
+
+/**
+ * Four-mode bench (brief: docs/briefs/throughput-math-2070.md, lever 5):
+ * math only, random global atomics, run merge, run merge + tile; wide and
+ * close-up shots. Prints a table and leaves it on window.__trillion.bench.
+ */
+async function bench(device: GPUDevice, width: number, height: number, n: number, planesCount: number): Promise<BenchRow[]> {
+  const plain = await TrillionKernel.create(device, { width, height, laws: OFFLINE_LAWS });
+  const strat = await TrillionKernel.create(device, { width, height, laws: STRATIFIED_OFFLINE_LAWS });
+  const modes: { mode: string; k: TrillionKernel; m: 'full' | 'math' | 'noTile' }[] = [
+    { mode: 'math only', k: plain, m: 'math' },
+    { mode: 'random global atomics', k: plain, m: 'full' },
+    { mode: 'run merge', k: strat, m: 'noTile' },
+    { mode: 'run merge + tile', k: strat, m: 'full' },
+  ];
+  const rows: BenchRow[] = [];
+  const ids = OFFLINE_LAWS.map((l) => l.id);
+  for (const shotName of ['wide', 'close']) {
+    const planes = scene(width, height, n, planesCount, ids, SHOTS[shotName]);
+    for (const { mode, k, m } of modes) {
+      k.settings.mode = m;
+      info.textContent = `bench: ${shotName}, ${mode} ...\n` + rows.map(fmt).join('\n');
+      await renderFrame(k, scene(width, height, Math.min(n, 1e8), planesCount, ids, SHOTS[shotName]));   // warm up
+      const t0 = performance.now();
+      const t = await renderFrame(k, planes, { targetMs: 200 });
+      const seconds = (performance.now() - t0) / 1000;
+      const rate = t.evaluated / seconds;
+      rows.push({
+        shot: shotName, mode, particles: t.evaluated, seconds,
+        billionPerSecond: rate / 1e9, secondsPer1T: 1e12 / rate,
+        tiled: t.patches ? `${((100 * t.tiledPatches) / t.patches).toFixed(0)}%` : '-',
+      });
+    }
+  }
+  plain.destroy();
+  strat.destroy();
+  const head = `trillion bench, ${width}x${height}, ${n.toExponential(1)} particles per run, ${planesCount} planes`;
+  info.textContent = [head, ...rows.map(fmt)].join('\n');
+  console.table(rows);
+  return rows;
+}
+
+function fmt(r: BenchRow): string {
+  return `${r.shot.padEnd(6)} ${r.mode.padEnd(22)} ${r.billionPerSecond.toFixed(2).padStart(7)} B/s  ${r.secondsPer1T.toFixed(1).padStart(7)} s per 1T  tile ${r.tiled}`;
 }
 
 main().catch((e) => { info.textContent = String(e?.stack ?? e); console.error(e); });
