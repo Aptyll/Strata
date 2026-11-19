@@ -20,6 +20,7 @@ export { formatCount, formatExact, formatValue, formatTime };
  * @property {HudTokens} [tokens]         Pass TOKENS from src/core/contracts.ts so the HUD follows the shared design tokens.
  * @property {boolean} [stats=false]      Show the stats line on load. Off by default: the page opens on the simulation alone.
  * @property {boolean} [dice=true]        Show the randomize dice.
+ * @property {number}  [diceHintMs=6000]  On a first visit, start a slow pulse on the die after this long, until the first roll. 0 disables.
  * @property {(roll:{seed:number, face:number})=>any} [onRandomize]  Called on every roll. See hud.onRandomize.
  * @property {boolean} [autoFps=true]     Measure fps from requestAnimationFrame until the engine calls setStat('fps', n).
  * @property {boolean} [announce=true]    Announce the plane name in the centre when the 'plane' stat changes.
@@ -91,7 +92,7 @@ export function createHud(options = {}) {
   const opt = {
     parent: document.body, idleMs: 2500, hideCursor: true, autoFps: true, announce: true,
     persist: 'strata.hud', shortcuts: true, panelOpen: false, keyTarget: window,
-    stats: false, dice: true, onRandomize: null,
+    stats: false, dice: true, onRandomize: null, diceHintMs: 6000,
     ...options,
   };
   const parent = opt.parent;
@@ -173,7 +174,9 @@ export function createHud(options = {}) {
   const help = el('div', 'sh-help');
   const helpList = el('dl');
   help.append(helpList);
-  root.append(left, right, announceEl, panel, dot, dice, help);
+  const messageEl = el('div', 'sh-message');
+  messageEl.setAttribute('role', 'status');
+  root.append(left, right, announceEl, messageEl, panel, dot, dice, help);
   parent.appendChild(root);
 
   const listeners = { change: new Set(), panel: new Set(), stats: new Set(), randomize: new Set() };
@@ -236,6 +239,13 @@ export function createHud(options = {}) {
       }
       if (s.title && typeof v === 'number') s.node.title = s.title(v);
     }
+  };
+
+  // ---- message: loading, unsupported browser, errors -------------------------
+  /** Show a centred message until cleared with message(null). Newlines are kept. */
+  const message = (text) => {
+    messageEl.textContent = text == null ? '' : String(text);
+    root.classList.toggle('has-message', !!messageEl.textContent);
   };
 
   // ---- announce ----------------------------------------------------------
@@ -499,8 +509,24 @@ export function createHud(options = {}) {
    * Roll the die. Fires the randomize handlers at once, so the simulation changes while the die is
    * still in the air. Pass a seed to replay a roll; otherwise a random uint32 is drawn.
    */
+  // First visit: if the die goes untouched, let it breathe so it gets found. Stops for good at the first roll.
+  const ROLLED_KEY = opt.persist ? opt.persist + '.rolled' : null;
+  let hintTimer = 0;
+  const stopHint = () => {
+    clearTimeout(hintTimer);
+    dice.classList.remove('is-hinting');
+    if (ROLLED_KEY) { try { localStorage.setItem(ROLLED_KEY, '1'); } catch { /* private mode */ } }
+  };
+  if (opt.dice && opt.diceHintMs > 0) {
+    let rolledBefore = false;
+    if (ROLLED_KEY) { try { rolledBefore = localStorage.getItem(ROLLED_KEY) === '1'; } catch { /* private mode */ } }
+    if (!rolledBefore) hintTimer = setTimeout(() => dice.classList.add('is-hinting'), opt.diceHintMs);
+  }
+
   const randomize = (seed) => {
+    stopHint();
     if (seed == null) seed = (Math.random() * 0x100000000) >>> 0;
+    seed >>>= 0;
     const roll = { seed, face: (seed % 6) + 1 };
     // Tumble through faces, never showing the same one twice running, and land on roll.face.
     clearInterval(rollTimer);
@@ -651,6 +677,7 @@ export function createHud(options = {}) {
     setStats: (obj) => { for (const k in obj) setStat(k, obj[k]); },
     defineStat: (key, def) => { defineStat(key, def); },
     announce,
+    message,
     registerParam,
     registerParams,
     removeParam,
@@ -682,7 +709,7 @@ export function createHud(options = {}) {
     get idle() { return state.idle; },
     destroy() {
       cancelAnimationFrame(raf);
-      clearTimeout(idleTimer); clearTimeout(announceTimer); clearTimeout(saveTimer); clearInterval(rollTimer);
+      clearTimeout(idleTimer); clearTimeout(announceTimer); clearTimeout(saveTimer); clearInterval(rollTimer); clearTimeout(hintTimer);
       disposers.forEach((d) => d());
       parent.classList.remove('strata-hud-idle');
       root.remove();

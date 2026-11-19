@@ -33,6 +33,8 @@ export interface HudOptions {
   /** Show the randomize dice. Default true. */
   dice?: boolean;
   onRandomize?: RandomizeHandler | null;
+  /** On a first visit, start a slow pulse on the die after this long, until the first roll. 0 disables. Default 6000. */
+  diceHintMs?: number;
   /** Fade the dice and menu dot after this long without input. 0 disables. Default 2500. */
   idleMs?: number;
   /** Hide the mouse cursor over the parent while idle. Default true. */
@@ -143,6 +145,9 @@ export interface Hud {
   resetTimer(): void;
   /** Fade a title (and optional subtitle) in and out above the dice. */
   announce(title: string, sub?: string | null, holdMs?: number): void;
+
+  /** Show a centred message (loading, unsupported browser) until cleared with message(null). */
+  message(text: string | null): void;
 
   registerParam(spec: ParamSpec): ParamHandle;
   registerParams(specs: ParamSpec[]): ParamHandle[];

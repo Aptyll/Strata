@@ -58,7 +58,9 @@ export interface DensityTonemapPassOptions {
  * Stage `tonemap`: density in the HDR target to the canvas, with trails and
  * bloom. Use it in place of a plain tone map pass, not next to one.
  */
-export function createDensityTonemapPass(opts: DensityTonemapPassOptions = {}): Pass & { post: DensityPost | null } {
+export function createDensityTonemapPass(
+  opts: DensityTonemapPassOptions = {},
+): Pass & { post: DensityPost | null; resize(gpu: GpuContext, width: number, height: number): void } {
   let post: DensityPost | null = null;
   const pass = {
     name: 'density-tonemap',

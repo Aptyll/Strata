@@ -4,8 +4,9 @@
  *
  * It reads the engine's own 16-byte f32 particle buffers through each plane's
  * `simBindGroup`, projects every active particle in a compute shader and
- * counts hits per pixel with atomicAdd. A single fullscreen triangle then adds
- * `count * globals.brightness` to the HDR target. No vertex buffers, no point
+ * adds light per pixel with atomicAdd, in fixed point: one hit adds
+ * `plane.brightness * LIGHT_ONE`. A single fullscreen triangle then adds
+ * `light / LIGHT_ONE * globals.brightness` to the HDR target. No vertex buffers, no point
  * draw calls, no blending per particle.
  *
  * Use it instead of a point-list rasterize pass, not together with one.
@@ -14,6 +15,8 @@
 import type { FrameContext, GpuContext, Pass } from '../core/contracts';
 
 const WORKGROUP = 256;
+/** Fixed-point scale of the per-pixel light buffer: a full-brightness hit adds this much. */
+export const LIGHT_ONE = 256;
 
 const SHARED = /* wgsl */ `
 struct Globals {
@@ -33,6 +36,7 @@ struct Plane {
   params1: vec4f,
   count: u32,
   seed: f32,
+  brightness: f32,
 }
 struct Particle { pos: vec2f, vel: vec2f }
 struct Size { width: u32, height: u32 }
@@ -45,6 +49,8 @@ struct Size { width: u32, height: u32 }
 @compute @workgroup_size(${WORKGROUP})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= plane.count) { return; }
+  let light = u32(clamp(plane.brightness, 0.0, 16.0) * ${LIGHT_ONE}.0 + 0.5);
+  if (light == 0u) { return; }
   let pos = particles[gid.x].pos;
   let clip = globals.viewProj * (plane.model * vec4f(pos, 0.0, 1.0));
   if (clip.w <= 0.0) { return; }
@@ -52,7 +58,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (abs(ndc.x) >= 1.0 || abs(ndc.y) >= 1.0 || ndc.z < 0.0 || ndc.z > 1.0) { return; }
   let px = vec2u((ndc.xy * vec2f(0.5, -0.5) + 0.5) * vec2f(f32(size.width), f32(size.height)));
   if (px.x >= size.width || px.y >= size.height) { return; }
-  atomicAdd(&counts[px.y * size.width + px.x], 1u);
+  atomicAdd(&counts[px.y * size.width + px.x], light);
 }
 `;
 
@@ -71,7 +77,7 @@ fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
 fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let x = min(u32(pos.x), size.width - 1u);
   let y = min(u32(pos.y), size.height - 1u);
-  let v = f32(counts[y * size.width + x]) * globals.brightness;
+  let v = f32(counts[y * size.width + x]) * (globals.brightness / ${LIGHT_ONE}.0);
   return vec4f(v, v, v, 0.0);
 }
 `;
@@ -86,7 +92,7 @@ export interface AtomicRasterPassOptions {
 }
 
 export interface AtomicRasterPass extends Pass {
-  /** Per-pixel particle counts of the last frame (u32 per pixel). For tests and debugging. */
+  /** Per-pixel light of the last frame (u32 per pixel, LIGHT_ONE per full-brightness hit). For tests and debugging. */
   readonly counts: GPUBuffer | undefined;
 }
 
