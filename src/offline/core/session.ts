@@ -43,13 +43,14 @@ export function jobFingerprint(job: OfflineJob): number {
   return h >>> 0;
 }
 
-// Version 2 adds the landed tally in header words 6 and 7.
-const PARTIAL_MAGIC = 0x53545242;
-const PARTIAL_HEADER_WORDS = 8;
+// Version 3: landed tally in header words 6 and 7, GPU evaluated count in 8 and 9.
+const PARTIAL_MAGIC = 0x53545243;
+const PARTIAL_HEADER_WORDS = 10;
 
-function packPartial(job: OfflineJob, frame: number, cursor: FrameCursor, { lo, hi, landed }: Accumulation): Uint8Array {
+function packPartial(job: OfflineJob, frame: number, cursor: FrameCursor, { lo, hi, landed, gpuEvaluated }: Accumulation): Uint8Array {
   const out = new Uint32Array(PARTIAL_HEADER_WORDS + lo.length + hi.length);
-  out.set([PARTIAL_MAGIC, jobFingerprint(job), frame, cursor.plane, cursor.offset, lo.length, Number(landed & 0xffffffffn), Number(landed >> 32n)]);
+  const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
+  out.set([PARTIAL_MAGIC, jobFingerprint(job), frame, cursor.plane, cursor.offset, lo.length, ...split(landed), ...split(gpuEvaluated)]);
   out.set(lo, PARTIAL_HEADER_WORDS);
   out.set(hi, PARTIAL_HEADER_WORDS + lo.length);
   return new Uint8Array(out.buffer);
@@ -70,6 +71,7 @@ function unpackPartial(
     lo: words.slice(PARTIAL_HEADER_WORDS, PARTIAL_HEADER_WORDS + cells),
     hi: words.slice(PARTIAL_HEADER_WORDS + cells),
     landed: BigInt(words[6]) + (BigInt(words[7]) << 32n),
+    gpuEvaluated: BigInt(words[8]) + (BigInt(words[9]) << 32n),
   };
 }
 
@@ -166,11 +168,13 @@ export async function renderJob(
         },
       });
 
+      // The GPU's own count must match the world, or the frame is not what it claims.
+      if (result.gpuEvaluated !== BigInt(renderer.total)) {
+        throw new Error(`Frame ${frame}: the GPU evaluated ${result.gpuEvaluated} particles, expected ${renderer.total}`);
+      }
       const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
       const stats = frameStats(frame, result, developed, {
-        // The whole world is evaluated for every frame, whether or not this
-        // call did all of it (part may have come from a checkpoint).
-        evaluated: renderer.total,
+        evaluated: result.gpuEvaluated,
         seconds: result.seconds,
         batches: result.batches,
       });

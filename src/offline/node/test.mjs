@@ -93,7 +93,7 @@ for (const splat of ["point", "bilinear"]) {
   const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
   const out = await renderOnce(job);
   const sum = accumulationSum(out.lo, out.hi);
-  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n), `${sum / BigInt(ONE)} of ${n} particles, tally ${out.landed}`);
+  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n} particles, landed ${out.landed}, evaluated ${out.gpuEvaluated}`);
 }
 
 // ---- tally matches the grid with part of the world off frame ----------------
@@ -192,7 +192,7 @@ for (const law of LAWS) {
     if (/** @type {Error} */ (e).message !== "stop") throw e;
   }
   const resumed = await renderOnce(job, { initialBatch: 77_777, maxBatch: 77_777 }, 1, { resume: saved });
-  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
+  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
 }
 
 // ---- PNG round trip ---------------------------------------------------------

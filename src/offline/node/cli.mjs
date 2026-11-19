@@ -212,7 +212,7 @@ async function render(args) {
           process.stdout.write(`\rframe ${p.frame}: ${((100 * p.done) / p.total).toFixed(1)}%  ${fmtRate(p.rate)}  batch ${withCommas(p.batchSize)} in ${p.batchMs.toFixed(0)} ms  frame eta ${fmtDuration(eta)}      `);
         },
         onFrame: (s, resumed) => {
-          const rate = s.evaluated / Math.max(s.seconds, 1e-9);
+          const rate = Number(s.evaluated) / Math.max(s.seconds, 1e-9);
           process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
         },
       });

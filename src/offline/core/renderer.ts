@@ -36,6 +36,11 @@ export interface Accumulation {
   hi: Uint32Array;
   /** Exact number of evaluated particles whose position fell inside the frame. */
   landed: bigint;
+  /**
+   * Particles evaluated for this frame, counted on the GPU (includes work
+   * restored from a checkpoint). Equals the world's total when the frame is done.
+   */
+  gpuEvaluated: bigint;
 }
 
 export interface FrameHooks {
@@ -110,8 +115,8 @@ export class StatelessRenderer {
     this.accHi = device.createBuffer({ label: "offline accHi", size: bytes, usage: acc });
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
-    this.tally = device.createBuffer({ label: "offline tally", size: 8, usage: acc });
-    this.readTally = device.createBuffer({ label: "offline readTally", size: 8, usage: read });
+    this.tally = device.createBuffer({ label: "offline tally", size: 16, usage: acc });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: 16, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -180,8 +185,9 @@ export class StatelessRenderer {
       cursor = { ...hooks.resume.cursor };
       device.queue.writeBuffer(this.accLo, 0, hooks.resume.lo.buffer as ArrayBuffer, hooks.resume.lo.byteOffset, hooks.resume.lo.byteLength);
       device.queue.writeBuffer(this.accHi, 0, hooks.resume.hi.buffer as ArrayBuffer, hooks.resume.hi.byteOffset, hooks.resume.hi.byteLength);
-      const landed = hooks.resume.landed;
-      device.queue.writeBuffer(this.tally, 0, new Uint32Array([Number(landed & 0xffffffffn), Number(landed >> 32n)]));
+      const { landed, gpuEvaluated } = hooks.resume;
+      const words = [landed & 0xffffffffn, landed >> 32n, gpuEvaluated & 0xffffffffn, gpuEvaluated >> 32n].map(Number);
+      device.queue.writeBuffer(this.tally, 0, new Uint32Array(words));
     } else {
       const enc = device.createCommandEncoder();
       enc.clearBuffer(this.accLo);
@@ -275,7 +281,7 @@ export class StatelessRenderer {
     const enc = device.createCommandEncoder();
     enc.copyBufferToBuffer(this.accLo, 0, this.readLo, 0, bytes);
     enc.copyBufferToBuffer(this.accHi, 0, this.readHi, 0, bytes);
-    enc.copyBufferToBuffer(this.tally, 0, this.readTally, 0, 8);
+    enc.copyBufferToBuffer(this.tally, 0, this.readTally, 0, 16);
     device.queue.submit([enc.finish()]);
     await Promise.all([
       this.readLo.mapAsync(GPUMapMode.READ),
@@ -287,10 +293,11 @@ export class StatelessRenderer {
     const hi = new Uint32Array(this.readHi.getMappedRange().slice(0));
     const t = new Uint32Array(this.readTally.getMappedRange());
     const landed = BigInt(t[0]) + (BigInt(t[1]) << 32n);
+    const gpuEvaluated = BigInt(t[2]) + (BigInt(t[3]) << 32n);
     this.readLo.unmap();
     this.readHi.unmap();
     this.readTally.unmap();
-    return { lo, hi, landed };
+    return { lo, hi, landed, gpuEvaluated };
   }
 
   dispose(): void {

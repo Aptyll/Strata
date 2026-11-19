@@ -107,17 +107,19 @@ export interface FrameTally {
 
 export function frameTally(stats: FrameStats, job: OfflineJob): FrameTally {
   const particles = totalParticles(job);
+  // Stats store the GPU's count as a decimal string. Worlds stay below 2^53.
+  const evaluated = Number(stats.evaluated);
   return {
     frame: stats.frame,
     particles,
-    evaluated: stats.evaluated,
+    evaluated,
     landed: stats.landed,
     outside: (BigInt(stats.evaluated) - BigInt(stats.landed)).toString(),
     unitSum: stats.unitSum,
     weighting: job.weighting,
     seconds: stats.seconds,
-    rate: stats.evaluated / Math.max(stats.seconds, 1e-9),
-    allEvaluated: stats.evaluated === particles,
+    rate: evaluated / Math.max(stats.seconds, 1e-9),
+    allEvaluated: evaluated === particles,
   };
 }
 
