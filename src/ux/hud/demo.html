@@ -1,0 +1,88 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata HUD demo</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block;width:100%;height:100%}</style>
+<canvas id="c"></canvas>
+<script type="module">
+// Stand-in for the engine: a cheap 2D point field, just enough to judge the HUD against.
+// ES modules do not load from file://, so serve the repo root over http
+// (for example `python3 -m http.server`) and open /src/ux/hud/demo.html
+import { createHud } from './index.js';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const PLANES = [['plane 01', 'curl noise'], ['plane 02', 'boids'], ['plane 03', 'orbit'], ['plane 04', 'reaction']];
+const state = { count: 20000, speed: 1, bloom: 0.6, density: 1, trails: true, paused: false, plane: 0 };
+let pts = new Float32Array(0);
+
+function resize() {
+  canvas.width = innerWidth * devicePixelRatio;
+  canvas.height = innerHeight * devicePixelRatio;
+}
+function seed(n) {
+  pts = new Float32Array(n * 2);
+  for (let i = 0; i < pts.length; i++) pts[i] = Math.random();
+  hud.setStat('particles', n);
+}
+addEventListener('resize', resize);
+
+const hud = createHud({ persist: 'strata.hud.demo', panelOpen: location.hash === '#panel' });
+window.hud = hud;
+
+hud.registerParams([
+  { id: 'count', label: 'Particles', min: 1000, max: 2000000, step: 1000, scale: 'log', value: state.count, live: false,
+    onChange: (v) => { state.count = v; seed(v); } },
+  { id: 'speed', label: 'Speed', min: 0, max: 4, step: 0.01, value: state.speed, onChange: (v) => (state.speed = v) },
+  { id: 'paused', label: 'Pause', value: false, persist: false, onChange: (v) => (state.paused = v) },
+  { id: 'behavior', label: 'Behavior', group: 'Plane', options: PLANES.map((p) => p[1]), value: PLANES[0][1],
+    onChange: (v) => setPlane(PLANES.findIndex((p) => p[1] === v)) },
+  { id: 'bloom', label: 'Bloom', group: 'Render', min: 0, max: 2, step: 0.01, value: state.bloom, onChange: (v) => (state.bloom = v) },
+  { id: 'density', label: 'Density', group: 'Render', min: 0.1, max: 4, step: 0.1, value: state.density, onChange: (v) => (state.density = v) },
+  { id: 'trails', label: 'Trails', group: 'Render', value: true, onChange: (v) => (state.trails = v) },
+  { id: 'reseed', label: 'Reseed', group: 'Render', run: () => seed(state.count) },
+]);
+
+function setPlane(i) {
+  state.plane = (i + PLANES.length) % PLANES.length;
+  hud.setStats({ plane: PLANES[state.plane][0], behavior: PLANES[state.plane][1] });
+  hud.setParam('behavior', PLANES[state.plane][1], { silent: true });
+}
+// The behavior thread will own preset generation. Here a roll just picks a field and tweaks speed.
+hud.onRandomize((roll) => {
+  setPlane(roll.seed % PLANES.length);
+  hud.setParam('speed', 0.5 + ((roll.seed >>> 8) % 250) / 100);
+  seed(state.count);
+});
+hud.registerShortcut({ key: 'space', label: 'pause', run: () => hud.setParam('paused', !hud.getParam('paused')) });
+hud.registerShortcut({ key: ']', label: 'next plane', run: () => setPlane(state.plane + 1) });
+hud.registerShortcut({ key: '[', label: 'previous plane', run: () => setPlane(state.plane - 1) });
+
+resize();
+seed(hud.getParam('count'));
+setPlane(state.plane);
+
+let t = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = state.trails ? 'rgba(0,0,0,0.25)' : '#000';
+  ctx.fillRect(0, 0, w, h);
+  if (!state.paused) t += 0.002 * state.speed;
+  const a = Math.min(1, 0.35 * state.density + 0.2 * state.bloom);
+  ctx.fillStyle = `rgba(255,255,255,${a})`;
+  const n = Math.min(pts.length / 2, 60000); // draw cap: this is a HUD demo, not the engine
+  const k = 3 + state.plane * 2;
+  for (let i = 0; i < n; i++) {
+    let x = pts[i * 2], y = pts[i * 2 + 1];
+    if (!state.paused) {
+      const ang = Math.sin(x * k + t * 3) * Math.cos(y * k - t * 2) * 6.283;
+      x = (x + Math.cos(ang) * 0.0006 * state.speed + 1) % 1;
+      y = (y + Math.sin(ang) * 0.0006 * state.speed + 1) % 1;
+      pts[i * 2] = x; pts[i * 2 + 1] = y;
+    }
+    ctx.fillRect(x * w, y * h, 1, 1);
+  }
+}
+frame();
+</script>
