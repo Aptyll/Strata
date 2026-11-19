@@ -60,6 +60,30 @@ command with no arguments for the full list of options.
 Run `bench` first. It prints how long one trillion-particle frame takes on the
 machine, and from that how long a clip will take. Pick the clip length to fit.
 
+### The scale ladder
+
+```sh
+npx tsx node/cli.mjs ladder                      # frame 0 of "trillion" at 1M, 100M, 10B, 1T
+npx tsx node/cli.mjs ladder --frame 300 --rungs 1M,1B,1T --out out/ladder-300
+```
+
+`ladder` renders one frame of a job at several particle counts. Each rung is
+the same job with every sheet's `particleCount` scaled by the same factor
+(`core/ladder.ts`): same sheets, seeds, laws, camera, time, splat and
+weighting. Within a sheet the key is a bijection of the index, so the rungs
+are nested: every particle of the 1M rung is also in the 1T rung.
+
+Exposure is locked per particle by default. The largest rung picks its white
+point (automatic, or `--white`), and each smaller rung uses that white scaled
+by its count, so all rungs have the same mean brightness and differ only in
+grain. `--exposure auto` exposes every rung on its own instead.
+
+Output: `out/<job>-ladder/<rung>.png` (labeled stills), one resumable job
+folder per rung, and `ladder.md` / `ladder.json` with each rung's GPU time,
+particles per second, exact in-frame count, and what the largest rung's rate
+implies for a full trillion-particle clip. Ctrl+C stops after the current
+batch; the same command continues.
+
 ## Running it (browser)
 
 `npm run dev` at the repo root, then open
@@ -104,6 +128,7 @@ core/grade.ts     exposure, tone curve, dither, label
 core/session.ts   resumable frame loop and grading loop
 core/world.ts     world and camera shot generator, presets
 core/camera.ts    keyframed camera path
+core/ladder.ts    scale ladder: one frame at several particle counts, report
 node/             runner for Node (Dawn + ffmpeg) and the self-checks
 web/              browser page (WebGPU + WebCodecs)
 ```
