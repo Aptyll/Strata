@@ -1,4 +1,6 @@
 // WGSL for the trillion particle splat kernel. See docs/trillion.md.
+
+import { STATELESS_RNG_WGSL } from '../stateless/rng';
 //
 // One invocation evaluates `perThread` stateless particles of one plane and
 // adds exactly 1 to exactly one pixel counter for each particle that lands
@@ -9,23 +11,11 @@ export const SLOT_BYTES = 256;
 export const WORKGROUP = 256;
 
 /**
- * Helpers every law may call. Same names and signatures as the offline
- * runner's law interface: pcg, u01, tri, draw, TAU.
+ * Helpers every law may call: the shared stateless RNG from src/stateless
+ * (Key = vec2u, particleKey, pcg, u01, tri, draw, TAU), so laws written for
+ * src/offline and src/stateless plug in unchanged.
  */
-export const LAW_PRELUDE = /* wgsl */ `
-const TAU: f32 = 6.283185307179586;
-fn pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-// Uniform in [0, 1), 24 bits, never returns 1.
-fn u01(h: u32) -> f32 { return f32(h >> 8u) * (1.0 / 16777216.0); }
-// Triangular on (-1, 1): difference of two 16 bit uniforms from one hash.
-fn tri(h: u32) -> f32 { return (f32(h & 0xffffu) - f32(h >> 16u)) * (1.0 / 65536.0); }
-// k-th independent draw for a particle key. Laws use k = 0..5.
-fn draw(key: u32, k: u32) -> u32 { return pcg(key + (k + 1u) * 0x9e3779b9u); }
-`;
+export const LAW_PRELUDE = STATELESS_RNG_WGSL;
 
 const BATCH_STRUCT = /* wgsl */ `
 struct Batch {
@@ -80,7 +70,7 @@ fn add64(i: u32, n: u32) {
 }
 
 // Pixel for particle (key, jitter bits), or (-1, -1) when it misses the frame.
-fn project(key: u32, jr: u32, p: array<f32, 8>) -> vec2i {
+fn project(key: Key, jr: u32, p: array<f32, 8>) -> vec2i {
   var t = B.time;
   if (B.shutter != 0.0) { t += B.shutter * (f32(jr >> 22u) * (1.0 / 1024.0) - 0.5); }
   let s = ${law.fn}(key, t, p);
@@ -127,8 +117,8 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   for (var j = 0u; j < B.perThread; j++) {
     let off = base + j * ${WORKGROUP}u + lid;
     if (off >= B.count) { break; }
-    let key = pcg(pcg(B.start + off) + B.seed);
-    let jr = pcg(key ^ B.salt);
+    let key = particleKey(B.start + off, B.seed);
+    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
     let px = project(key, jr, p);
     if (px.x < 0) { continue; }
     inView += 1u;
@@ -160,8 +150,8 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
   for (var j = 0u; j < B.perThread; j++) {
     let off = base + j * ${WORKGROUP}u + lid;
     if (off >= B.count) { break; }
-    let key = pcg(pcg(B.start + off) + B.seed);
-    let jr = pcg(key ^ B.salt);
+    let key = particleKey(B.start + off, B.seed);
+    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
     let px = project(key, jr, p);
     if (px.x < 0) { continue; }
     inView += 1u;

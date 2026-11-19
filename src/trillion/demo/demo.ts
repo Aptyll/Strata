@@ -5,7 +5,7 @@
 // tally and that two different batch sizes give bit-identical counts.
 
 import { CountToneMapper } from '../../render';
-import { TrillionKernel, planeHomography, renderFrame, trillionLimits, STANDIN_LAWS, type TrillionPlane } from '..';
+import { TrillionKernel, planeHomography, renderFrame, trillionLimits, STANDIN_LAWS, OFFLINE_LAWS, type TrillionPlane } from '..';
 
 const q = new URLSearchParams(location.search);
 const N = Number(q.get('n') ?? 1e10);
@@ -71,10 +71,11 @@ async function main(): Promise<void> {
   const ctx = offscreen ? null : canvas.getContext('webgpu')!;
   ctx?.configure({ device, format, alphaMode: 'opaque' });
 
-  const kernel = await TrillionKernel.create(device, { width, height, laws: STANDIN_LAWS });
+  const LAWS = q.has('offline') ? OFFLINE_LAWS : STANDIN_LAWS;
+  const kernel = await TrillionKernel.create(device, { width, height, laws: LAWS });
   const mapper = new CountToneMapper(device, { format, words: 2 });
   mapper.resize(width, height);
-  const planes = scene(width, height, N, PLANES, STANDIN_LAWS.map((l) => l.id));
+  const planes = scene(width, height, N, PLANES, LAWS.map((l) => l.id));
 
   const show = async (): Promise<void> => {
     await mapper.measureAndExpose(kernel.counts);
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
   ].join('\n');
 
   const selftest = async (): Promise<{ ok: boolean; landed: number; sum: number; identical: boolean }> => {
-    const small = scene(width, height, 2e7, 6, STANDIN_LAWS.map((l) => l.id));
+    const small = scene(width, height, 2e7, 6, LAWS.map((l) => l.id));
     const a = await renderFrame(kernel, small, { startBudget: 1 << 20, targetMs: 1e9, rounds: 1 });
     const ca = await kernel.readCounts();
     const b = await renderFrame(kernel, small, { startBudget: 3_000_017, targetMs: 1e9, rounds: 7 });
