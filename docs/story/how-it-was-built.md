@@ -288,8 +288,8 @@ up to 10^12 particles per frame at 4K, written to MP4. 3,408 lines in 21 files.
   circular shear flow, and 2D harmonic oscillators. It is not a time-stepped
   simulation, and the label burned into the video says so: "stateless:
   closed-form motion".
-- **Exact counting.** With count weighting (the record frames and proof
-  shots), every particle in view adds one unit of light to a 64-bit integer
+- **Exact counting.** With count weighting (the proof shots; the record
+  stills used flux weighting, where far particles are drawn on average), every particle in view adds one unit of light to a 64-bit integer
   grid, built from two 32-bit atomic words with an exact carry. Integer addition
   does not care about order, so a frame is bit-identical however the GPU
   schedules the work, and the grid's total divided by one unit is exactly the
@@ -355,7 +355,9 @@ land off screen only skip the final atomic add. The gap with the benchmark is
 the cache. The first still's cluster lit only 4% of the 4K frame, so its hits
 stayed in the 2070's 4 MB L2 cache, while the benchmark's single camera-filling
 sheet spreads hits over the whole grid and pays a trip to video memory for most
-of them. Real trillion frames took 26 to 52 seconds, depending on framing.
+of them. Real trillion frames took 26 to 52 seconds, depending on framing, with flux
+weighting (far particles drawn on average). Count weighting, one exact unit
+per particle in view, took about 160 to 193 seconds per frame.
 
 The first trillion frame was also honest about how it looked. The agent that
 measured it wrote that it "reads as grey confetti, not as a trillion": 96% of
