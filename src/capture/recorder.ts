@@ -89,10 +89,15 @@ export interface RecordingOptions {
    */
   filter?: string | null;
   /**
-   * 'limited' (default): the recorder converts frames to BT.709 limited
-   * range YUV itself, which every player, editor and converter reads the
-   * same way. 'full': hand the encoder RGB and let the browser convert, which
-   * gives full-range YUV that some editors misread (faint pixels turn black).
+   * 'limited': the recorder converts frames to BT.709 limited range YUV
+   * itself, which every player, editor and converter reads the same way. It
+   * reads each frame back to the CPU in the task that rendered it, which
+   * waits for the GPU, and converts in script: tens of milliseconds a frame
+   * at 4K. 'full': hand the encoder the canvas and let the browser convert,
+   * which gives full-range YUV that players and YouTube read correctly but
+   * some editors misread (faint pixels turn black).
+   * Default: 'limited' for fixed timing, 'full' for realtime, because a live
+   * recording must not slow down the view it records. See {@link recordingRange}.
    */
   range?: 'limited' | 'full';
   /**
@@ -170,6 +175,16 @@ const DEFAULT_CODECS: CaptureCodec[] = ['avc', 'hevc', 'av1', 'vp9'];
 /** True if this browser can record at all. */
 export function isRecordingSupported(): boolean {
   return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+}
+
+/**
+ * The colour range a recording uses: the one asked for, else 'limited' for
+ * fixed timing and 'full' for realtime. The limited conversion reads every
+ * frame back in the task that rendered it, so on a live recording it would
+ * hold up the frame loop, which realtime timing promises never to do.
+ */
+export function recordingRange(opts: Pick<RecordingOptions, 'range' | 'timing'>): 'limited' | 'full' {
+  return opts.range ?? (opts.timing === 'realtime' ? 'full' : 'limited');
 }
 
 interface SaveFilePicker {
@@ -291,7 +306,7 @@ async function openRecording(canvas: AnyCanvas, opts: RecordingOptions): Promise
   // baked in last, after the downsample.
   let resampler: Resampler | null = null;
   let filterStage: FilterStage | null = null;
-  const yuv = opts.range === 'full' ? null : new I420Converter();
+  const yuv = recordingRange(opts) === 'full' ? null : new I420Converter();
   const source = new VideoSampleSource({
     codec,
     bitrate,
