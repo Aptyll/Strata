@@ -1,4 +1,5 @@
-# Builds the site and publishes it to GitHub Pages on every push to main.
+# Builds the site and publishes it to GitHub Pages on every push to main,
+# unless a built page no longer starts: then the live site stays as it is.
 # Pages must be set to "GitHub Actions" in Settings > Pages (done 2026-11-19).
 name: Deploy to GitHub Pages
 
@@ -21,6 +22,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Deploys wait for each other (the "pages" group above), so a stuck run must not hold the queue.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -44,6 +47,19 @@ jobs:
 
       # The build also writes the standalone pages in docs/explainers to
       # dist/docs/explainers (src/site/plugin.mjs), so dist is the whole site.
+
+      # Does what we are about to publish still start? Opens every built page
+      # headless on a software GPU (scripts/smoke.mjs, the check CI also runs).
+      # A page that throws, logs an error or stops drawing fails this job, no
+      # artifact is uploaded, and the site keeps showing the last good version.
+      # Playwright is not a project dependency, so a pinned copy is installed here.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Boot check on the built site
+        run: npm run smoke -- --base="${{ steps.pages.outputs.base_path }}/"
 
       - uses: actions/upload-pages-artifact@v4
         with:

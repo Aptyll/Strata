@@ -13,7 +13,8 @@ other emergent behaviors, so the world holds more particles than the screen has
 pixels. Light adds up where particles overlap: density reads as brightness.
 
 Live: https://aptyll.github.io/Strata/ (every push to `main` deploys via
-`.github/workflows/pages.yml`).
+`.github/workflows/pages.yml`, unless a built page fails `npm run smoke`: then
+the live site stays on the last good version until a fix merges).
 
 Two very different modes, and the wording must keep them apart:
 
