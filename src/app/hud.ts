@@ -4,8 +4,8 @@
  * color themes (src/ux/theme: a "theme" menu section and T), then adds what
  * only the app knows about:
  *
- *   menu      planes, rasterizer, look (bloom, trails, white point, pointer
- *             parallax, plane crossings), performance (hold frame rate,
+ *   menu      planes, rasterizer, look (bloom, trails, white point, contrast,
+ *             pointer parallax, plane crossings), performance (hold frame rate,
  *             target fps, challenge)
  *   stats     "total": particle capacity across every plane
  *   keys      ] [ particles, = - brightness, G nearest plane (rows in ./keys.ts)
@@ -104,6 +104,13 @@ function registerMenu(
     hud.registerParam({
       id: "white", label: "white point", type: "range", scale: "log", group: "look", min: 1, max: 100_000,
       value: look.tone.white, onChange: (v) => (look.tone.white = v),
+    });
+    // Power on the tone curve's output. 1 is the default look; about 2.2 undoes the second
+    // brightening that the sRGB encode adds on top of the log curve
+    // (docs/briefs/visual/V02-tone-curve-lifts-mid-greys.md).
+    hud.registerParam({
+      id: "contrast", type: "range", group: "look", min: 1, max: 3, step: 0.1,
+      value: look.tone.contrast ?? 1, onChange: (v) => (look.tone.contrast = v),
     });
   }
   hud.registerParam({
