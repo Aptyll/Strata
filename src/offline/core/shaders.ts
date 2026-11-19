@@ -42,7 +42,7 @@ struct Batch {
   gridWidth: u32,
   gridHeight: u32,
   _pad: u32,
-  // Simulated seconds at the middle of the shutter, and the shutter length.
+  // Law time (seconds) at the middle of the shutter, and the shutter length.
   time: f32,
   shutterSpan: f32,
   // Flux mode: (reference depth)^2. Zero or less selects count mode.
