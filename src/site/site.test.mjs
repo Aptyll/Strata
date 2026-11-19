@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { applyHead, escapeHtml, headTags, pageUrl, sitemapXml } from "./head.ts";
+import { applyHead, contentSecurityPolicy, escapeHtml, headTags, lockPage, pageUrl, sitemapXml } from "./head.ts";
 import { PAGES, SITE } from "./pages.ts";
 
 // Tests are bundled into a temp folder before they run, so find the repo from the working directory.
@@ -97,6 +97,70 @@ test("only the front page carries the web application data, and it cannot close 
   assert.equal(JSON.parse(data.slice(data.indexOf(">") + 1, data.lastIndexOf("<"))).name, "Strata");
   const other = headTags(PAGES.find((page) => !page.app), site).join("\n");
   assert.ok(!other.includes("ld+json"));
+});
+
+test("the privacy lock names no host: only the site itself and bytes the page already holds", () => {
+  const allowed = new Set(["'self'", "'none'", "'unsafe-inline'", "'wasm-unsafe-eval'", "data:", "blob:"]);
+  const directives = Object.fromEntries(
+    contentSecurityPolicy()
+      .split("; ")
+      .map((directive) => directive.split(" "))
+      .map(([name, ...sources]) => [name, sources]),
+  );
+  for (const [name, sources] of Object.entries(directives)) {
+    for (const source of sources) assert.ok(allowed.has(source), `${name} allows ${source}; the site only talks to its own address`);
+  }
+  // Everything not listed falls back to default-src, and the leak-prone kinds are spelled out.
+  assert.deepEqual(directives["default-src"], ["'self'"]);
+  for (const name of ["script-src", "connect-src", "img-src", "font-src", "style-src", "worker-src"]) assert.ok(directives[name], `${name} is set`);
+  assert.deepEqual(directives["object-src"], ["'none'"]);
+  // The dev server differs by one thing: WebSockets, for live reload.
+  const dev = contentSecurityPolicy({ dev: true });
+  assert.equal(dev, contentSecurityPolicy().replace("connect-src 'self' data: blob:", "connect-src 'self' data: blob: ws: wss:"));
+});
+
+test("the lock goes in right after the charset, and links to other servers are left out", () => {
+  const html = [
+    "<!doctype html>",
+    "<html>",
+    "  <head>",
+    '    <meta charset="utf-8" />',
+    '    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+    '    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&display=swap">',
+    '    <link rel="stylesheet" href="./local.css">',
+    '    <link rel="canonical" href="https://aptyll.github.io/Strata/">',
+    '    <meta http-equiv="Content-Security-Policy" content="default-src *">',
+    "    <title>t</title>",
+    "  </head>",
+    '  <body><a href="https://github.com/Aptyll/Strata">source</a></body>',
+    "</html>",
+  ].join("\n");
+  const out = lockPage(html, "default-src 'self'");
+  assert.deepEqual(out.removed, ["fonts.gstatic.com", "fonts.googleapis.com"]);
+  assert.ok(out.html.includes(`    <meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="default-src 'self'" />\n`));
+  assert.equal(count(out.html, /Content-Security-Policy/g), 1);
+  assert.ok(!out.html.includes("fonts."));
+  assert.ok(out.html.includes('<link rel="stylesheet" href="./local.css">'));
+  assert.ok(out.html.includes('<link rel="canonical" href="https://aptyll.github.io/Strata/">'));
+  assert.ok(out.html.includes('<a href="https://github.com/Aptyll/Strata">source</a>'), "links people click are not requests");
+  assert.ok(!/\n[ \t]*\n/.test(out.html), "no blank lines left behind");
+});
+
+test("a page fragment without a head is locked and tagged above its first style, and untouched below", () => {
+  const body = '<style>body { color: white; }</style>\n<script>const s = \'<meta name="description" content="in a string">\';</script>\n<h1>Guide</h1>';
+  const html = '<meta charset="utf-8">\n<title>Guide</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=X">\n' + body;
+  const locked = lockPage(html, contentSecurityPolicy());
+  assert.deepEqual(locked.removed, ["fonts.googleapis.com"]);
+  const out = applyHead(locked.html, home, site);
+  assert.ok(out.html.startsWith('<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy"'));
+  assert.ok(out.html.endsWith(body), "everything from the first <style> on is left as it was");
+  assert.equal(count(out.html, /<title>/g), 1);
+  assert.deepEqual(out.replaced, []);
+});
+
+test("a page without a charset or a head still gets the lock first", () => {
+  assert.ok(lockPage("<head>\n<title>t</title>\n</head>", "p").html.startsWith('<head>\n<meta http-equiv="Content-Security-Policy" content="p" />'));
+  assert.ok(lockPage("<p>hi</p>", "p").html.startsWith('<meta http-equiv="Content-Security-Policy" content="p" />\n<p>hi</p>'));
 });
 
 test("pages kept out of search say so and stay out of the sitemap", () => {
