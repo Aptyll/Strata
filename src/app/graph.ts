@@ -16,7 +16,7 @@ import { FrameGraph } from "../core/frameGraph";
 import type { DepthSpritePass } from "../depth";
 import { createInterplane } from "../interplane/interplane.pass";
 import { createPasses } from "../passes";
-import { createAtomicRasterPass } from "../perf/atomicRasterPass";
+import { createComputeRasterPass, type ComputeRasterPass } from "../raster";
 import { createSheetHuePasses } from "../hue/sheetHue";
 import { createDensitySplatPass } from "../render/passes";
 import { Simulation } from "../sim/simulation";
@@ -48,6 +48,8 @@ export interface RenderGraph {
   interplane: { readonly passes: readonly Pass[]; readonly enabled: boolean; set(on: boolean): void };
   /** The depth sprites rasterizer, which sizes its fog and focus to the world. */
   depthSprites: DepthSpritePass | undefined;
+  /** The default compute rasterizer; its `subpixel` and `depth` switch its options (src/raster). */
+  computeRaster: ComputeRasterPass;
 }
 
 export interface RenderGraphOptions {
@@ -56,15 +58,19 @@ export interface RenderGraphOptions {
   interplane: boolean;
   /** Light per particle, read every frame by passes that need it. */
   brightness: () => number;
+  /** Start the compute rasterizer with depth cues (?depth=1) and sub-pixel splats (?subpixel=1). */
+  depth?: boolean;
+  subpixel?: boolean;
 }
 
 export function createRenderGraph(gpu: GpuContext, options: RenderGraphOptions): RenderGraph {
   const sim = new Simulation(gpu);
   const graph = new FrameGraph(gpu);
+  const computeRaster = createComputeRasterPass(gpu, { depth: options.depth, subpixel: options.subpixel });
   graph.add(
     sim, // simulate: every plane's behavior (src/sim)
     ...createPasses(gpu), // src/passes/*.pass.ts in filename order: points, depth sprites, tonemap
-    createAtomicRasterPass(gpu), // rasterize: compute rasterizer, the default (src/perf)
+    computeRaster, // rasterize: compute rasterizer "atomic-raster", the default, with optional cues (src/raster)
     createDensitySplatPass({ energy: options.brightness }), // rasterize: sub-pixel splats (src/render)
     ...createSheetHuePasses(gpu), // rasterize + ui tint: one hue per sheet, ?raster=hue (src/hue)
   );
@@ -87,7 +93,7 @@ export function createRenderGraph(gpu: GpuContext, options: RenderGraphOptions):
   };
   interplane.set(options.interplane);
 
-  return { graph, sim, rasterizer, interplane, depthSprites };
+  return { graph, sim, rasterizer, interplane, depthSprites, computeRaster };
 }
 
 function choosePass(graph: FrameGraph, stage: PassStage): PassChoice {

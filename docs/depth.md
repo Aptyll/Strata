@@ -57,8 +57,25 @@ top of `demo/demo.ts`. `?offscreen=1` skips presenting and renders only through
 
 ## In the engine
 
-`src/passes/sprites.pass.ts` registers the pass. It is off by default: open
-the app with `?depth=1`, or set `enabled` on the pass named `depth-sprites`.
+Two engine paths draw the cues, both off by default.
+
+**The compute rasterizer (`?depth=1`).** The app's default rasterizer,
+`atomic-raster` (`src/raster`), takes the cues as an option. Fog, near fade
+and size gain become a weight per particle (`depth_point_weight`), and depth
+of field moves each particle to a point inside its circle of confusion
+(`depth_lens_jitter_ndc`). That point is hashed from the particle, not the
+frame, so out-of-focus sheets look spread out without shimmering. It uses the
+same `DepthParams`, `depthSettingsForWorld` and autofocus as the sprites, and
+adds into the integer grid, so dense cores keep counting. It refits fog, size
+and focus when the world's radius moves by more than a quarter. Change it
+live on the pass named `atomic-raster`: `pass.depth`, `pass.subpixel`,
+`pass.params` and `pass.autofocus`. One lens sample per particle is grainy
+where defocused particles are sparse; the sprites draw a real disc instead.
+
+**Depth sprites (`?raster=sprites`, debug).** `src/passes/sprites.pass.ts`
+registers the sprite pass; pick it with `?raster=sprites`, or set `enabled`
+on the pass named `depth-sprites`. It blends into the f16 HDR target, so it
+stops counting near 2048 hits per pixel.
 
 While it is on it replaces the one pixel points: it runs after the points pass
 and clears the HDR target. It draws each plane's particle buffer as instanced
@@ -144,6 +161,7 @@ fog, size dimming and the energy loss of defocus, without drawing the blur.
   cleared. Disabling `points` at the same time saves that work.
 - Pointer parallax in the app is off by default (`?parallax=1` or the HUD
   toggle). Idle drift is left to the camera rig, which already has its own.
-- The lens sampling functions are unit tested on the CPU side only. No
-  renderer on main calls them yet.
+- The compute rasterizer (`?depth=1`) calls `depth_point_weight` and the lens
+  sampling functions. `src/raster/raster.verify.ts` checks both on a GPU
+  against the CPU mirrors in `DepthParams`.
 - The demo's tone map is a placeholder.

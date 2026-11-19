@@ -66,10 +66,11 @@ Two very different modes, and the wording must keep them apart:
 | `behaviors/` | particle rules, one `<id>.behavior.ts` each, auto-registered |
 | `passes/` | render passes, one `<name>.pass.ts` each, auto-registered by filename |
 | `render/` | density look: accumulation, counts tone mapper, bloom, trails (`docs/render.md`) |
-| `perf/` | 8-byte particle path, atomic raster, culling/LOD, GPU timer; `bench/` page |
+| `perf/` | 8-byte particle path, culling/LOD, GPU timer; `bench/` page |
+| `raster/` | the app's default compute rasterizer (`atomic-raster`), with optional sub-pixel (`?subpixel=1`) and depth cues (`?depth=1`) |
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
-| `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
+| `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
 | `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
