@@ -6,9 +6,8 @@ Everything here lives in `src/perf/`. It plugs into the shared engine in two way
    It takes the shared `PlaneDesc` and `Behavior` types unchanged, so every
    behavior in `src/behaviors/` and every scene runs on it as is. Particles are
    8 bytes instead of 16. This is the path for the particle-count challenge.
-2. **Drop-in parts for the main app**: a compute rasterizer pass (switch to it
-   with `?raster=atomic` or the Rasterizer panel under Tab) and a
-   `ParticleBudget`.
+2. **Drop-in parts for the main app**: the compute rasterizer pass (the app's
+   default rasterizer) and a `ParticleBudget` (its "hold frame rate" option).
 
 ## Try it
 
@@ -157,21 +156,21 @@ same into a caller-owned encoder, for frame graphs.
 
 ## In the main app
 
-- **Compute rasterizer.** `src/passes/raster-atomic.pass.ts` registers
-  `createAtomicRasterPass` next to the `points` pass, disabled by default.
-  `?raster=atomic` or the Rasterizer panel (Tab) switches between the two, so
-  they can be compared on the same scene. It reads the standard f32 particle
-  buffers through each plane's `simBindGroup` and adds
-  `count * globals.brightness` to the HDR target.
-- **`PerfBudget`** implements `ParticleBudget`: a density cap per plane from
-  `screenCoverage`, zero for culled planes, and a global governor that backs
-  off when fps drops below target and recovers slowly. The main app currently
-  constructs `VisibleOnlyBudget` directly; swapping it is a one-line change in
-  `src/main.ts`, which this work did not touch. Note that the shared renderer
-  does not brighten thinned planes, so a throttled plane gets dimmer.
-  `PerfEngine` does compensate.
-- **`PerfEngine` as the main simulation** needs `src/main.ts` to choose it in
-  place of `Simulation` and the rasterize pass. Until then it runs on the
+- **Compute rasterizer.** `createAtomicRasterPass` is the app's default
+  rasterizer (`?raster=points` switches back to point lists). It reads the
+  standard f32 particle buffers through each plane's `simBindGroup` and adds
+  light per pixel in fixed point, honouring per-plane brightness.
+- **`PerfBudget`** implements `ParticleBudget` and is the app's "hold frame
+  rate" option (`?adaptive=1`): a density cap per plane from `screenCoverage`,
+  zero for culled planes, and a global governor that backs off when fps drops
+  below target and recovers slowly. Note that the shared renderer does not
+  brighten thinned planes, so a throttled plane gets dimmer. `PerfEngine` does
+  compensate.
+- **`PerfEngine` as the main simulation** is not wired into `src/main.ts` yet.
+  It has the same plane operations as `PlaneHost` (add, update, remove), takes
+  the same brushes (`engine.brushes`) and per-plane brightness, and can add
+  into the HDR target (`output: 'hdr'`), so the switch is mostly choosing it in
+  place of `Simulation` plus the rasterize pass. Until then it runs on the
   benchmark page.
 
 ## Not done yet
