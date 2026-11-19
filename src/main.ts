@@ -4,7 +4,7 @@ import { mountCapture } from "./capture/app";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
 import { type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
-import type { DepthSpritePass } from "./depth";
+import { createParallaxCamera, type DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
 import { initGpu, writeGlobals } from "./gpu/context";
 import { createInterplane } from "./interplane/interplane.pass";
@@ -28,6 +28,7 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 //   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=1&seed=1
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
 //   &raster=sprites  draw depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
+//   &parallax=1      the eye slides sideways with the pointer, for depth parallax
 //   &raster=splat    sub-pixel splats
 //   &tonemap=basic   plain exponential tone map instead of the density look (bloom, trails)
 //   &interplane=0    no particles crossing between planes
@@ -115,6 +116,13 @@ async function start(): Promise<void> {
   const keys = createKeyRouter();
   const camera = createCamera();
   attachCameraInput(canvas, camera.rig, { keyTarget: keys.cameraTarget });
+  // Pointer parallax: the eye slides sideways with the pointer while the focus distance holds
+  // still on screen. `view` is what gets drawn; `camera` stays the thing input and scenes move.
+  const view = createParallaxCamera(camera, {
+    enabled: query.get("parallax") === "1",
+    focusDist: () => (depthSprites && depthSprites.enabled !== false ? depthSprites.params.focusDist : camera.state.distance),
+  });
+  view.attach(canvas);
 
   // ---- scene -------------------------------------------------------------
   let planeCount = Math.round(num("planes", 32));
@@ -246,6 +254,10 @@ async function start(): Promise<void> {
     });
   }
   hud.registerParam({
+    id: "parallax", label: "pointer parallax", type: "toggle", group: "look",
+    value: view.parallax.enabled, onChange: (on) => (view.parallax.enabled = on),
+  });
+  hud.registerParam({
     id: "interplane", label: "plane crossings", type: "toggle", group: "look",
     value: interplane.passes[0].enabled !== false, onChange: setInterplane,
   });
@@ -269,7 +281,7 @@ async function start(): Promise<void> {
   hud.registerShortcut({ key: "-", label: "dimmer", run: () => scaleBrightness(0.8) });
   hud.registerShortcut({ key: "g", label: "go to nearest plane", run: () => camera.rig.focusNearest() });
 
-  const pointerBrushes = attachBrushes(canvas, camera, () => sim.planes);
+  const pointerBrushes = attachBrushes(canvas, view, () => sim.planes);
 
   // ---- opening: one plane ignites, then the world (skip with any input, or ?intro=0) ----
   const intro =
@@ -291,23 +303,23 @@ async function start(): Promise<void> {
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
     const exposure = !offline && intro?.active ? intro.step(dt, sim.planes) : 1;
-    camera.update(dt);
+    view.update(dt);
     streaming?.tick(dt);
-    const viewProj = camera.viewProjection(graph.width / graph.height);
+    const viewProj = view.viewProjection(graph.width / graph.height);
     // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
     const brushes = pointerBrushes.update(dt, performance.now());
     writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness * exposure, brushes });
 
     // Offline renders are not in a hurry, so they always draw every particle.
     const counts = (offline ? fullBudget : budget).allocate({
-      planes: measurePlanes(sim.planes, camera, viewProj),
+      planes: measurePlanes(sim.planes, view, viewProj),
       fps: fps || targetFps,
       targetFps,
     });
     if (!offline) intro?.reveal(counts);
     sim.planes.forEach((plane, i) => (plane.activeCount = counts[i]));
 
-    graph.run({ planes: sim.planes, camera, time, dt, frame });
+    graph.run({ planes: sim.planes, camera: view, time, dt, frame });
     frame++;
 
     updateHud(dt);

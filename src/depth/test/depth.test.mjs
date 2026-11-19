@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DepthParams, DEPTH_PARAMS_FLOATS, depthWGSL,
-  FocusTracker, nearestPlaneDistance, rayPlaneDistance, focusPlaneFromDesc, ParallaxRig,
+  FocusTracker, nearestPlaneDistance, rayPlaneDistance, focusPlaneFromDesc, ParallaxRig, createParallaxCamera,
 } from '../index';
 
 const plane = (z, half = 10) => ({ center: [0, 0, z], u: [half, 0, 0], v: [0, half, 0] });
@@ -19,14 +19,14 @@ test('uniform layout matches the WGSL struct', () => {
     fogDensity: 101, fogPower: 102, fogStart: 103, nearFade: 104,
     focusDist: 105, aperture: 106, maxCocPx: 107, focusRange: 108,
     baseSize: 109, sizeAttenuation: 110, minPx: 111, brightness: 112,
-    distDim: 115, refDist: 116, bokehEdge: 117, cullIntensity: 118,
+    distDim: 115, refDist: 116, bokehEdge: 117, cullIntensity: 118, pointGainMax: 119,
   });
   const packed = p.pack({ viewportH: 113, projScaleY: 114 });
   const expected = {
     fogDensity: 101, fogPower: 102, fogStart: 103, nearFade: 104, focusDist: 105, aperture: 106,
     maxCocPx: 107, focusRange: 108, baseSize: 109, sizeAttenuation: 110, minPx: 111, brightness: 112,
     viewportH: 113, projScaleY: 114, distDim: 115, refDist: 116, bokehEdge: 117, cullIntensity: 118,
-    pad0: 0, pad1: 0,
+    pointGainMax: 119, pad1: 0,
   };
   fields.forEach((f, i) => assert.equal(packed[i], expected[f], f));
 });
@@ -93,4 +93,46 @@ test('focus plane from a PlaneDesc applies rotation and half size', () => {
   const near = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
   assert.ok(near(p.u, [0, 0, -4]), String(p.u));
   assert.ok(near(p.v, [0, 5, 0]), String(p.v));
+});
+
+test('lens jitter stays inside the circle of confusion and is zero in focus', () => {
+  const p = new DepthParams({ focusDist: 20, focusRange: 0, aperture: 10, maxCocPx: 50 });
+  assert.deepEqual(p.lensJitterPx(20, 0.3, 0.7), [0, 0]);
+  const coc = p.cocAt(60);
+  for (let i = 0; i < 200; i++) {
+    const [x, y] = p.lensJitterPx(60, (i + 0.5) / 200, (i * 0.618) % 1);
+    assert.ok(Math.hypot(x, y) <= coc + 1e-9);
+  }
+  assert.deepEqual(new DepthParams({ dof: false }).lensJitterPx(60, 0.5, 0.5), [0, 0]);
+});
+
+test('point weight fades with fog and gains up close, within the cap', () => {
+  const p = new DepthParams({ refDist: 20, nearFade: 1, pointGainMax: 4 });
+  assert.ok(p.pointWeight(40, 40) < p.pointWeight(20, 20));
+  assert.ok(Math.abs(p.pointWeight(20, 20) - p.fogAt(20)) < 1e-12);
+  assert.ok(p.pointWeight(2, 2) <= 4);
+  assert.ok(p.pointWeight(0, 0) < 1e-6);
+});
+
+test('parallax camera keeps the focus point still and moves the eye sideways', () => {
+  // Camera at the origin looking down -Z, 90 degree fov, square aspect.
+  const near = 0.1, far = 100;
+  const vp = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, far / (near - far), -1, 0, 0, (near * far) / (near - far), 0]);
+  const inner = { state: { target: [0, 0, -10], yaw: 0, pitch: 0, distance: 10, fovY: Math.PI / 2 }, update() {}, eye: () => [0, 0, 0], viewProjection: () => vp };
+  const cam = createParallaxCamera(inner, { pointerAmount: 2, driftAmount: 0, tau: 0, relative: false, focusDist: () => 10 });
+  cam.setPointer(1, 0);
+  cam.update(0.016);
+  const m = cam.viewProjection(1);
+  const project = (q) => {
+    const c = [0, 1, 3].map((r) => m[r] * q[0] + m[4 + r] * q[1] + m[8 + r] * q[2] + m[12 + r]);
+    return [c[0] / c[2], c[1] / c[2]];
+  };
+  const near0 = (a) => Math.abs(a) < 1e-6;
+  assert.ok(near0(project([0, 0, -10])[0]) && near0(project([0, 0, -10])[1])); // focus point holds
+  assert.ok(project([0, 0, -5])[0] < 0); // nearer slides against the eye
+  assert.ok(project([0, 0, -20])[0] > 0); // farther slides with it
+  assert.deepEqual(cam.eye(), [2, 0, 0]);
+  cam.parallax.enabled = false;
+  cam.update(0.016);
+  assert.deepEqual([...cam.viewProjection(1)], [...vp]);
 });
