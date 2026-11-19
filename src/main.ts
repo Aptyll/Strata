@@ -78,6 +78,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     raster: options.raster,
     interplane: options.interplane,
     brightness: particleLight,
+    depth: options.depth,
+    subpixel: options.subpixel,
   });
   const { graph, sim, depthSprites } = render;
   const budget = createBudgetChoice(options);
@@ -88,7 +90,12 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // distance holds still on screen. `view` is what gets drawn; `camera` is what input and scenes move.
   const view = createParallaxCamera(camera, {
     enabled: options.parallax,
-    focusDist: () => (depthSprites && depthSprites.enabled !== false ? depthSprites.params.focusDist : camera.state.distance),
+    focusDist: () =>
+      depthSprites && depthSprites.enabled !== false
+        ? depthSprites.params.focusDist
+        : render.computeRaster.depth && render.computeRaster.enabled !== false
+          ? render.computeRaster.params.focusDist
+          : camera.state.distance,
   });
   view.attach(canvas);
   const scenes = createSceneHost({ sim, camera, depthSprites, options });

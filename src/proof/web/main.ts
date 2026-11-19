@@ -118,7 +118,8 @@ async function renderPass(device: GPUDevice, pass: Pass, i: number, n: number): 
 /** Saved loupe pick. The file name carries the range so a pick from an older rule is not reused. */
 const LOUPE_PIXEL_FILE = `loupe-pixel-interior-${LOUPE_MIN}-${LOUPE_MAX}.json`;
 /** Raw 64-bit count grid of the main loupe frame, kept so a new dice roll costs no re-render. */
-const loupeGridFile = (main: OfflineJob) => `loupe-main-grid-${jobFingerprint(main).toString(16)}.bin`;
+// v2: the accumulate shader changed (job.select), so grids from before it are not reused.
+const loupeGridFile = (main: OfflineJob) => `loupe-main-grid-v2-${jobFingerprint(main).toString(16)}.bin`;
 
 interface LoupePixel {
   x: number;
@@ -132,7 +133,7 @@ interface LoupePixel {
 }
 
 // "window": the exact off-axis loupe. Older loupe frames in the folder are left alone.
-const loupeKey = (p: { x: number; y: number }) => `loupe-window-${p.x}-${p.y}-`;
+const loupeKey = (p: { x: number; y: number }) => `loupe-select-${p.x}-${p.y}-`;
 
 async function readLoupePixel(): Promise<LoupePixel | null> {
   const f = await store.read(LOUPE_PIXEL_FILE);
@@ -183,7 +184,7 @@ async function renderLoupe(device: GPUDevice, o: ShotOptions): Promise<void> {
   await renderPass(device, { key: loupeKey(pixel), job: loupeJob(main, pixel.x, pixel.y, LOUPE_SIZE), hold: 1 }, 1, 2);
   setStatus(
     `Loupe pixel (${pixel.x}, ${pixel.y}) holds ${pixel.count} particles (GPU count).` +
-      (pixel.interior === false ? " No pixel met the 10k to 50k sheet-interior rule; this is the nearest." : "") +
+      (pixel.interior === false ? ` No pixel met the ${LOUPE_MIN} to ${LOUPE_MAX} sheet-interior rule; this is the nearest.` : "") +
       " Export to see it opened up.",
   );
 }

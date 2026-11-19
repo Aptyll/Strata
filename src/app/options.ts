@@ -8,8 +8,10 @@
  *   &seed=1              layout seed
  *   &raster=points       draw with the point-list pass instead of the compute rasterizer
  *   &raster=hue          points, each sheet in its own color (src/hue)
- *   &raster=sprites      depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
- *   &raster=splat        sub-pixel splats
+ *   &raster=sprites      depth-aware sprites: fog, depth of field, size falloff (debug)
+ *   &raster=splat        sub-pixel splats (debug)
+ *   &depth=1             depth cues in the compute rasterizer: fog, depth of field, size falloff
+ *   &subpixel=1          sub-pixel splats in the compute rasterizer (src/raster)
  *   &parallax=1          the eye slides sideways with the pointer, for depth parallax
  *   &interplane=0        no particles crossing between planes
  *   &intro=0             skip the opening
@@ -23,7 +25,8 @@
  *   &tonemap=basic       plain exponential tone map instead of the density look
  *                        (src/passes/tonemap.pass.ts)
  *   &depth=              src/passes/sprites.pass.ts reads it too, but the rasterizer
- *                        choice in src/app/graph.ts decides which rasterize pass runs
+ *                        choice in src/app/graph.ts decides which rasterize pass runs,
+ *                        so ?depth=1 alone gives the compute rasterizer with depth cues
  *   &theme=red           color theme (src/ux/theme/index.ts)
  *   #r=<seed>            replay a shared dice roll (src/ux/hud/wire.ts)
  *   ?record=1e12 &size= &frames= &seconds= &fps= &sheets= &seed= &weighting= &fresh=
@@ -52,6 +55,10 @@ export interface AppOptions {
   seed: number;
   /** Short rasterizer name from the URL: "points", "sprites", "splat", or "" for the default. */
   raster: string;
+  /** Depth cues (fog, depth of field, size falloff) in the compute rasterizer. */
+  depth: boolean;
+  /** Sub-pixel splats in the compute rasterizer. */
+  subpixel: boolean;
   /** Start with pointer parallax on. */
   parallax: boolean;
   /** Particles cross between neighbouring planes. */
@@ -102,7 +109,9 @@ export function readOptions(search: string): AppOptions {
     // The density look is tuned for one unit of light per particle; the plain tone map saturates far sooner.
     brightness: num("brightness", query.get("tonemap") === "basic" ? 0.2 : 1),
     seed: Math.round(num("seed", 1)),
-    raster: query.get("depth") === "1" ? "sprites" : query.get("raster") ?? "",
+    raster: query.get("raster") ?? "",
+    depth: query.get("depth") === "1",
+    subpixel: query.get("subpixel") === "1",
     parallax: query.get("parallax") === "1",
     interplane: query.get("interplane") !== "0",
     intro: query.get("intro") !== "0",

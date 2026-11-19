@@ -8,7 +8,7 @@ version of `prompts/trillion-believability.md`. Open `/src/proof/web/` under
 | --- | --- | --- |
 | count-up | one frozen frame built from 1 particle to all, 3 stages per decade | about 1.7 trillion-frames |
 | pull-back | from one particle to the whole world, count growing log-uniformly | about frames / 27.6 trillion-frames (10 s at 30 fps: about 11) |
-| loupe | a dice-chosen sheet-interior pixel (10,000 to 50,000 particles, all 8 neighbours within 20%), its exact 64-bit count, then that pixel opened up at 2160x2160 through an off-axis window of the main camera (`job.window`), so the dots are the same particles the pixel counted. The raw main grid is saved, so a new dice roll needs no re-render. Label at the top | 1 trillion-frame plus 1 |
+| loupe | a dice-chosen sheet-interior pixel (10,000 to 100,000 particles, all 8 neighbours within 20%), its exact 64-bit count, then that pixel opened up at 2160x2160. The loupe pass keeps exactly the particles whose main-view pixel is that one (`job.select`, the same float test in the same shader), so the dot count equals the pixel count exactly; `src/offline/node/loupe-exact-check.mjs` checks it. The raw main grid is saved, so a new dice roll needs no re-render. Label at the top | 1 trillion-frame plus 1 |
 | dive | unbroken log zoom, whole world to a few dots, 1.5 s per decade | every frame is a full trillion-frame: run at a lower count or short |
 | find | fly to particle #N (default #999,999,999,999) and hold, with a ring | every frame full: same as dive |
 | ladder | the same frozen frame at 1M, 100M, 10B and 1T, each held 1.5 s, exposure locked per particle (white scales with count) so only the grain changes | about 1.01 trillion-frames |
