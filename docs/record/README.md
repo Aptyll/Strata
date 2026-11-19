@@ -12,6 +12,9 @@ on this card, depending on how spread out the hits are.
 | --- | --- | ---: |
 | [trillion-key1-f0.png](trillion-key1-f0.png) | inside the field of sheets, wide | about 843 billion (two digits of the label are hidden behind a sheet) |
 | [trillion-key2-f0.png](trillion-key2-f0.png) | closer, one large Kepler disc in front | 107,787,615,440 |
+| [trillion-A.png](trillion-A.png) | close-up of a few big sheets: a spiral disc, a Lissajous ribbon, a ring sheet | 985,878,512,802 |
+| [trillion-B.png](trillion-B.png) | a column of sheets stacked one above another, seen from the side | 927,901,560,630 |
+| [trillion-C.png](trillion-C.png) | wide shot inside the field, hundreds of small sheets edge to edge | about 31% of the trillion (two digits of the label are hidden behind a sheet) |
 | [trillion-still-f0.png](trillion-still-f0.png) | the first frame: the whole cluster from far away | every sheet is in frame |
 
 These are 8-bit PNG exports of the developed frames. The particles are

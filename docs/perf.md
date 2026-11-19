@@ -115,8 +115,8 @@ to this path's bind group and without the engine's f32 particle array. The
 entry point unpacks a particle to the standard `Particle { pos, vel }`, calls
 `simulateParticle` (the behavior's `update` plus pointer brushes, exactly as
 the core engine's entry point does), and packs the result.
-`src/perf/shaders.verify.ts` compiles this shader for every registered
-behavior (`npm run verify`).
+`src/verify/cases/shaders.verify.ts` compiles this shader for every
+registered behavior (`npm run verify`).
 
 ### One pass: simulate and rasterize together
 
@@ -158,9 +158,10 @@ Per-plane data sits in one uniform buffer addressed with dynamic offsets: one
 
 ```ts
 import { getBehavior } from './behaviors';
-import { PerfEngine, requestPerfDevice } from './perf';
+import { requestGpuDevice } from './gpu/context';
+import { PerfEngine } from './perf';
 
-const device = await requestPerfDevice();          // or any GPUDevice
+const device = await requestGpuDevice({ timestamps: true }); // or any GPUDevice
 const engine = new PerfEngine(device, { format }); // format of the target views
 engine.resize(canvas.width, canvas.height);
 engine.brightness = scene.render.brightness;

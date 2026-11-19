@@ -26,6 +26,10 @@ says "TIER 1 REACHED" when all of this holds:
 - **Sustained.** The count must pass three one-second windows in a row.
 - **Honest frame rate.** Frames are counted between two moments at which the
   GPU had finished all submitted work, so a queue backlog cannot inflate it.
+- **Counted on the GPU.** The kernels count the particles they actually process
+  (one atomic add per workgroup) and the readout shows that count. A tier needs
+  it to equal the reported count in every checked frame. A frame the browser
+  dropped counts zero, which refuses the tier for the rest of the run.
 
 Procedural mode (key `M`) is reported separately and never as a tier. Its
 particles have no stored state: position is a closed-form function of id and
@@ -33,7 +37,7 @@ time. That is how counts in the billions become possible in realtime, and the
 readout labels it as such.
 
 Press `C` to copy the result as JSON (count, fps, resolution, adapter, GPU
-time). That JSON is the number to report.
+time, GPU count and whether it matched). That JSON is the number to report.
 
 ## Measured so far
 
