@@ -126,7 +126,31 @@ export interface StatDef {
   title?: (value: number) => string;
 }
 
+export interface JobContext {
+  /** Aborted when the visitor cancels. Pass it on, or check signal.aborted between frames. */
+  signal: AbortSignal;
+  /** Report progress: fraction 0..1 for the bar (null hides it), and optional text for the line. */
+  progress(fraction: number | null, text?: string): void;
+}
+export interface JobSpec {
+  id: string;
+  /** Shown on the menu action and as the opening status line. */
+  label?: string;
+  /** Menu section, e.g. 'capture'. */
+  group?: string;
+  /** Resolve with a string to show it as the closing line. Throw to report a failure. */
+  run(job: JobContext): Promise<string | void> | string | void;
+}
+export interface JobHandle {
+  id: string;
+  /** Start it from code (same as pressing the menu action). */
+  start(): void;
+  cancel(): void;
+  remove(): void;
+}
+
 export interface HudEvents {
+  job: (id: string, running: boolean) => void;
   change: (id: string, value: ParamValue) => void;
   panel: (open: boolean) => void;
   stats: (on: boolean) => void;
@@ -148,6 +172,17 @@ export interface Hud {
 
   /** Show a centred message (loading, unsupported browser) until cleared with message(null). */
   message(text: string | null): void;
+
+  /** One quiet line at the bottom centre, in place of the die. holdMs fades it; status(null) clears it. */
+  status(text: string | null, holdMs?: number): void;
+  /**
+   * Add a menu action that launches a long-running job (offline render, export).
+   * One job at a time. Shows a progress line, turns the action into "cancel ...",
+   * and Escape with the menu closed cancels too. The dice is off while a job runs.
+   */
+  registerJob(spec: JobSpec): JobHandle;
+  /** True while a job is running. */
+  readonly busy: boolean;
 
   registerParam(spec: ParamSpec): ParamHandle;
   registerParams(specs: ParamSpec[]): ParamHandle[];
