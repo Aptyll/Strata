@@ -20,13 +20,18 @@ test("text levels meet WCAG AA on the void, and control outlines meet 3:1", () =
   assert.ok(strong > dim && dim > faint && faint > stroke && stroke > hair, "the levels must stay in order");
 });
 
-test("text stays readable on a panel with white-hot particles behind it", () => {
-  // Worst case: the canvas under the panel is pure white, so the backing is a grey of (1 - panel alpha).
-  const backing = 1 - DESIGN.surface.panel;
+test("text stays readable on a panel and on a sheet with white-hot particles behind them", () => {
+  // Worst case: the canvas underneath is pure white, so the backing is a grey of (1 - the black's alpha).
   const luminance = (s) => (s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
-  const text = DESIGN.alpha.faint + (1 - DESIGN.alpha.faint) * backing;
-  const ratio = (luminance(text) + 0.05) / (luminance(backing) + 0.05);
-  assert.ok(ratio >= 4.5, `faint text on the panel backing is ${ratio.toFixed(2)}:1`);
+  const ratio = (textAlpha, blackAlpha) => {
+    const backing = 1 - blackAlpha;
+    return (luminance(textAlpha + (1 - textAlpha) * backing) + 0.05) / (luminance(backing) + 0.05);
+  };
+  const onPanel = ratio(DESIGN.alpha.faint, DESIGN.surface.panel);
+  assert.ok(onPanel >= 4.5, `faint text on the panel backing is ${onPanel.toFixed(2)}:1`);
+  // A sheet lets more of the world through, so text on it is dim or stronger.
+  const onSheet = ratio(DESIGN.alpha.dim, DESIGN.surface.scrim);
+  assert.ok(onSheet >= 4.5, `dim text on the scrim is ${onSheet.toFixed(2)}:1`);
 });
 
 test("every color theme gives the accent marks at least 3:1 on the void", () => {

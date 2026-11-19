@@ -40,14 +40,18 @@ same rule to any focused control.
 
 ## Readability
 
-- Type scale: HUD base 11px, stats 12px, menu and keys sheet 13px. Size menu
-  text in `em` so it follows.
-- Text opacity inside the menu: labels 0.70 (about 9.9:1 on black), section
-  titles and footer 0.56 (about 6.5:1), values 0.90. Stats labels 0.62. The
+- Type sizes and text strengths come from the design tokens
+  (`docs/ux/design.md`), so they are the same in every piece of chrome: stats,
+  menu and keys sheet 13px, small print (fact labels, section titles, footer)
+  11px. Size menu spacing in `em` so it follows.
+- Text strength: values 0.90 (16.7:1 on black), labels 0.65 (8.6:1), small
+  print 0.48 (4.9:1, the floor for text). Control outlines 0.36 (3.1:1). The
   colour themes only remap the canvas and keep the void black, so these hold
-  for every theme. The menu backing is 0.9 black.
-- Stats and announce text get a faint dark halo so they stay legible over
-  dense, bright particles.
+  for every theme. The menu backing is 0.88 black, which keeps small print
+  above 4.5:1 even over white-hot particles; the keys sheet dims the world
+  with 0.8 black and uses labels or stronger. `npm test` checks these numbers.
+- Text with no panel behind it (stats, announce, status line) gets a dark halo
+  so it stays legible over dense, bright particles.
 - Targets are at least 24px tall (rows 28px).
 - Visible 2px focus ring on every control (`:focus-visible`, so mouse clicks
   do not draw it). Focused dot and die stay visible through the idle fade.
