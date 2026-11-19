@@ -11,7 +11,7 @@
 
 import { behaviors } from '../../behaviors';
 import type { Behavior, FrameContext, GpuContext, PlaneDesc, PlaneInstance } from '../../core/contracts';
-import { GLOBALS_SIZE, PLANE_UNIFORM_SIZE } from '../../gpu/shaderLib';
+import { GLOBALS_SIZE, packGlobals, packPlane, PLANE_UNIFORM_SIZE } from '../../gpu/shaderLib';
 import { mat4Identity } from '../../math';
 import { createAtomicRasterPass } from '../atomicRasterPass';
 import { PerfBudget } from '../budget';
@@ -305,18 +305,14 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
       ],
     });
-    const globals = new ArrayBuffer(GLOBALS_SIZE); // brushes stay zero: radius 0 means unused
-    const gf = new Float32Array(globals);
-    gf[0] = 0.9; gf[5] = 0.9; gf[14] = 0.5; gf[15] = 1; // sheet [-1, 1]^2 to NDC [-0.9, 0.9]
-    gf[19] = 0.25; // brightness
+    const globals = new DataView(new ArrayBuffer(GLOBALS_SIZE));
+    packGlobals(globals, 0, { viewProj: fitViewProj(), time: 0, dt: 0, frame: 0, brightness: 0.25 }); // no brushes
     const globalsBuffer = device.createBuffer({ size: GLOBALS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(globalsBuffer, 0, globals);
-    const planeData = new ArrayBuffer(PLANE_UNIFORM_SIZE);
-    new Float32Array(planeData).set(mat4Identity());
-    new Uint32Array(planeData)[24] = M / 2; // count: only half are active
-    new Float32Array(planeData)[26] = 1; // brightness
+    device.queue.writeBuffer(globalsBuffer, 0, globals.buffer);
+    const planeData = new DataView(new ArrayBuffer(PLANE_UNIFORM_SIZE));
+    packPlane(planeData, 0, { model: mat4Identity(), params: [], count: M / 2, seed: 0, brightness: 1 }); // only half are active
     const planeUniform = device.createBuffer({ size: PLANE_UNIFORM_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(planeUniform, 0, planeData);
+    device.queue.writeBuffer(planeUniform, 0, planeData.buffer);
     const pd = new Float32Array(M * 4);
     for (let i = 0; i < M; i++) {
       pd[i * 4] = Math.random() * 2 - 1;

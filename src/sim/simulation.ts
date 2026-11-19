@@ -13,13 +13,11 @@ import { compileComputePipeline } from "../gpu/context";
 import {
   buildSimShader,
   dispatchSize,
-  paramSlotNames,
+  packPlane,
   PARTICLE_STRIDE,
-  PLANE_BRIGHTNESS_OFFSET,
   PLANE_COUNT_OFFSET,
-  PLANE_PARAMS_OFFSET,
-  PLANE_SEED_OFFSET,
   PLANE_UNIFORM_SIZE,
+  planeParamValues,
 } from "../gpu/shaderLib";
 import { planeModelMatrix, seededRandom } from "../math";
 
@@ -43,6 +41,8 @@ export class Simulation implements Pass, PlaneHost {
   private pipelines = new Map<string, GPUComputePipeline>();
   private pipelineLayout: GPUPipelineLayout;
   private countScratch = new Uint32Array(1);
+  /** One Plane uniform, packed on the CPU. writeBuffer copies it at call time, so it is reused. */
+  private planeBlock = new DataView(new ArrayBuffer(PLANE_UNIFORM_SIZE));
 
   constructor(private gpu: GpuContext) {
     this.pipelineLayout = gpu.device.createPipelineLayout({
@@ -135,16 +135,14 @@ export class Simulation implements Pass, PlaneHost {
   updatePlane(instance: PlaneInstance): void {
     const plane = instance as PlaneGpu;
     const { desc, behavior } = plane;
-    const buf = new ArrayBuffer(PLANE_UNIFORM_SIZE);
-    const f32 = new Float32Array(buf);
-    planeModelMatrix(desc, f32);
-    paramSlotNames(behavior).forEach((name, i) => {
-      f32[PLANE_PARAMS_OFFSET / 4 + i] = desc.params?.[name] ?? behavior.params[name]?.default ?? 0;
+    packPlane(this.planeBlock, 0, {
+      model: planeModelMatrix(desc),
+      params: planeParamValues(behavior, desc.params),
+      count: plane.activeCount,
+      seed: desc.seed,
+      brightness: desc.brightness ?? 1,
     });
-    new Uint32Array(buf)[PLANE_COUNT_OFFSET / 4] = plane.activeCount;
-    f32[PLANE_SEED_OFFSET / 4] = desc.seed;
-    f32[PLANE_BRIGHTNESS_OFFSET / 4] = desc.brightness ?? 1;
-    this.gpu.device.queue.writeBuffer(plane.uniform, 0, buf);
+    this.gpu.device.queue.writeBuffer(plane.uniform, 0, this.planeBlock.buffer);
     plane.uploadedCount = plane.activeCount;
   }
 

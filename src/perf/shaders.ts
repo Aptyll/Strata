@@ -7,9 +7,9 @@
  *
  * Each active plane gets one uniform slot of SLOT_STRIDE bytes: three blocks,
  * each on the 256-byte dynamic offset alignment, bound with dynamic offsets.
- *   +0    Globals  the engine's layout exactly (src/gpu/shaderLib.ts)
- *   +256  Plane    the engine's layout exactly
- *   +512  Perf     this path's own block, `struct Perf` below
+ *   +0    Globals  the engine's layout exactly, written by packGlobals (src/gpu/shaderLib.ts)
+ *   +256  Plane    the engine's layout exactly, written by packPlane
+ *   +512  Perf     this path's own block, `struct Perf` below, written by packPerf
  *
  * Bind group 0, one per particle page (ParticlePool in ./particlePool.ts):
  *   0 Globals   1 Plane   2 Perf   3 the page's packed particles   4 atomic framebuffer
@@ -79,6 +79,39 @@ struct Packed {
 @group(0) @binding(2) var<uniform> perf: Perf;
 @group(0) @binding(3) var<storage, read_write> perfStore: array<Packed>;
 `;
+
+/** The values of one `struct Perf` block. */
+export interface PerfValues {
+  /** viewProj * plane model, column-major. */
+  mvp: ArrayLike<number>;
+  /** First particle of the plane inside its page. */
+  base: number;
+  /** Particles to rasterize (the LOD prefix). */
+  drawCount: number;
+  /** Particles to simulate. */
+  simCount: number;
+  /** Fixed-point light per drawn particle (LIGHT_ONE = 1.0). INIT_WGSL reads the plane's u32 seed here instead. */
+  weight: number;
+  /** FLAG_SIM | FLAG_DRAW | FLAG_BILINEAR. */
+  flags: number;
+  fbWidth: number;
+  fbHeight: number;
+  /** Speed that maps to snorm 1.0. */
+  velMax: number;
+}
+
+/** Writes one Perf block (PERF_BLOCK_SIZE bytes, offsets as in `struct Perf`) at `byteOffset` of `out`. */
+export function packPerf(out: DataView, byteOffset: number, v: PerfValues): void {
+  for (let k = 0; k < 16; k++) out.setFloat32(byteOffset + 4 * k, v.mvp[k], true);
+  out.setUint32(byteOffset + 64, v.base, true);
+  out.setUint32(byteOffset + 68, v.drawCount, true);
+  out.setUint32(byteOffset + 72, v.simCount, true);
+  out.setUint32(byteOffset + 76, v.weight, true);
+  out.setUint32(byteOffset + 80, v.flags, true);
+  out.setUint32(byteOffset + 84, v.fbWidth, true);
+  out.setUint32(byteOffset + 88, v.fbHeight, true);
+  out.setFloat32(byteOffset + 92, v.velMax, true);
+}
 
 /** Packing between `Packed` and the engine's `Particle`. Needs `pcg` and `u01` in scope. */
 const PACK_FNS = /* wgsl */ `
@@ -172,7 +205,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 /**
  * Default seeding on the GPU, matching the engine's default: uniform random
  * positions, at rest, so 50M particles never cross the CPU. Perf.weight
- * carries the plane's u32 seed (see writeSlot in ./engine.ts).
+ * carries the plane's u32 seed (see seedOnGpu in ./engine.ts).
  */
 export const INIT_WGSL = /* wgsl */ `
 ${PERF_DECLS}

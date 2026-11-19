@@ -6,7 +6,9 @@ import { defineBehavior } from "./define";
  */
 export default defineBehavior({
   id: "galaxy",
-  label: "Gravity wells",
+  // Not "Gravity wells": that name belongs to gravity-wells.behavior.ts, and menus group by label.
+  label: "Galaxy",
+  description: "Three wandering gravity wells pull particles in, sling them around and smear them into spiral arms.",
   params: {
     gravity: { default: 0.06, min: 0, max: 0.5 },
     // softening radius squared, avoids infinite forces

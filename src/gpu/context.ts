@@ -8,9 +8,8 @@
  */
 
 import type { GpuContext } from "../core/contracts";
-import { BRUSH_FLOATS, MAX_BRUSHES } from "../core/contracts";
-import { GLOBALS_BRUSHES_OFFSET, GLOBALS_SIZE } from "./shaderLib";
 import { adapterOptions } from "./adapter-options";
+import { GLOBALS_SIZE, packGlobals, type GlobalsValues } from "./shaderLib";
 
 export const HDR_FORMAT: GPUTextureFormat = "rgba16float";
 
@@ -104,35 +103,11 @@ export function compileComputePipeline(
   return device.createComputePipeline({ label, layout, compute: { module, entryPoint: "main" } });
 }
 
-export interface FrameGlobals {
-  viewProj: Float32Array;
-  time: number;
-  dt: number;
-  frame: number;
-  brightness: number;
-  /**
-   * Packed pointer brushes: MAX_BRUSHES x BRUSH_FLOATS floats, laid out as
-   * Brush in src/core/contracts.ts. Omit for no pointer forces.
-   */
-  brushes?: Float32Array;
-}
+/** One Globals uniform, packed on the CPU. writeBuffer copies it at call time, so it is reused. */
+const globalsBlock = new DataView(new ArrayBuffer(GLOBALS_SIZE));
 
-const scratch = new ArrayBuffer(GLOBALS_SIZE);
-const scratchF32 = new Float32Array(scratch);
-const scratchU32 = new Uint32Array(scratch);
-
-export function writeGlobals(gpu: GpuContext, g: FrameGlobals): void {
-  scratchF32.set(g.viewProj, 0);
-  scratchF32[16] = g.time;
-  scratchF32[17] = g.dt;
-  scratchU32[18] = g.frame;
-  scratchF32[19] = g.brightness;
-  const base = GLOBALS_BRUSHES_OFFSET / 4;
-  if (g.brushes) {
-    scratchF32.set(g.brushes.subarray(0, MAX_BRUSHES * BRUSH_FLOATS), base);
-  } else {
-    scratchF32.fill(0, base, base + MAX_BRUSHES * BRUSH_FLOATS);
-    for (let k = 0; k < MAX_BRUSHES; k++) scratchF32[base + k * BRUSH_FLOATS + 6] = -1;
-  }
-  gpu.device.queue.writeBuffer(gpu.globalsBuffer, 0, scratch);
+/** Uploads one frame's Globals uniform (layout and packGlobals in ./shaderLib.ts). */
+export function writeGlobals(gpu: GpuContext, g: GlobalsValues): void {
+  packGlobals(globalsBlock, 0, g);
+  gpu.device.queue.writeBuffer(gpu.globalsBuffer, 0, globalsBlock.buffer);
 }

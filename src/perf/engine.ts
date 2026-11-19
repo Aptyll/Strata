@@ -17,15 +17,7 @@
 
 import { BRUSH_FLOATS, MAX_BRUSHES, type Behavior, type PlaneDesc } from '../core/contracts';
 import { compileComputePipeline } from '../gpu/context';
-import {
-  dispatchSize,
-  GLOBALS_BRUSHES_OFFSET,
-  paramSlotNames,
-  PLANE_BRIGHTNESS_OFFSET,
-  PLANE_COUNT_OFFSET,
-  PLANE_PARAMS_OFFSET,
-  PLANE_SEED_OFFSET,
-} from '../gpu/shaderLib';
+import { dispatchSize, packGlobals, packPlane, planeParamValues, type GlobalsValues } from '../gpu/shaderLib';
 import { mat4Multiply, planeModelMatrix, seededRandom } from '../math';
 import { classifyPlane, DEFAULT_LOD, type LodSettings, type PlaneClass } from './culling';
 import { GpuTimer } from './gpuTimer';
@@ -40,6 +32,7 @@ import {
   GLOBALS_BLOCK_SIZE,
   INIT_WGSL,
   LIGHT_ONE,
+  packPerf,
   PERF_BLOCK_SIZE,
   PLANE_BLOCK_SIZE,
   RESOLVE_WGSL,
@@ -151,10 +144,10 @@ export class PerfEngine {
   private readonly timer: GpuTimer;
   private readonly clearTarget: boolean;
 
+  /** One SLOT_STRIDE slot per dispatched plane (see ./shaders.ts), packed on the CPU into uniformData. */
   private uniformBuffer!: GPUBuffer;
   private uniformData!: ArrayBuffer;
-  private uniformF32!: Float32Array;
-  private uniformU32!: Uint32Array;
+  private uniformView!: DataView;
   private uniformSlots = 0;
 
   private fb!: GPUBuffer;
@@ -351,6 +344,15 @@ export class PerfEngine {
     let drawn = 0;
     let simulated = 0;
     const baseFlags = this.bilinear ? FLAG_BILINEAR : 0;
+    // Every slot's Globals block holds these values; only dt differs per plane.
+    const globals: GlobalsValues = {
+      viewProj: p.viewProj,
+      time: p.time,
+      dt: 0,
+      frame,
+      brightness: this.brightness,
+      brushes: this.brushes,
+    };
 
     for (const plane of this.planes.values()) {
       plane.pendingDt += p.dt;
@@ -378,7 +380,30 @@ export class PerfEngine {
       const weight = drawCount > 0 ? Math.max(1, Math.round((LIGHT_ONE * planeBrightness * plane.count) / drawCount)) : 0;
       const flags = baseFlags | (doSim ? FLAG_SIM : 0) | (drawCount > 0 ? FLAG_DRAW : 0);
       const processed = Math.max(drawCount, simCount);
-      this.writeSlot(active.length, plane, p.viewProj, this.mvp, dt, p.time, frame, simCount, drawCount, weight, flags, processed);
+
+      // This dispatch's uniform slot: the engine's Globals and Plane blocks
+      // (src/gpu/shaderLib.ts), then this path's Perf block (./shaders.ts).
+      const at = active.length * SLOT_STRIDE;
+      globals.dt = dt; // a plane on a rate-LOD interval steps the time since its own last step
+      packGlobals(this.uniformView, at, globals);
+      packPlane(this.uniformView, at + BLOCK_ALIGN, {
+        model: plane.model,
+        params: plane.params,
+        count: processed,
+        seed: plane.desc.seed,
+        brightness: planeBrightness,
+      });
+      packPerf(this.uniformView, at + 2 * BLOCK_ALIGN, {
+        mvp: this.mvp,
+        base: plane.base,
+        drawCount,
+        simCount,
+        weight,
+        flags,
+        fbWidth: this.width,
+        fbHeight: this.height,
+        velMax: plane.velMax,
+      });
       active.push(plane);
       counts.push(processed);
       drawn += drawCount;
@@ -473,9 +498,7 @@ export class PerfEngine {
   private applyDesc(plane: PlaneRec): void {
     const d = plane.desc;
     planeModelMatrix(d, plane.model);
-    paramSlotNames(plane.behavior).forEach((name, i) => {
-      plane.params[i] = d.params?.[name] ?? plane.behavior.params[name]?.default ?? 0;
-    });
+    planeParamValues(plane.behavior, d.params, plane.params);
   }
 
   private pipelineFor(behavior: Behavior): GPUComputePipeline {
@@ -489,9 +512,19 @@ export class PerfEngine {
 
   /** Default seeding: uniform random at rest, entirely on the GPU. */
   private seedOnGpu(plane: PlaneRec): void {
-    const seed = Math.floor(plane.desc.seed * 0xffffffff) >>> 0;
+    // INIT_WGSL reads only the Perf block: base, simCount, and the plane's u32 seed carried in weight.
+    packPerf(this.uniformView, 2 * BLOCK_ALIGN, {
+      mvp: this.mvp, // unused by INIT_WGSL
+      base: plane.base,
+      drawCount: 0,
+      simCount: plane.count,
+      weight: Math.floor(plane.desc.seed * 0xffffffff) >>> 0,
+      flags: 0,
+      fbWidth: this.width,
+      fbHeight: this.height,
+      velMax: plane.velMax,
+    });
     // One submit per plane keeps slot 0 valid for each dispatch.
-    this.writeSlot(0, plane, null, null, 0, 0, 0, plane.count, 0, seed, 0, plane.count);
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData, 0, SLOT_STRIDE);
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginComputePass();
@@ -526,8 +559,7 @@ export class PerfEngine {
     this.uniformBuffer?.destroy();
     this.uniformSlots = cap;
     this.uniformData = new ArrayBuffer(cap * SLOT_STRIDE);
-    this.uniformF32 = new Float32Array(this.uniformData);
-    this.uniformU32 = new Uint32Array(this.uniformData);
+    this.uniformView = new DataView(this.uniformData);
     this.uniformBuffer = this.device.createBuffer({
       label: 'strata-perf plane uniforms',
       size: cap * SLOT_STRIDE,
@@ -553,53 +585,5 @@ export class PerfEngine {
       this.pageBindGroups[page] = bg;
     }
     return bg;
-  }
-
-  /**
-   * Fills one slot: Globals and Plane blocks laid out like the core engine's
-   * (src/gpu/shaderLib.ts), then this path's Perf block (see shaders.ts).
-   */
-  private writeSlot(
-    slot: number,
-    plane: PlaneRec,
-    viewProj: ArrayLike<number> | null,
-    mvp: Float32Array | null,
-    dt: number,
-    time: number,
-    frame: number,
-    simCount: number,
-    drawCount: number,
-    weight: number,
-    flags: number,
-    processed: number,
-  ): void {
-    const f = this.uniformF32;
-    const u = this.uniformU32;
-    // Globals
-    let o = (slot * SLOT_STRIDE) >> 2;
-    if (viewProj) f.set(viewProj, o);
-    f[o + 16] = time;
-    f[o + 17] = dt;
-    u[o + 18] = frame;
-    f[o + 19] = this.brightness;
-    f.set(this.brushes, o + (GLOBALS_BRUSHES_OFFSET >> 2));
-    // Plane
-    o += BLOCK_ALIGN >> 2;
-    f.set(plane.model, o);
-    f.set(plane.params, o + (PLANE_PARAMS_OFFSET >> 2));
-    u[o + (PLANE_COUNT_OFFSET >> 2)] = processed;
-    f[o + (PLANE_SEED_OFFSET >> 2)] = plane.desc.seed;
-    f[o + (PLANE_BRIGHTNESS_OFFSET >> 2)] = plane.desc.brightness ?? 1;
-    // Perf
-    o += BLOCK_ALIGN >> 2;
-    if (mvp) f.set(mvp, o);
-    u[o + 16] = plane.base;
-    u[o + 17] = drawCount;
-    u[o + 18] = simCount;
-    u[o + 19] = weight;
-    u[o + 20] = flags;
-    u[o + 21] = this.width;
-    u[o + 22] = this.height;
-    f[o + 23] = plane.velMax;
   }
 }

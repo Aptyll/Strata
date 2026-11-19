@@ -1,6 +1,6 @@
 # V01: sheets seen edge-on collapse into saturated needles
 
-Severity: medium, and a **look decision for Noah** (see "Decision" below). It looks like a bug in stills, and it crawls on camera motion.
+Status: **decided, no change.** Noah chose "Keep them bright (true density)" on a decision card (2026-11-19 01:59 UTC). Handle needles with camera framing, not code. The rest of this brief is kept as the record of the option.
 Affects: every renderer (app, Challenge, 1T).
 Lines are as of main `793eefc`.
 
@@ -35,9 +35,11 @@ No renderer has a view-angle term. Each one weights a hit by brightness, and at 
 
 ## Decision
 
-This is a look choice, not a bug fix. An edge-on sheet really does put more particles on each pixel, so the needle is true density, and the project's rule is that density reads as brightness. Capping it trades some of that for a calmer image (the challenge and perf review thread raised this). Until Noah chooses, keep true density, with no change. The fix below is for when he chooses a cap.
+This is a look choice, not a bug fix. An edge-on sheet really does put more particles on each pixel, so the needle is true density, and the project's rule is that density reads as brightness. Capping it trades some of that for a calmer image (the challenge and perf review thread raised this).
 
-## Proposed fix (if Noah chooses a cap)
+**Noah's answer (2026-11-19 01:59 UTC): keep them bright, as true density.** Do not add an angle gain to any renderer. For video shots, choose camera angles where no near sheet is edge-on, as the cinematography plan already does.
+
+## The option that was not chosen: a per-sheet cap
 
 Multiply each sheet's weight by an angle gain, computed once per sheet per frame on the CPU:
 
