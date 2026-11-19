@@ -173,14 +173,22 @@ for (const law of LAWS) {
   const out = await renderOnce(job, {}, frame);
   // Reference: same hash and law in doubles, same projection, point splat.
   const ref = new Float64Array(job.width * job.height);
-  const cam = cameraBasis(new CameraPath(/** @type {any} */ (job.camera)).atFrame(frame, job.frames));
+  const path = new CameraPath(/** @type {any} */ (job.camera));
+  const cam = cameraBasis(path.atFrame(frame, job.frames));
+  // Camera motion blur: the pose moves with each particle's shutter instant.
+  const shutterSpan = job.shutter / (job.frames - 1);
+  const tMid = frame / (job.frames - 1);
   const plane = job.planes[0];
-  const h = planeHomography(cam, /** @type {any} */ (plane), job.width, job.height);
+  const h0 = planeHomography(cam, /** @type {any} */ (plane), job.width, job.height);
+  const ho = planeHomography(cameraBasis(path.at(tMid - shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
+  const hc = planeHomography(cameraBasis(path.at(tMid + shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
   const time = job.timeOffset + (frame / job.fps) * job.timeScale;
   const span = (job.shutter / job.fps) * job.timeScale;
   for (let i = 0; i < plane.particleCount; i++) {
     const key = particleKey(i, plane.seed);
-    const t = time + span * (u01(draw(key, 6)) - 0.5);
+    const s = u01(draw(key, 6)) - 0.5;
+    const t = time + span * s;
+    const h = h0.map((v, i) => v + s * (hc[i] - ho[i]));
     const [x, y] = lawPosition(law, key, t, plane.params);
     const depth = h[2] * x + h[5] * y + h[8];
     if (!(depth > job.near)) continue;
