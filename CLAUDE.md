@@ -137,3 +137,7 @@ a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
 - **Re-fetch main right before merging.** Many threads merge per hour.
+- **CI is a safety net, not a gate.** `.github/workflows/ci.yml` builds and runs
+  the light tests on every PR and on every push to main. It never blocks a
+  merge. A red X on a `main` commit means that merge broke the build: fix it
+  first with a small `fix/` PR.
