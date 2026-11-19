@@ -1,11 +1,13 @@
 // Standalone page for the trillion kernel: renders one frame progressively
 // and shows the exact tally. URL: ?n=1e12&planes=256&w=1920&h=1080&offscreen
+// Laws: default stand-ins, ?offline (src/offline laws), ?strat (the same
+// laws on the stratified fast path).
 //
 // window.__trillion.selftest() checks that the counter sum equals the landed
 // tally and that two different batch sizes give bit-identical counts.
 
 import { CountToneMapper } from '../../render';
-import { TrillionKernel, planeHomography, renderFrame, trillionLimits, STANDIN_LAWS, OFFLINE_LAWS, type TrillionPlane } from '..';
+import { TrillionKernel, planeHomography, renderFrame, trillionLimits, STANDIN_LAWS, OFFLINE_LAWS, STRATIFIED_OFFLINE_LAWS, type TrillionPlane } from '..';
 
 const q = new URLSearchParams(location.search);
 const N = Number(q.get('n') ?? 1e10);
@@ -38,6 +40,13 @@ function lookAt(eye: number[], target: number[]): Float32Array {
   return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1]);
 }
 
+/** Mid-range params per law (offline laws: see src/offline/core/world.ts). */
+const PARAMS: Record<string, number[]> = {
+  kepler: [0.25, 3, 0.05, 1.2, 0.035, 0.2, 0.03, 0],
+  vortex: [12, 0.6, 0.3, 0.25, 0.7, 0, 0, 0],
+  lissajous: [3, 2, 8, 0.03, 0.25, 0.2, 0.25, 0.92],
+};
+
 /** A field of tilted sheets, deterministic. */
 function scene(width: number, height: number, n: number, planes: number, laws: string[]): TrillionPlane[] {
   const vp = mul(perspective(0.9, width / height, 0.05, 200), lookAt([0, 2.5, 9], [0, 0, 0]));
@@ -51,7 +60,8 @@ function scene(width: number, height: number, n: number, planes: number, laws: s
     const c = Math.cos(tilt), sn = Math.sin(tilt);
     // sheet x -> world x, sheet y -> tilted toward the camera
     const model = new Float32Array([s, 0, 0, 0, 0, s * c, -s * sn, 0, 0, sn, c, 0, r * Math.cos(a), 0.6 * Math.sin(i * 1.3), r * Math.sin(a) - 2, 1]);
-    out.push({ law: laws[i % laws.length], count, seed: (i * 2654435761) >>> 0, params: [0.6, 0.15], homography: planeHomography(vp, model, width, height) });
+    const law = laws[i % laws.length];
+    out.push({ law, count, seed: (i * 2654435761) >>> 0, params: PARAMS[law] ?? [0.6, 0.15], homography: planeHomography(vp, model, width, height) });
   }
   return out;
 }
@@ -71,7 +81,7 @@ async function main(): Promise<void> {
   const ctx = offscreen ? null : canvas.getContext('webgpu')!;
   ctx?.configure({ device, format, alphaMode: 'opaque' });
 
-  const LAWS = q.has('offline') ? OFFLINE_LAWS : STANDIN_LAWS;
+  const LAWS = q.has('strat') ? STRATIFIED_OFFLINE_LAWS : q.has('offline') ? OFFLINE_LAWS : STANDIN_LAWS;
   const kernel = await TrillionKernel.create(device, { width, height, laws: LAWS });
   const mapper = new CountToneMapper(device, { format, words: 2 });
   mapper.resize(width, height);
@@ -97,6 +107,7 @@ async function main(): Promise<void> {
     `${N.toExponential(3)} particles, ${planes.length} planes, ${width}x${height}, tile ${kernel.tileBins} counters`,
     `evaluated ${tally.evaluated.toExponential(4)}   culled ${tally.culled.toExponential(4)}`,
     `in view   ${tally.inView.toExponential(4)}   landed ${tally.landed.toExponential(4)}`,
+    tally.patches ? `strata patches ${tally.patches}, ${((100 * tally.tiledPatches) / tally.patches).toFixed(1)}% on a shared memory tile` : 'plain path (no strata patches)',
     `${secs.toFixed(2)} s, ${(tally.evaluated / secs / 1e9).toFixed(2)} B particles/s`,
   ].join('\n');
 

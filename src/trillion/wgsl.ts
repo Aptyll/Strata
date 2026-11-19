@@ -40,23 +40,35 @@ struct Batch {
   shutter: f32,     // seconds of exposure; 0 = no motion blur
   _pad2: vec2f,
   tile: vec4i,      // shared memory window: x0, y0, w, h (w * h <= TILE_BINS); w = 0: none
+  strata0: vec4u,   // strata: first patch of this dispatch, base particles per patch, remainder, gu
+  strata1: vec4u,   // strata: gv, _, _, _
 };
 `;
 
 /**
- * The splat module for one law. Two entry points:
+ * The splat module for one law. Three entry points:
  *   direct  every hit is a global atomicAdd (no workgroup memory)
  *   tiled   hits inside `tile` go to workgroup memory first, flushed once
+ *   strata  one workgroup per patch of stratified ids; the tile is placed per
+ *           workgroup from a sample of the patch, runs merge in registers
  */
 export function splatWgsl(law: { fn: string; wgsl: string }, tileBins: number, prelude = LAW_PRELUDE): string {
   return /* wgsl */ `
 ${prelude}
+// The particle's stratified coordinate in [0, 1)^2. In the strata entry
+// point neighbouring ids get neighbouring coordinates (a jittered grid over
+// the plane's ids), so a workgroup's particles land close together. In the
+// other entry points it is (u01(key.x), u01(key.y)): same distribution, no
+// coherence. Laws that use it for their main two coordinates get the fast path.
+var<private> SQ: vec2f;
+fn strat(key: Key) -> vec2f { return SQ; }
 ${law.wgsl}
 ${BATCH_STRUCT}
 @group(0) @binding(0) var<uniform> B: Batch;
 @group(0) @binding(1) var<storage, read_write> acc: array<atomic<u32>>;
-// [0] landed lo, [1] landed hi, [2] in view lo, [3] in view hi
-@group(0) @binding(2) var<storage, read_write> tally: array<atomic<u32>, 4>;
+// [0] landed lo, [1] landed hi, [2] in view lo, [3] in view hi,
+// [4] strata patches run, [5] strata patches that found a tile
+@group(0) @binding(2) var<storage, read_write> tally: array<atomic<u32>, 8>;
 
 const TILE_BINS: u32 = ${tileBins}u;
 var<workgroup> bins: array<atomic<u32>, TILE_BINS>;
@@ -119,6 +131,7 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
     if (off >= B.count) { break; }
     let key = particleKey(B.start + off, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
+    SQ = vec2f(u01(key.x), u01(key.y));
     let px = project(key, jr, p);
     if (px.x < 0) { continue; }
     inView += 1u;
@@ -152,6 +165,7 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
     if (off >= B.count) { break; }
     let key = particleKey(B.start + off, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
+    SQ = vec2f(u01(key.x), u01(key.y));
     let px = project(key, jr, p);
     if (px.x < 0) { continue; }
     inView += 1u;
@@ -175,6 +189,154 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
       let x = u32(tile.x) + b % tw;
       let y = u32(tile.y) + b / tw;
       atomicAdd(&acc[y * B.width + x], v);
+    }
+  }
+  if (lid == 0u) {
+    add64(0u, atomicLoad(&wgLanded));
+    add64(2u, atomicLoad(&wgInView));
+  }
+}
+
+// ---- strata: one workgroup per patch of a jittered grid over the plane's ids.
+var<workgroup> sNX0: atomic<u32>;   // max of ~x, i.e. min x
+var<workgroup> sNY0: atomic<u32>;
+var<workgroup> sX1: atomic<u32>;    // max of x + 1; 0 when no sample landed
+var<workgroup> sY1: atomic<u32>;
+
+fn flushRun(pk: u32, n: u32, tile: vec4i) {
+  if (n == 0u) { return; }
+  let x = pk & 0xffffu;
+  let y = pk >> 16u;
+  let lx = x - u32(tile.x);
+  let ly = y - u32(tile.y);
+  if (lx < u32(tile.z) && ly < u32(tile.w)) {
+    atomicAdd(&bins[ly * u32(tile.z) + lx], n);
+  } else {
+    atomicAdd(&acc[y * B.width + x], n);
+  }
+}
+
+struct Row { first: u32, len: u32, rows: u32, cu: u32, cv: u32 };
+
+// Ids of this thread's row in patch c: [first, first + len).
+fn patchRow(c: u32, lid: u32) -> Row {
+  let base = B.strata0.y;
+  let rem = B.strata0.z;
+  let n = base + select(0u, 1u, c < rem);
+  let start = c * base + min(c, rem);
+  let rows = min(${WORKGROUP}u, n);
+  let m = n / rows;
+  let mr = n % rows;
+  var r: Row;
+  r.rows = rows;
+  r.len = select(0u, m + select(0u, 1u, lid < mr), lid < rows);
+  r.first = start + lid * m + min(lid, mr);
+  r.cu = c % B.strata0.w;
+  r.cv = c / B.strata0.w;
+  return r;
+}
+
+fn stratQ(r: Row, lid: u32, j: u32, key: Key) -> vec2f {
+  let gu = f32(B.strata0.w);
+  let gv = f32(B.strata1.x);
+  return vec2f(
+    (f32(r.cu) + (f32(j) + u01(key.x)) / f32(r.len)) / gu,
+    (f32(r.cv) + (f32(lid) + u01(key.y)) / f32(r.rows)) / gv);
+}
+
+fn samplePixel(r: Row, lid: u32, j: u32, p: array<f32, 8>) -> vec2i {
+  let key = particleKey(r.first + j, B.seed);
+  SQ = stratQ(r, lid, j, key);
+  return project(key, pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt), p);
+}
+
+@compute @workgroup_size(${WORKGROUP})
+fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid: u32) {
+  let wgIndex = wg.x + wg.y * B.gridX;
+  if (wgIndex >= B.groups) { return; }
+  let p = params();
+  let r = patchRow(B.strata0.x + wgIndex, lid);
+
+  // 1. Footprint of the patch from its two u edges (first and last id of every row).
+  var lo = vec2u(0xffffffffu);
+  var hi = vec2u(0u);
+  if (r.len > 0u) {
+    let a = samplePixel(r, lid, 0u, p);
+    let b = samplePixel(r, lid, r.len - 1u, p);
+    if (a.x >= 0) { lo = min(lo, vec2u(a)); hi = max(hi, vec2u(a) + 1u); }
+    if (b.x >= 0) { lo = min(lo, vec2u(b)); hi = max(hi, vec2u(b) + 1u); }
+  }
+  if (hi.x > 0u) {
+    atomicMax(&sNX0, ~lo.x);
+    atomicMax(&sNY0, ~lo.y);
+    atomicMax(&sX1, hi.x);
+    atomicMax(&sY1, hi.y);
+  }
+  workgroupBarrier();
+  var tile = vec4i(0);
+  let x1 = atomicLoad(&sX1);
+  let y1 = atomicLoad(&sY1);
+  if (x1 > 0u) {
+    let x0 = ~atomicLoad(&sNX0);
+    let y0 = ~atomicLoad(&sNY0);
+    // A quarter of the sampled extent as margin for the patch interior.
+    let mx = (x1 - x0) / 4u + 2u;
+    let my = (y1 - y0) / 4u + 2u;
+    var ax = max(i32(x0) - i32(mx), 0);
+    var ay = max(i32(y0) - i32(my), 0);
+    var bx = min(i32(x1 + mx), i32(B.width));
+    var by = min(i32(y1 + my), i32(B.height));
+    if (u32((bx - ax) * (by - ay)) > TILE_BINS) {
+      ax = max(i32(x0) - 2, 0);
+      ay = max(i32(y0) - 2, 0);
+      bx = min(i32(x1) + 2, i32(B.width));
+      by = min(i32(y1) + 2, i32(B.height));
+    }
+    if (bx > ax && by > ay && u32((bx - ax) * (by - ay)) <= TILE_BINS) {
+      tile = vec4i(ax, ay, bx - ax, by - ay);
+    }
+  }
+
+  // 2. Walk the row. Consecutive ids are neighbours on the grid, so runs of
+  // hits on one pixel are merged in registers before any atomic.
+  var landed = 0u;
+  var inView = 0u;
+  var runPix = 0xffffffffu;
+  var runN = 0u;
+  for (var j = 0u; j < r.len; j++) {
+    let id = r.first + j;
+    if (id - B.start >= B.count) { continue; }   // outside this batch
+    let key = particleKey(id, B.seed);
+    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
+    SQ = stratQ(r, lid, j, key);
+    let px = project(key, jr, p);
+    if (px.x < 0) { continue; }
+    inView += 1u;
+    if (!kept(jr)) { continue; }
+    landed += 1u;
+    let pk = (u32(px.y) << 16u) | u32(px.x);
+    if (pk == runPix) {
+      runN += 1u;
+    } else {
+      flushRun(runPix, runN, tile);
+      runPix = pk;
+      runN = 1u;
+    }
+  }
+  flushRun(runPix, runN, tile);
+  atomicAdd(&wgLanded, landed);
+  atomicAdd(&wgInView, inView);
+  workgroupBarrier();
+  if (lid == 0u) {
+    atomicAdd(&tally[4], 1u);
+    atomicAdd(&tally[5], select(0u, 1u, tile.z > 0));
+  }
+  let tw = u32(tile.z);
+  let area = tw * u32(tile.w);
+  for (var b = lid; b < area; b += ${WORKGROUP}u) {
+    let v = atomicLoad(&bins[b]);
+    if (v != 0u) {
+      atomicAdd(&acc[(u32(tile.y) + b / tw) * B.width + u32(tile.x) + b % tw], v);
     }
   }
   if (lid == 0u) {
