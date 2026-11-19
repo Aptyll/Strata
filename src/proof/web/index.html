@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Strata proof shots</title>
+<style>
+  body { margin: 0; background: #000; color: #ddd; font: 13px/1.5 ui-monospace, monospace; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px; }
+  label { display: block; margin: 6px 0; }
+  input, select, button { width: 100%; box-sizing: border-box; background: #111; color: #eee; border: 1px solid #333; padding: 4px; font: inherit; }
+  button { margin-top: 6px; cursor: pointer; }
+  canvas { width: 100%; height: auto; background: #000; border: 1px solid #222; }
+  pre { white-space: pre-wrap; color: #aaa; }
+  @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <label>shot <select id="shot">
+      <option value="countUp">count-up: 1 to all, one frozen frame</option>
+      <option value="pullBack">pull-back: one particle to all</option>
+      <option value="loupe">loupe: one dice-chosen pixel</option>
+      <option value="dive">dive: whole world to a few dots</option>
+      <option value="find">find particle #N</option>
+    </select></label>
+    <label>particles <input id="particles" value="1000000000000" /></label>
+    <label>width <input id="width" value="3840" /></label>
+    <label>height <input id="height" value="2160" /></label>
+    <label>fps <input id="fps" value="30" /></label>
+    <label>world seed <input id="seed" value="1" /></label>
+    <label>dice (loupe pixel) <input id="dice" value="6" /></label>
+    <label>find index <input id="find" value="999999999999" /></label>
+    <label>pull-back seconds <input id="pull" value="10" /></label>
+    <button id="folder">choose folder</button>
+    <button id="render">render</button>
+    <button id="stop" disabled>stop</button>
+    <button id="export">export mp4</button>
+    <pre id="status">Every on-screen number is read from the GPU counters. Particles are rendered, not simulated.</pre>
+  </section>
+  <canvas id="view" width="1280" height="720"></canvas>
+</main>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
