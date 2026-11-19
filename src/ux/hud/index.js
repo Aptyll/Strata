@@ -20,7 +20,7 @@ export { formatCount, formatExact, formatValue, formatTime };
  * @property {HTMLElement} [parent]       Element to overlay. Default document.body.
  * @property {number}  [idleMs=2500]      Fade out after this long without input. 0 disables.
  * @property {boolean} [hideCursor=true]  Hide the mouse cursor over the parent while idle.
- * @property {HudTokens} [tokens]         Pass TOKENS from src/core/contracts.ts so the HUD follows the shared design tokens.
+ * @property {HudTokens} [tokens]         Override single values. Left out, the HUD follows the design tokens (src/ux/design).
  * @property {boolean} [stats=false]      Show the stats line on load. Off by default: the page opens on the simulation alone.
  * @property {boolean} [dice=true]        Show the randomize dice.
  * @property {number}  [diceHintMs=6000]  On a first visit, start a slow pulse on the die after this long, until the first roll. 0 disables.
@@ -112,7 +112,7 @@ export function createHud(options = {}) {
   if (parent === document.body) root.classList.add('is-fixed');
   else if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
 
-  // Map the shared design tokens onto the stylesheet's custom properties.
+  // Overrides only: without them the stylesheet's custom properties follow the design tokens (see styles.js).
   const tk = opt.tokens;
   if (tk) {
     const set = (name, v) => { if (v != null) root.style.setProperty(name, String(v)); };

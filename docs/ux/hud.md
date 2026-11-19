@@ -14,10 +14,13 @@ without the bundler.
    the settings menu. `?` lists every key.
 3. **One playful control.** The die rerolls the whole system. It is the only
    thing a first-time visitor needs to find, so it is the only thing shown.
-4. **White on black, one font, two opacities.** The stylesheet defaults mirror
-   `TOKENS` in `src/core/contracts.ts`, and `createHud({ tokens: TOKENS })`
-   binds them directly. Lines are one pixel. Nothing is filled except the
-   active state of a switch. There are no rounded panels, shadows or colours.
+4. **White on black, from the design tokens.** Fonts, sizes, text strengths,
+   spacing and timings follow `src/ux/design` (rules in `docs/ux/design.md`):
+   monospace for what the machine reports, wide capitals for what is said to
+   the person. Lines are one pixel. Nothing is filled except a switch that is
+   on. There are no rounded panels or shadows. The only colour is the accent
+   of the colour theme, on marks that show a value or a selection (a slider's
+   fill, the selected tab's underline, the fps graph, a progress bar).
 5. **Never cost a frame.** Stats text is written at most five times a second,
    and not at all while the stats line is hidden. The overlay ignores pointer
    events everywhere except on its own controls, so camera drags pass through.
@@ -185,7 +188,8 @@ The short way is `mountHud` in `src/ux/hud/wire.ts`. It talks to the engine
 only through `AppContext`, so it plugs into any engine that implements the
 contract. It:
 
-- creates the HUD with the shared `TOKENS`
+- puts the design tokens on the page (`installTokens`) and creates the HUD,
+  which follows them
 - hooks the die to `rollScene` and `startRoll` from `src/ux/behavior-ui/roll.ts`
 - feeds `app.stats()` to the stats line
 - adds a **particles** slider (log scale, applied on release) that rebuilds the
@@ -225,9 +229,10 @@ The long way, for anything `mountHud` does not cover:
 
 ```ts
 import { createHud } from './ux/hud/index.js';
-import { TOKENS } from './core/contracts';
+import { installTokens } from './ux/design';
 
-const hud = createHud({ tokens: TOKENS });
+installTokens(); // the HUD follows the design tokens; without them it uses the same values as fallbacks
+const hud = createHud();
 
 // stats: call as often as you like, writes are throttled
 setInterval(() => hud.setStats(app.stats()), 250);   // { fps, particles, planes }
@@ -275,10 +280,15 @@ Notes:
   if the engine draws every frame, so prefer `setStat('fps', app.stats().fps)`.
 - Changing the `plane` stat announces the new plane, with the `behavior` stat
   as the subtitle. Turn this off with `announce: false`.
-- Retheme by setting custom properties on `hud.el`: `--hud-fg`, `--hud-bg`
-  (RGB triplets), `--hud-a-strong`, `--hud-a-dim`, `--hud-font`,
-  `--hud-tracking`, `--hud-ease`, `--hud-fade-in`, `--hud-fade-out`,
-  `--hud-unit`, `--hud-edge`, `--hud-panel-w`.
+- The look comes from the design tokens: every `--hud-*` property in
+  `styles.js` follows a `--st-*` token, so change the token to change all
+  chrome at once. To change one HUD only, set a property on `hud.el`:
+  `--hud-fg`, `--hud-bg`, `--hud-mark` (RGB triplets), the levels
+  `--hud-a-strong`, `--hud-a-dim`, `--hud-a-ghost`, `--hud-a-stroke`,
+  `--hud-a-line`, the fonts `--hud-font` and `--hud-font-fine`, `--hud-ease`,
+  `--hud-fade-in`, `--hud-fade-out`, `--hud-unit`, `--hud-edge`,
+  `--hud-panel-w`. New rules take alphas from the levels, never a literal
+  (`npm test -- hud` checks this and that each fallback equals its token).
 
 ## Demos
 
@@ -293,5 +303,3 @@ Both run today without WebGPU. Start `npm run dev`, then open:
 
 - Whether the menu should pause the simulation, as a game's Esc menu would. It
   does not today, because the point of the menu is to tune a running system.
-- The announce text uses wide letter spacing, which is outside `TOKENS`. It is
-  the one deliberate exception, as a title card rather than a label.
