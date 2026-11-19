@@ -17,7 +17,7 @@ with Vite, no framework.
 
 ## Pages
 
-`npm run dev` serves all of them. The first five also ship in the production
+`npm run dev` serves all of them. The first six also ship in the production
 build (`vite.config.ts`).
 
 | page | entry | what it is |
@@ -27,6 +27,7 @@ build (`vite.config.ts`).
 | `/src/offline/web/` | `src/offline/web/main.ts` | offline renderer, up to 10^12 particles per frame, to MP4 |
 | `/src/perf/bench/` | `src/perf/bench/main.ts` | perf engine bench (`?bench=1` sweep, `?selftest=1` GPU checks) |
 | `/src/verify/` | `src/verify/main.ts` | shader verify harness (`npm run verify` runs it headless) |
+| `/src/color-life/demo/` | `src/color-life/demo/demo.ts` | color life: color species attract and repel by a rolled rule matrix (particle life on the GPU, simulated) |
 | `/src/behaviors/preview/` | `src/behaviors/preview/preview.ts` | one behavior on one sheet, with sliders |
 | `/src/render/demo/` | `src/render/demo/demo.ts` | density render pipeline demo (also `counts.html`) |
 | `/src/depth/demo/` | `src/depth/demo/demo.ts` | depth cues demo |
@@ -57,6 +58,7 @@ build (`vite.config.ts`).
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
 | `src/stateless` | 64-bit particle keys and randomness for stateless particles | `README.md` |
+| `src/color-life` | particle life with color species: rule matrix rolls, GPU grid sort for neighbors, colored additive render; standalone | `README.md` |
 | `src/trillion` | trillion particle splat kernel: exact per-pixel counts, nothing stored | `index.ts` |
 | `src/offline` | offline renderer (browser and Node): stateless particles into a 64-bit grid, frame by frame, to MP4 | `README.md` |
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
