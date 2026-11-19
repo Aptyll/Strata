@@ -39,6 +39,7 @@ build (`vite.config.ts`).
 | `/src/world/demo/` | `src/world/demo/index.html` | world layouts and streaming |
 | `/src/ux/camera/demo/`, `/src/ux/experience/demo/`, `/src/ux/hud/demo/` | each folder | camera, first-run experience and HUD on their own |
 | `/src/ux/autocam/demo/` | `src/ux/autocam/demo/main.ts` | auto camera tour flying over dot-cloud sheets, no WebGPU |
+| `/src/ux/design/demo/` | `src/ux/design/demo/main.ts` | design tokens specimen: every type role, ink level, spacing step and timing in use, no WebGPU (also in the production build) |
 
 ## Folders
 
@@ -380,6 +381,7 @@ is what input, scenes, the intro and the world move.
 | `ux/camera` | the one camera: `CameraRig` (flights, focus, idle drift, picking), `EngineCamera` (the `CameraController` contract around it), `attachCameraInput` (mouse, touch, keys) | `src/main.ts` |
 | `ux/hud` | the HUD (`index.js`, plain JS typed by `index.d.ts`): dice, stats line, Esc menu, keys sheet, status line, jobs. `wire.ts` connects it to an `AppContext`: dice rolls, particle and brightness sliders, behavior params, the `#r=` share link | `src/app/hud.ts` |
 | `ux/behavior-ui` | `rollScene` (a seeded new scene) and `startRoll` (glides the live planes into it) | `ux/hud/wire.ts` |
+| `ux/design` | the design tokens every piece of chrome is styled with (`--st-*` custom properties: type roles, ink levels, spacing, motion, the theme accent); rules in `docs/ux/design.md` | chrome modules, as each is moved over |
 | `ux/theme` | color themes: a gradient map applied as one SVG filter on the canvas after the tone map, no per-particle cost; T cycles, `?theme=` shares | `src/app/hud.ts` |
 | `ux/experience` | the first-run experience. The app uses `intro-runner.ts` (through `src/app/intro.ts`), `engine-brushes.ts` (pointer forces), `capability.ts` and `fallback.ts` (no WebGPU). `createExperience` (`index.ts`) and `hints.ts` drive only the standalone demo, and `camera-rig.ts` is a thin front for `ux/camera` kept for that API | parts, from `src/main.ts` |
 
