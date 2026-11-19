@@ -148,7 +148,14 @@ export class PerfEngine {
   private uniformBuffer!: GPUBuffer;
   private uniformData!: ArrayBuffer;
   private uniformView!: DataView;
+  /** Slots in uniformBuffer. The last one is reserved for seeding (seedOnGpu), so frames use at most uniformSlots - 1. */
   private uniformSlots = 0;
+  /**
+   * Uniform buffers replaced by a growth. A frame encoded before the growth
+   * may still be waiting for its submit, so they are destroyed at the next
+   * encode, not at once: a destroyed buffer would make that submit fail.
+   */
+  private readonly retiredUniforms: GPUBuffer[] = [];
 
   private fb!: GPUBuffer;
   private width = 1;
@@ -287,7 +294,7 @@ export class PerfEngine {
     };
     this.planes.set(id, plane);
     this.applyDesc(plane);
-    this.ensureUniformSlots(this.planes.size);
+    this.ensureUniformSlots(this.planes.size + 1); // + the seeding slot
     if (behavior.init) this.seedFromCpu(plane);
     else this.seedOnGpu(plane);
     return id;
@@ -324,17 +331,20 @@ export class PerfEngine {
   frame(p: FrameParams): FrameStats {
     const encoder = this.device.createCommandEncoder({ label: 'strata-perf frame' });
     this.encode(encoder, p);
-    this.timer.resolve(encoder);
     this.device.queue.submit([encoder.finish()]);
-    this.timer.readback();
-    this.stats.gpuComputeMs = this.timer.ms[0];
-    this.stats.gpuResolveMs = this.timer.ms[1];
+    this.afterSubmit();
     return this.stats;
   }
 
-  /** Encodes one frame into a caller-owned encoder (for frame graphs and capture). */
+  /**
+   * Encodes one frame into a caller-owned encoder (for frame graphs and
+   * capture). Call `afterSubmit` once the encoder is submitted.
+   */
   encode(encoder: GPUCommandEncoder, p: FrameParams): FrameStats {
     const { device, lod, stats } = this;
+    // Every frame encoded before a growth has been submitted by now.
+    for (const b of this.retiredUniforms) b.destroy();
+    this.retiredUniforms.length = 0;
     const frame = this.frameIndex++;
     const active = this.dispatchPlanes;
     const counts = this.dispatchCounts;
@@ -451,6 +461,7 @@ export class PerfEngine {
     render.setBindGroup(0, this.resolveBindGroup);
     render.draw(3);
     render.end();
+    this.timer.resolve(encoder);
 
     stats.planes = this.planes.size;
     stats.visiblePlanes = visible;
@@ -459,6 +470,17 @@ export class PerfEngine {
     stats.drawnParticles = drawn;
     stats.simulatedParticles = simulated;
     return stats;
+  }
+
+  /**
+   * Call after submitting a frame from `encode` (`frame` does it): starts the
+   * readback of that frame's GPU timings and copies the latest finished ones
+   * into the stats.
+   */
+  afterSubmit(): void {
+    this.timer.readback();
+    this.stats.gpuComputeMs = this.timer.ms[0];
+    this.stats.gpuResolveMs = this.timer.ms[1];
   }
 
   /** Debug and tests: copy the atomic framebuffer of the last frame back to the CPU. */
@@ -477,6 +499,8 @@ export class PerfEngine {
     this.pool.destroy();
     this.fb.destroy();
     this.uniformBuffer.destroy();
+    for (const b of this.retiredUniforms) b.destroy();
+    this.retiredUniforms.length = 0;
     this.resolveUniform.destroy();
     this.timer.destroy();
     this.planes.clear();
@@ -512,8 +536,11 @@ export class PerfEngine {
 
   /** Default seeding: uniform random at rest, entirely on the GPU. */
   private seedOnGpu(plane: PlaneRec): void {
+    // The reserved last slot: frames never use it, so seeding cannot overwrite
+    // the slots of a frame that is encoded but not yet submitted.
+    const at = (this.uniformSlots - 1) * SLOT_STRIDE;
     // INIT_WGSL reads only the Perf block: base, simCount, and the plane's u32 seed carried in weight.
-    packPerf(this.uniformView, 2 * BLOCK_ALIGN, {
+    packPerf(this.uniformView, at + 2 * BLOCK_ALIGN, {
       mvp: this.mvp, // unused by INIT_WGSL
       base: plane.base,
       drawCount: 0,
@@ -524,12 +551,12 @@ export class PerfEngine {
       fbHeight: this.height,
       velMax: plane.velMax,
     });
-    // One submit per plane keeps slot 0 valid for each dispatch.
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData, 0, SLOT_STRIDE);
+    // One submit per plane keeps the slot valid for each dispatch.
+    this.device.queue.writeBuffer(this.uniformBuffer, at, this.uniformData, at, SLOT_STRIDE);
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.initPipeline);
-    pass.setBindGroup(0, this.bindGroupFor(plane.page), [0, 0, 0]);
+    pass.setBindGroup(0, this.bindGroupFor(plane.page), [at, at, at]);
     pass.dispatchWorkgroups(...dispatchSize(plane.count));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
@@ -556,7 +583,7 @@ export class PerfEngine {
     if (slots <= this.uniformSlots) return;
     let cap = Math.max(64, this.uniformSlots);
     while (cap < slots) cap *= 2;
-    this.uniformBuffer?.destroy();
+    if (this.uniformBuffer) this.retiredUniforms.push(this.uniformBuffer);
     this.uniformSlots = cap;
     this.uniformData = new ArrayBuffer(cap * SLOT_STRIDE);
     this.uniformView = new DataView(this.uniformData);

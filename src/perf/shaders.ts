@@ -39,6 +39,15 @@ import { BASIC_TONE_WGSL, FULLSCREEN_VS_WGSL, PCG_WGSL, U01_WGSL } from '../gpu/
  * Fixed-point value of one full-brightness particle hit in an atomic
  * framebuffer (this engine's and the atomic raster pass's). The resolve
  * divides by it. 256 leaves 24 bits of headroom: 16M full hits per pixel.
+ *
+ * The limit is in light, not in hits: an LOD-thinned plane draws each kept
+ * particle with the light of the ones it skips (weight LIGHT_ONE * count /
+ * drawCount). Past 2^32 the pixel's sum wraps and it turns dark. One plane
+ * fits in one page (2^23 particles), so at brightness 1 it adds at most 2^31
+ * even if every particle lands on one pixel; only several full planes stacked
+ * onto the same few pixels can wrap. There is deliberately no saturating
+ * guard: it needs atomicAdd's return value, which turns the fire-and-forget
+ * adds of the hottest loop into returning atomics.
  */
 export const LIGHT_ONE = 256;
 
