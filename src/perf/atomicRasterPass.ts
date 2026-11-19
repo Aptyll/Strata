@@ -1,7 +1,7 @@
 /**
  * Compute rasterizer as a drop-in `rasterize` pass for the main engine
  * (src/core/contracts.ts, docs/architecture.md). It is the app's default
- * rasterizer ("atomic-raster" in src/main.ts).
+ * rasterizer ("atomic-raster" in src/app/graph.ts).
  *
  * Reads the engine's own 16-byte f32 particle buffers through each plane's
  * `simBindGroup`, projects every active particle in a compute shader and adds
