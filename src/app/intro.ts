@@ -11,6 +11,7 @@ import type { CameraState, PlaneInstance } from "../core/contracts";
 import { planeFromDesc } from "../ux/experience/camera-rig";
 import { loadMemory, saveMemory } from "../ux/experience/hints";
 import { createIntroRunner, type IntroRunner } from "../ux/experience/intro-runner";
+import { KEYS } from "./keys";
 
 export interface IntroCamera {
   state: CameraState;
@@ -82,18 +83,25 @@ export function mountIntro(
     released = true;
     skip();
   };
+  const plain = (k: KeyboardEvent) => !(k.ctrlKey || k.altKey || k.metaKey);
   const onCameraKey = (e: Event) => {
     const k = e as KeyboardEvent;
     // Shift on its own and Ctrl, Alt or Meta shortcuts move nothing, so those only fast-forward.
-    if (k.ctrlKey || k.altKey || k.metaKey || k.code.startsWith("Shift")) skip();
-    else takeOver();
+    if (plain(k) && !k.code.startsWith("Shift")) takeOver();
+    else skip();
+  };
+  const onKey = (e: Event) => {
+    const k = e as KeyboardEvent;
+    // G is the app's, not the camera's, but it flies to a sheet: each eased write would cancel that flight.
+    if (k.code === KEYS.nearestPlane.code && plain(k)) takeOver();
+    else skip();
   };
   const listeners: Array<[EventTarget, string, (e: Event) => void, AddEventListenerOptions?]> = [
     [target, "pointerdown", takeOver],
     [target, "wheel", takeOver, { passive: true }],
     // Every key fast-forwards the opening. Keys that are not the camera's (H, Esc, R) let the
     // camera ease out of it; camera keys arrive below and let go of it at once.
-    [window, "keydown", skip],
+    [window, "keydown", onKey],
   ];
   if (options.cameraKeys) listeners.push([options.cameraKeys, "keydown", onCameraKey]);
   for (const [t, type, fn, o] of listeners) t.addEventListener(type, fn, o);
