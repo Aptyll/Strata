@@ -47,6 +47,12 @@ canvas or own a frame loop.
 
 ### From the frame graph
 
+The app already uses it: `src/passes/tonemap.pass.ts` builds the density tone
+map pass by default. Its live settings are on `strataLook` in the browser
+console (`strataLook.tone.white = 400`, `strataLook.bloom.strength = 0`,
+`strataLook.trails.halfLife = 0.3`). Open the app with `?tonemap=basic` to get
+the earlier plain exponential curve back for comparison.
+
 `createDensityTonemapPass()` is a stage `tonemap` pass. It reads
 `frame.hdrView` (red channel) and writes `frame.canvasView`. Use it in place
 of a plain tone map pass.
