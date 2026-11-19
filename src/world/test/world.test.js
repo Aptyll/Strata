@@ -13,6 +13,7 @@ import {
   SLOT_LEAVING,
   toPlaneDesc,
   createWorldScene,
+  createWorldDriver,
   math,
 } from '../index';
 
@@ -278,4 +279,38 @@ test('scenes convert to the engine contract', () => {
   assert.deepEqual(desc.halfSize, [plane.size[0] / 2, plane.size[1] / 2]);
   assert.equal(desc.id, plane.key);
   JSON.stringify(scene); // plain data
+});
+
+test('the driver mirrors the streamer onto a plane host', () => {
+  const live = new Set();
+  let created = 0;
+  const host = {
+    addPlane(desc) {
+      const plane = { desc, paused: false };
+      live.add(plane);
+      created++;
+      return plane;
+    },
+    removePlane(plane) {
+      assert.ok(live.delete(plane), 'only live planes are removed');
+    },
+    updatePlane(plane) {
+      assert.ok(live.has(plane), 'only live planes are updated');
+    },
+  };
+  const w = createWorld({ seed: 6 });
+  const driver = createWorldDriver(host, w, { behaviorIds: ['a', 'b'], maxPlanes: 40, maxAwake: 10, maxSpawnsPerFrame: 3 });
+  for (let frame = 0; frame < 900; frame++) {
+    const before = created;
+    driver.update({ position: [frame * 0.8, 10, 20], forward: [1, 0, 0] }, 1 / 60);
+    assert.ok(created - before <= 3, 'spawns are spread out');
+    assert.ok(live.size <= 40);
+    assert.equal(live.size + driver.pending, driver.streamer.stats.resident);
+  }
+  assert.ok(created > 80, `planes streamed through the host (${created})`);
+  const paused = [...live].filter((p) => p.paused).length;
+  assert.equal(live.size - paused, 10);
+  for (const p of live) assert.ok(p.desc.brightness >= 0 && p.desc.brightness <= 1);
+  driver.clear();
+  assert.equal(live.size, 0);
 });

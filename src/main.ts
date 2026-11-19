@@ -1,25 +1,35 @@
 import { createKeyRouter } from "./app/keys";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
-import { TOKENS, type AppContext, type ParticleBudget, type Scene } from "./core/contracts";
+import { createCapturePass } from "./capture/capturePass";
+import { TOKENS, type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
+import type { DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
 import { initGpu, writeGlobals } from "./gpu/context";
+import { createInterplane } from "./interplane/interplane.pass";
 import { createPasses } from "./passes";
 import { createAtomicRasterPass } from "./perf/atomicRasterPass";
 import { PerfBudget } from "./perf/budget";
+import { createDensitySplatPass, createDensityTonemapPass } from "./render/passes";
 import { Simulation } from "./sim/simulation";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { formatCount } from "./ux/hud/index.js";
 import { mountHud } from "./ux/hud/wire";
+import { startStreamingWorld, type StreamingWorld } from "./world";
 import { scatterLayout, scatterRadius } from "./world/layout";
 
 // URL options:
 //   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=0.2&seed=1
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
+//   &raster=sprites  draw depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
+//   &raster=splat    sub-pixel splats
+//   &look=density    density tone mapping with bloom and trails
+//   &interplane=0    no particles crossing between planes
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
+//   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
 const query = new URLSearchParams(location.search);
 const num = (key: string, fallback: number) => {
   const v = Number(query.get(key));
@@ -68,11 +78,39 @@ async function start(): Promise<void> {
   // ---- frame graph -------------------------------------------------------
   const sim = new Simulation(gpu);
   const graph = new FrameGraph(gpu);
-  graph.add(sim, ...createPasses(gpu), createAtomicRasterPass(gpu));
-  const rasterizers = graph.passes.filter((p) => p.stage === "rasterize");
-  // Exactly one rasterize pass draws the particles (each one clears the HDR target).
-  const setRasterizer = (name: string) => rasterizers.forEach((p) => (p.enabled = p.name === name));
-  setRasterizer(query.get("raster") === "points" ? "points" : "atomic-raster");
+  graph.add(
+    sim,
+    ...createPasses(gpu),
+    createAtomicRasterPass(gpu),
+    createDensitySplatPass({ energy: () => scene.render.brightness }),
+    createDensityTonemapPass(),
+  );
+  /** Of several passes that do the same job, run only the named one. */
+  const chooser = (stage: PassStage) => {
+    const options = graph.passes.filter((p) => p.stage === stage);
+    return {
+      options,
+      set: (name: string) => options.forEach((p) => (p.enabled = p.name === name)),
+      current: () => options.find((p) => p.enabled !== false)?.name,
+    };
+  };
+  // Exactly one rasterize pass draws the particles (each one clears the HDR target),
+  // and exactly one tonemap pass writes the canvas.
+  const rasterizer = chooser("rasterize");
+  const tonemapper = chooser("tonemap");
+  const RASTER_NAMES: Record<string, string> = { points: "points", sprites: "depth-sprites", splat: "density-splat" };
+  const wanted = query.get("depth") === "1" ? "sprites" : query.get("raster") ?? "";
+  rasterizer.set(RASTER_NAMES[wanted] ?? "atomic-raster");
+  tonemapper.set(query.get("look") === "density" ? "density-tonemap" : "tonemap");
+
+  // Particles crossing between neighbouring planes. Its rasterize pass adds onto the HDR
+  // target, so it is registered after the choosers and runs after whichever rasterizer is on.
+  const interplane = createInterplane();
+  graph.add(...interplane.passes);
+  const setInterplane = (on: boolean) => interplane.passes.forEach((p) => (p.enabled = on));
+  setInterplane(query.get("interplane") !== "0");
+
+  const depthSprites = rasterizer.options.find((p) => p.name === "depth-sprites") as DepthSpritePass | undefined;
 
   // ---- budget ------------------------------------------------------------
   const fullBudget = new VisibleOnlyBudget();
@@ -86,18 +124,23 @@ async function start(): Promise<void> {
   attachCameraInput(canvas, camera.rig, { keyTarget: keys.cameraTarget });
 
   // ---- scene -------------------------------------------------------------
-  let particles = Math.round(num("particles", 2_000_000));
   let planeCount = Math.round(num("planes", 32));
   let total = 0;
-  let scene = buildScene(particles, planeCount, num("brightness", 0.2));
+  let scene = buildScene(Math.round(num("particles", 2_000_000)), planeCount, num("brightness", 0.2));
+  // With ?world the planes come from the streamer, so the scene itself starts empty.
+  const worldSeed = query.get("world");
+  if (worldSeed !== null) scene = { ...scene, planes: [], camera: { ...scene.camera, target: [6, 6, 6], distance: 10 } };
+  let streaming: StreamingWorld | null = null;
   /** Camera of the last scene handed out, to tell "same camera" from "move the camera". */
   let handedOut = "";
 
   const loadScene = (next: Scene) => {
+    streaming?.clear(); // setPlanes below destroys every plane, streamed ones included
     scene = next;
     sim.setPlanes(scene.planes);
     total = sim.planes.reduce((n, p) => n + p.capacity, 0);
     camera.rig.setPlanes(scene.planes.map(planeTargetFromDesc));
+    depthSprites?.fitWorld(sim.planes);
     // A scene that came from getScene() (a dice roll, a param edit) keeps the camera exactly
     // where it is, drift and inertia included. Only a scene with a new camera moves it.
     if (JSON.stringify(scene.camera) !== handedOut) {
@@ -139,54 +182,85 @@ async function start(): Promise<void> {
     },
     updatePlane: (plane) => sim.updatePlane(plane),
     setPlaneBehavior: (plane, change) => sim.setBehavior(plane, change),
+    setRender: (patch) => void Object.assign(scene.render, patch),
     stats: () => ({
       fps,
       particles: sim.planes.reduce((n, p) => n + p.activeCount, 0),
       planes: sim.planes.length,
     }),
   };
+  if (worldSeed !== null) {
+    streaming = startStreamingWorld(app, {
+      seed: worldSeed || "strata",
+      maxParticles: Math.round(num("particles", 8_000_000)),
+    });
+  }
   mountPanels(app);
   // Handy for poking at the engine from the console.
   (window as unknown as { strata: AppContext }).strata = app;
 
   // ---- HUD: dice, stats on H, settings on Esc ----------------------------
-  const { hud, update: updateHud } = mountHud(app, { hud: { persist: false, autoFps: false } });
+  const { hud, update: updateHud } = mountHud(app, {
+    hud: { autoFps: false },
+    minParticles: MIN_PARTICLES,
+    maxParticles: MAX_PARTICLES,
+    // Particles stay where they are and start obeying the new rule, instead of a hard cut.
+    transition: { swapBehavior: (plane, target) => sim.setBehavior(plane, target) },
+  });
   hud.defineStat("total", { label: "total", format: formatCount });
 
   /** Rebuild the layout for a new particle or plane count, keeping the camera and brightness. */
   const rebuild = () => {
     const keep = getScene();
-    const fresh = buildScene(particles, planeCount, keep.render.brightness);
+    const fresh = buildScene(total, planeCount, keep.render.brightness);
     loadScene(fresh.planes.length === keep.planes.length ? { ...fresh, camera: keep.camera } : fresh);
   };
 
-  const particlesParam = hud.registerParam({
-    id: "particles", type: "range", scale: "log", live: false,
-    min: MIN_PARTICLES, max: MAX_PARTICLES, value: particles, format: formatCount,
-    onChange: (v) => {
-      particles = Math.round(v);
-      rebuild();
-    },
-  });
   hud.registerParam({
-    id: "planes", type: "range", live: false, min: 1, max: 256, step: 1, value: planeCount,
+    id: "planes", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: planeCount,
     onChange: (v) => {
       planeCount = Math.round(v);
       rebuild();
     },
   });
-  const brightnessParam = hud.registerParam({
-    id: "brightness", type: "range", scale: "log", min: 0.005, max: 5, value: scene.render.brightness,
-    onChange: (v) => (scene.render.brightness = v),
-  });
   hud.registerParam({
     id: "rasterizer", type: "select", group: "performance",
-    value: rasterizers.find((p) => p.enabled !== false)?.name,
+    value: rasterizer.current(),
     options: [
       { value: "atomic-raster", label: "compute" },
       { value: "points", label: "points" },
+      { value: "density-splat", label: "sub-pixel splats" },
+      { value: "depth-sprites", label: "depth sprites (fog, focus)" },
     ],
-    onChange: setRasterizer,
+    onChange: rasterizer.set,
+  });
+  hud.registerParam({
+    id: "look", type: "select", group: "look", value: tonemapper.current(),
+    options: [
+      { value: "tonemap", label: "plain" },
+      { value: "density-tonemap", label: "density (bloom, trails)" },
+    ],
+    onChange: tonemapper.set,
+  });
+  hud.registerParam({
+    id: "interplane", label: "plane crossings", type: "toggle", group: "look",
+    value: interplane.passes[0].enabled !== false, onChange: setInterplane,
+  });
+
+  // ---- capture: P saves a PNG, V records an MP4 ---------------------------
+  // The HUD owns the keys (R is the dice), so the controller's own hotkeys are off.
+  const capture = createCapturePass(canvas, {
+    screenshotKey: null,
+    recordKey: null,
+    onStatus: (text) => hud.announce(text),
+  });
+  graph.add(capture);
+  hud.registerShortcut({ key: "p", label: "save image", run: () => capture.controller.requestScreenshot() });
+  hud.registerShortcut({
+    key: "v", label: "record video",
+    run: (e) => {
+      if (!e.repeat) void capture.controller.toggleRecording().catch(() => {});
+    },
   });
   hud.registerParam({
     id: "adaptive", label: "hold frame rate", type: "toggle", group: "performance", value: budget === adaptiveBudget,
@@ -197,9 +271,10 @@ async function start(): Promise<void> {
     onChange: (v) => (targetFps = v),
   });
 
+  // The HUD owns the particles and brightness sliders; the keys just move them.
   const scaleParticles = (factor: number) =>
-    particlesParam.set(Math.min(MAX_PARTICLES, Math.max(MIN_PARTICLES, particles * factor)));
-  const scaleBrightness = (factor: number) => brightnessParam.set(scene.render.brightness * factor);
+    hud.setParam("particles", Math.min(MAX_PARTICLES, Math.max(MIN_PARTICLES, total * factor)));
+  const scaleBrightness = (factor: number) => hud.setParam("brightness", scene.render.brightness * factor);
   hud.registerShortcut({ key: "]", label: "double particles", run: () => scaleParticles(2) });
   hud.registerShortcut({ key: "[", label: "halve particles", run: () => scaleParticles(0.5) });
   hud.registerShortcut({ key: "=", label: "brighter", run: () => scaleBrightness(1.25) });
@@ -229,6 +304,7 @@ async function start(): Promise<void> {
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
     camera.update(dt);
+    streaming?.tick(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
     // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
     const brushes = pointerBrushes.update(dt, now);

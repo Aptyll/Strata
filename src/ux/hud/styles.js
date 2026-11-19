@@ -88,6 +88,17 @@ export const CSS = `
   color: rgba(var(--hud-fg), var(--hud-a-dim));
 }
 
+/* ---- message --------------------------------------------------------- */
+.sh-message {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--hud-edge);
+  text-align: center; white-space: pre-line; text-transform: none;
+  color: rgba(var(--hud-fg), var(--hud-a-strong));
+  opacity: 0;
+}
+.strata-hud.has-message > .sh-message { opacity: 1; }
+
 /* ---- panel ------------------------------------------------------------ */
 .sh-panel {
   position: absolute;
@@ -225,6 +236,13 @@ export const CSS = `
 .sh-dice:hover svg { transform: rotate(-8deg); }
 .sh-dice:active svg { transform: scale(0.88); }
 .sh-dice svg { transition: transform 160ms ease-out; }
+/* First-visit hint: stay visible through idle and breathe slowly. */
+.strata-hud.is-idle > .sh-dice.is-hinting { opacity: 1; }
+.sh-dice.is-hinting:not(:hover):not(.is-rolling) { animation: sh-breathe 2.8s ease-in-out infinite; }
+@keyframes sh-breathe {
+  0%, 100% { color: rgba(var(--hud-fg), calc(var(--hud-a-dim) * 0.6)); }
+  50%      { color: rgba(var(--hud-fg), var(--hud-a-strong)); }
+}
 .sh-dice.is-rolling svg { animation: sh-roll 620ms cubic-bezier(0.2, 0.7, 0.2, 1); }
 /* A toss: lift, spin a turn and a quarter (a square looks the same every quarter), land with one small bounce. */
 @keyframes sh-roll {
@@ -260,6 +278,6 @@ export const CSS = `
 }
 @media (prefers-reduced-motion: reduce) {
   .strata-hud, .strata-hud * { transition-duration: 1ms !important; }
-  .sh-dice.is-rolling svg { animation: none; }
+  .sh-dice.is-rolling svg, .sh-dice.is-hinting { animation: none !important; }
 }
 `;

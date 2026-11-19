@@ -67,6 +67,10 @@ The handlers fire at the moment of the press, not when the die lands, so the
 simulation is already changing while the die is in the air. Pressing again
 mid-toss restarts the animation and fires again.
 
+On a first visit, if the die has not been touched after six seconds, it stays
+visible through the idle fade and breathes slowly between dim and bright. The
+first roll ends the hint for good.
+
 Each roll carries a random unsigned 32-bit `seed`. The face shown is
 `seed % 6 + 1`, so the die is honest about the seed even though six faces
 cannot identify it. Rolling also restarts the timer.
@@ -140,6 +144,12 @@ contract. It:
   roll changes the cast, and the sliders follow the values while a roll glides.
   Touching a slider cancels a roll in flight.
 
+- keeps the current roll in the page link (`#r=<seed>`), replays it when the
+  page is opened from such a link, and adds a **copy link** action to the menu.
+  Every roll starts from the behaviors the world opened with, not from the
+  previous roll, so a seed alone identifies a world. Turn off with
+  `shareLink: false`.
+
 In `src/main.ts` that is two lines, plus removing the old text overlay:
 
 ```ts
@@ -187,6 +197,7 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `defineStat(key, { label, slot, format })` | Add or restyle a stat. |
 | `resetTimer()` | Restart the elapsed timer. |
 | `announce(title, sub?, holdMs?)` | Fade a title in and out above the die. |
+| `message(text \| null)` | Centred message for loading or an unsupported browser. Stays until cleared. |
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
