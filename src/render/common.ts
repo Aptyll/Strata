@@ -1,34 +1,13 @@
 // Shared WGSL snippets, constants and small helpers for src/render.
 //
-// WGSL has no imports, so shaders here are assembled by concatenating these
-// strings. Each snippet declares its own names (VSOut, vs, pcg, u01, Tone,
-// densityToLuma, CounterLayout, loadCount); include each at most once per
-// shader module.
+// WGSL has no imports, so shaders here are assembled by concatenating
+// strings. The generic blocks (fullscreen triangle, PCG hash, u01) come from
+// src/gpu/wgsl.ts and are shared with the rest of the repo; the blocks below
+// are specific to the density pipeline. Each block declares its own names
+// (Tone, densityToLuma, CounterLayout, loadCount, ...); include each at most
+// once per shader module.
 
-/** Fullscreen triangle. uv has its origin at the top left, like texture space. */
-export const FULLSCREEN_VS = /* wgsl */ `
-struct VSOut {
-  @builtin(position) pos: vec4f,
-  @location(0) uv: vec2f,
-};
-@vertex fn vs(@builtin(vertex_index) i: u32) -> VSOut {
-  var o: VSOut;
-  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
-  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
-  o.uv = vec2f(p.x, 1.0 - p.y);
-  return o;
-}
-`;
-
-/** PCG hash, used for dithering and stochastic rounding. */
-export const HASH_WGSL = /* wgsl */ `
-fn pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-fn u01(h: u32) -> f32 { return f32(h >> 8u) * (1.0 / 16777216.0); }
-`;
+import { FULLSCREEN_VS_WGSL } from '../gpu/wgsl';
 
 /**
  * Largest density, as a WGSL literal, that the post chain trusts from a float
@@ -136,7 +115,7 @@ fn loadCount(x: u32, y: u32) -> f32 {
  * Fullscreen pass that writes `count * invScale` into the red channel of the
  * target, one pixel per counter. Entry points `vs` and `fs`.
  */
-export const counterResolveWgsl = (words: 1 | 2): string => FULLSCREEN_VS + counterLoadWgsl(words) + /* wgsl */ `
+export const counterResolveWgsl = (words: 1 | 2): string => FULLSCREEN_VS_WGSL + counterLoadWgsl(words) + /* wgsl */ `
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {
   let c = vec2u(i.pos.xy);
   return vec4f(loadCount(c.x, c.y) * lay.invScale, 0.0, 0.0, 1.0);

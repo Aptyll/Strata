@@ -11,9 +11,10 @@
 //          movement turns into smooth streaks and total brightness of a
 //          static image is preserved. Also averages away sub-pixel shimmer.
 
-import { DENSITY_MAX, FULLSCREEN_VS } from './common';
+import { FULLSCREEN_VS_WGSL } from '../gpu/wgsl';
+import { DENSITY_MAX } from './common';
 
-const WGSL = FULLSCREEN_VS + /* wgsl */ `
+const WGSL = FULLSCREEN_VS_WGSL + /* wgsl */ `
 struct T { decay: f32, mode: u32 }; // 16 byte uniform, written by encode()
 @group(0) @binding(0) var<uniform> t: T;
 @group(0) @binding(1) var cur: texture_2d<f32>;

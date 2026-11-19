@@ -1,21 +1,18 @@
 import type { FrameContext, GpuContext, Pass } from "../core/contracts";
+import { BASIC_TONE_WGSL, FULLSCREEN_VS_WGSL } from "../gpu/wgsl";
 import { DEFAULT_TONE, createDensityTonemapPass } from "../render";
 
-const WGSL = /* wgsl */ `
+/** The `?tonemap=basic` pass: basicTone on each channel of the HDR target. */
+export const BASIC_TONEMAP_WGSL = /* wgsl */ `
+${FULLSCREEN_VS_WGSL}
+${BASIC_TONE_WGSL}
 @group(0) @binding(0) var hdr: texture_2d<f32>;
 
-@vertex
-fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
-  // Fullscreen triangle.
-  return vec4f(f32(i32(i & 1u) * 4 - 1), f32(i32(i >> 1u) * 4 - 1), 0.0, 1.0);
-}
-
 @fragment
-fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
-  let light = textureLoad(hdr, vec2i(p.xy), 0).rgb;
-  // Overlapping particles add up; this maps the unbounded sum smoothly to white.
-  let mapped = 1.0 - exp(-light);
-  return vec4f(pow(mapped, vec3f(1.0 / 2.2)), 1.0);
+fn fs(i: VSOut) -> @location(0) vec4f {
+  // Overlapping particles add up; basicTone maps the unbounded sum smoothly to white.
+  let light = textureLoad(hdr, vec2i(i.pos.xy), 0).rgb;
+  return vec4f(basicTone(light.r), basicTone(light.g), basicTone(light.b), 1.0);
 }
 `;
 
@@ -49,7 +46,7 @@ export default function createTonemapPass(gpu: GpuContext): Pass {
 
 function createBasicTonemapPass(gpu: GpuContext): Pass {
   const { device } = gpu;
-  const module = device.createShaderModule({ label: "tonemap", code: WGSL });
+  const module = device.createShaderModule({ label: "tonemap", code: BASIC_TONEMAP_WGSL });
   const pipeline = device.createRenderPipeline({
     label: "tonemap",
     layout: "auto",

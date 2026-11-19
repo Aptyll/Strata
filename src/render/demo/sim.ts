@@ -8,17 +8,13 @@
 // to back, and each plane carries one of four patterns picked for strong
 // density contrast.
 
-const WGSL = /* wgsl */ `
+import { PCG_WGSL, U01_WGSL } from '../../gpu/wgsl';
+
+const WGSL = PCG_WGSL + U01_WGSL + /* wgsl */ `
 struct Sim { time: f32, count: u32, planes: u32, pad: u32 };
 @group(0) @binding(0) var<uniform> s: Sim;
 @group(0) @binding(1) var<storage, read_write> particles: array<vec4f>;
 
-fn pcg(v: u32) -> u32 {
-  let st = v * 747796405u + 2891336453u;
-  let w = ((st >> ((st >> 28u) + 4u)) ^ st) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-fn u01(h: u32) -> f32 { return f32(h >> 8u) * (1.0 / 16777216.0); }
 const TAU = 6.2831853;
 
 @compute @workgroup_size(256)

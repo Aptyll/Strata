@@ -11,6 +11,7 @@
 //   aperture= focus= fogReach= exposure= speed=          slider values
 
 import type { Vec3 } from '../../core/contracts';
+import { BASIC_TONE_WGSL, FULLSCREEN_VS_WGSL, PCG_WGSL, U01_WGSL } from '../../gpu/wgsl';
 import { depthWGSL, DepthParams, DEPTH_PARAMS_BYTES, FocusTracker, ParallaxRig, type FocusPlane } from '../index';
 
 interface DemoHook {
@@ -147,7 +148,7 @@ function updatePlanes(camZ: number): void {
 }
 
 // ---------- shaders
-const sceneWGSL = depthWGSL + /* wgsl */ `
+const sceneWGSL = depthWGSL + PCG_WGSL + U01_WGSL + /* wgsl */ `
 struct Globals {
   proj: mat4x4f,
   view: mat4x4f,
@@ -164,19 +165,13 @@ struct Plane {
 @group(0) @binding(1) var<uniform> dp: DepthParams;
 @group(0) @binding(2) var<storage, read> planes: array<Plane>;
 
-fn pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-fn unit(h: u32) -> f32 { return f32(h >> 8u) * (1.0 / 16777216.0); }
 
 // Particle position on its plane, in [-1, 1]^2.
 fn particle_layout(pl: Plane, i: u32) -> vec3f {
   let h1 = pcg(i ^ pcg(pl.seed));
   let h2 = pcg(h1);
   let h3 = pcg(h2);
-  let a = unit(h1); let b = unit(h2); let c = unit(h3);
+  let a = u01(h1); let b = u01(h2); let c = u01(h3);
   let tau = 6.2831853;
   var p: vec2f;
   let pat = u32(pl.pattern);
@@ -250,18 +245,14 @@ fn fs(in: VSOut) -> @location(0) vec4f {
 }
 `;
 
-// Placeholder tone map. The real one belongs to the tone mapping work.
-const presentWGSL = /* wgsl */ `
+// Plain tone curve (basicTone, the app's ?tonemap=basic), not the density
+// look from src/render: this page judges the depth cues on their own.
+const presentWGSL = FULLSCREEN_VS_WGSL + BASIC_TONE_WGSL + /* wgsl */ `
 @group(0) @binding(0) var hdr: texture_2d<f32>;
 struct P { exposure: f32, a: f32, b: f32, c: f32 };
 @group(0) @binding(1) var<uniform> p: P;
-@vertex fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
-  var t = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
-  return vec4f(t[vi], 0.0, 1.0);
-}
-@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
-  let x = textureLoad(hdr, vec2i(pos.xy), 0).r * p.exposure;
-  let v = pow(1.0 - exp(-x), 1.0 / 2.2);
+@fragment fn fs(i: VSOut) -> @location(0) vec4f {
+  let v = basicTone(textureLoad(hdr, vec2i(i.pos.xy), 0).r * p.exposure);
   return vec4f(v, v, v, 1.0);
 }
 `;
