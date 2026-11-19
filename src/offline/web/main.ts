@@ -14,6 +14,10 @@ import { decodeGrayPng16 } from "../core/png";
 import { StatelessRenderer } from "../core/renderer";
 import { frameImageName, gradeJob, loadJob, renderJob, type FileStore } from "../core/session";
 import { PRESETS, clusterJob, type ClusterOptions } from "../core/world";
+import { COMPOSITIONS } from "../core/compositions";
+
+const presetOptions = (name: string): ClusterOptions => COMPOSITIONS[name]?.defaults ?? PRESETS[name];
+const buildJob = (name: string, o: ClusterOptions): OfflineJob => (COMPOSITIONS[name] ? COMPOSITIONS[name].build(o) : clusterJob(o));
 import { browserZlib, canPickFolder, directoryStore, memoryStore, pickFolder } from "./platform";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -21,6 +25,7 @@ const presetEl = $<HTMLSelectElement>("preset");
 const fields = ["particles", "planes", "width", "height", "fps", "seconds", "seed"] as const;
 const inputs = Object.fromEntries(fields.map((f) => [f, $<HTMLInputElement>(f)])) as Record<(typeof fields)[number], HTMLInputElement>;
 const splatEl = $<HTMLSelectElement>("splat");
+const kernelEl = $<HTMLSelectElement>("kernel");
 const summaryEl = $("summary");
 const statusEl = $("status");
 const folderBtn = $<HTMLButtonElement>("folder");
@@ -32,6 +37,7 @@ const view = $<HTMLCanvasElement>("view");
 let store: FileStore = memoryStore();
 let folderName = "";
 let stopRequested = false;
+let abort: AbortController | null = null;
 let busy = false;
 
 const setStatus = (text: string) => (statusEl.textContent = text);
@@ -51,7 +57,7 @@ function shortCount(n: number): string {
 }
 
 function fillFromPreset(name: string): void {
-  const p = PRESETS[name];
+  const p = presetOptions(name);
   inputs.particles.value = shortCount(p.particles);
   inputs.planes.value = String(p.planes);
   inputs.width.value = String(p.width);
@@ -66,7 +72,7 @@ function fillFromPreset(name: string): void {
 function currentJob(): OfflineJob {
   const fps = Number(inputs.fps.value);
   const o: ClusterOptions = {
-    ...PRESETS[presetEl.value],
+    ...presetOptions(presetEl.value),
     particles: parseCount(inputs.particles.value),
     planes: parseCount(inputs.planes.value),
     width: parseCount(inputs.width.value),
@@ -76,7 +82,7 @@ function currentJob(): OfflineJob {
     seed: parseCount(inputs.seed.value),
     splat: splatEl.value as SplatMode,
   };
-  return clusterJob(o);
+  return buildJob(presetEl.value, o);
 }
 
 function updateSummary(): void {
@@ -89,7 +95,7 @@ function updateSummary(): void {
   }
 }
 
-for (const name of Object.keys(PRESETS)) presetEl.add(new Option(name, name));
+for (const name of [...Object.keys(PRESETS), ...Object.keys(COMPOSITIONS)]) presetEl.add(new Option(name, name));
 presetEl.value = "preview";
 presetEl.addEventListener("change", () => fillFromPreset(presetEl.value));
 for (const el of [...Object.values(inputs), splatEl]) el.addEventListener("input", updateSummary);
@@ -180,6 +186,7 @@ renderBtn.addEventListener("click", async () => {
   }
   setBusy(true);
   stopRequested = false;
+  abort = new AbortController();
   let device: GPUDevice | null = null;
   try {
     device = await openDevice(job);
@@ -189,8 +196,10 @@ renderBtn.addEventListener("click", async () => {
     const r = await renderJob(device, job, store, browserZlib, {
       // Browsers reset the GPU if one submission runs for about 2 s. Keep batches short.
       targetBatchMs: 120,
+      kernel: kernelEl.value === "trillion" ? "trillion" : "offline",
       checkpointSeconds: canPickFolder() ? 300 : 0,
       shouldStop: () => stopRequested,
+      signal: abort.signal,
       onProgress: (p) => {
         const t = performance.now();
         if (t - lastPaint < 250) return;
@@ -210,6 +219,10 @@ renderBtn.addEventListener("click", async () => {
         (rate ? `\naverage ${fmtRate(rate)}` : ""),
     );
   } catch (e) {
+    if ((e as DOMException).name === "AbortError") {
+      setStatus(canPickFolder() ? "Stopped. Progress is saved. Press render to continue." : "Stopped.");
+      return;
+    }
     setStatus(`Render failed: ${(e as Error).message}${canPickFolder() ? "\nFinished frames are kept. Press render to continue." : ""}`);
   } finally {
     device?.destroy();
@@ -219,6 +232,7 @@ renderBtn.addEventListener("click", async () => {
 
 stopBtn.addEventListener("click", () => {
   stopRequested = true;
+  abort?.abort();
   setStatus("Stopping after this batch...");
 });
 

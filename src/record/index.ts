@@ -19,7 +19,8 @@
  */
 import { downloadBlob, startRecording, timestampName } from "../capture";
 import type { FrameStats } from "../offline/core/develop";
-import { withCommas } from "../offline/core/grade";
+import { DEFAULT_LOOK, withCommas } from "../offline/core/grade";
+import { buildManifest } from "../manifest/manifest.mjs";
 import { totalParticles, type OfflineJob, type SplatMode, type Weighting } from "../offline/core/job";
 import { StatelessRenderer } from "../offline/core/renderer";
 import { gradeJob, jobFingerprint, loadStats, renderJob, type FileStore } from "../offline/core/session";
@@ -320,18 +321,20 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
 
       // Grade with src/offline's grade step and save.
       const base = timestampName(`strata-${shortCount(total)}`, "x").slice(0, -2);
-      const manifest = {
-        kind: "strata-record",
-        url: location.href,
+      // The manifest (src/manifest) copies every number from the GPU-written frame stats.
+      const manifest = await buildManifest({
+        job,
+        stats: await loadStats(store, job),
+        commit: (import.meta.env.VITE_STRATA_COMMIT as string | undefined) ?? null,
+        renderer: "src/offline StatelessRenderer",
+        entry: location.href,
+        gpu: info ? { vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description } : null,
+        host: { userAgent: navigator.userAgent },
+        jobFingerprint: jobFingerprint(job),
+        look: { ...DEFAULT_LOOK },
         started,
         finished: new Date().toISOString(),
-        renderer: "src/offline StatelessRenderer",
-        adapter: info ? { vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description } : null,
-        userAgent: navigator.userAgent,
-        particlesPerFrame: total,
-        tallies: tallies.sort((a, b) => a.frame - b.frame),
-        job,
-      };
+      });
       const rgba = new Uint8ClampedArray(job.width * job.height * 4);
       const canvas = new OffscreenCanvas(job.width, job.height);
       const ctx = canvas.getContext("2d")!;
@@ -371,9 +374,9 @@ export function mountRecord({ hud, query = new URLSearchParams(location.search) 
       downloadBlob(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }), `${base}.json`);
       if (last) showOverlay(last, job.width, job.height);
 
-      const t = manifest.tallies[manifest.tallies.length - 1];
+      const t = manifest.frames[manifest.frames.length - 1];
       return t
-        ? `saved ${saved} and ${base}.json. ${withCommas(t.evaluated)} of ${withCommas(t.particles)} evaluated, ${withCommas(t.landed)} in frame`
+        ? `saved ${saved} and ${base}.json. ${withCommas(t.evaluated)} of ${withCommas(manifest.particlesPerFrame)} evaluated, ${withCommas(t.landed)} in frame`
         : `saved ${saved}`;
     },
   });

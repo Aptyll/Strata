@@ -50,7 +50,8 @@ export interface AppHud {
 
 export function mountAppHud({ app, canvas, scenes, render, budget, camera, view }: AppHudDeps): AppHud {
   const { hud, update } = mountHud(app, {
-    hud: { autoFps: false },
+    // The die's breathing hint is scheduled with the gesture hints (src/ux/experience/app-hints.ts).
+    hud: { autoFps: false, diceHintMs: 0 },
     minParticles: MIN_PARTICLES,
     maxParticles: MAX_PARTICLES,
     // Particles stay where they are and start obeying the new rule, instead of a hard cut.
