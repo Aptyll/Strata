@@ -330,7 +330,9 @@ representative frame and keep the values, so brightness does not pump.
 `tone.contrast` (default 1) raises luma to a power after the curve. Above 1
 it pushes faint regions toward black and separates the bright ones, which
 helps when the log curve spans many orders of magnitude and the picture
-looks flat. `display: 'filmic'` has a similar effect with a toe.
+looks flat. `display: 'filmic'` has a similar effect with a toe. The app's
+tonemap pass uses 2.2, which cancels the sRGB encode on top of the log curve
+(the Esc menu's contrast slider changes it).
 
 The pure functions `histogramPercentile` and `exposureFromHistogram` work on
 a CPU-built `CountHistogram` too, for a renderer that already reads its
