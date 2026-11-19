@@ -62,3 +62,16 @@ export function screenLimit(refreshHz: number, targetFps: number): ScreenLimit {
   const capped = refreshHz > 0 && refreshHz < targetFps * 1.05;
   return capped ? { screenHz: refreshHz, passFps: refreshHz * 0.95 } : { screenHz: null, passFps: targetFps };
 }
+
+/**
+ * A measured window disproves a capped screen when it reads well above the
+ * refresh rate the screen was thought to be capped at. The refresh can be
+ * misread while the page starts: a GPU process busy setting up can make every
+ * other animation frame late, and a 60 Hz screen then measures as 30. On a
+ * screen that really is capped, a window of a second or more reads at most
+ * about one frame more than the refresh rate, so 15 percent above it cannot
+ * happen there.
+ */
+export function capDisproved(screenHz: number | null, windowFps: number): boolean {
+  return screenHz !== null && windowFps > screenHz * 1.15;
+}
