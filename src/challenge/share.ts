@@ -4,6 +4,7 @@
  * links in and out. Pure: no DOM, no GPU, tested by share.test.js.
  *
  * The rules these words keep (CLAUDE.md, "Honest counting"):
+ *   - the number on screen is the GPU's own count, not the count that was asked for
  *   - a count always says "simulated" or "rendered" next to it
  *   - a frame rate is attached to a count only when it was measured at that count
  *   - nothing is offered for copying unless the GPU's own count matched
@@ -35,7 +36,10 @@ export interface RunFacts {
 }
 
 export interface ViewerText {
-  /** The hero number: particles in every frame right now, or the sustained record. */
+  /**
+   * The hero number: particles the GPU itself counted in its latest checked
+   * frame. A finished, verified run's record is the same number.
+   */
   figure: string;
   /** What the number counts. Always says simulated or rendered. */
   what: string;
@@ -63,9 +67,13 @@ export function viewerText(facts: RunFacts): ViewerText {
   // Only a finished search or a fixed count has a frame rate that belongs to this count:
   // while the search runs, the last measured window may be from the count before.
   const settled = (facts.phase === "hold" && r.sustained) || fixed;
+  // The number shown is what the kernels counted (one atomic add per workgroup), not the count
+  // that was asked for. It is null until the first checked frame of a run.
+  const tally = r.gpuCount;
 
   const kind = sim ? "simulated" : "rendered";
-  const at = settled && measured ? ` at ${rate(r.fps)} fps` : "";
+  // The frame rate is attached only when the number shown is the count it was measured at.
+  const at = settled && measured && tally === r.particles ? ` at ${rate(r.fps)} fps` : "";
   // A device that stopped mid-search leaves a count nothing was measured at: say only what the last frame was.
   const span = facts.lost !== null && !settled ? "in the last frame" : `every frame${at}`;
   const what = `particles ${kind} ${span}${sim ? "" : ", not simulated"}`;
@@ -89,7 +97,7 @@ export function viewerText(facts: RunFacts): ViewerText {
   const conditions = settled || over ? [r.gpuName, size].filter((s) => s).join(" · ") : live;
 
   return {
-    figure: r.particles > 0 ? count(r.particles) : "--",
+    figure: tally === null ? "--" : count(tally),
     what,
     caption,
     conditions,

@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { challengeLink, gpuName, rendererName, resultSentence, viewerText, worldLink } from "./share";
 
-/** A finished, valid, simulated run. Each test changes what it is about. */
+/**
+ * A finished, valid, simulated run. Each test changes what it is about. The
+ * GPU's own count equals the count that ran unless a test sets `gpuCount`.
+ */
 const run = (result = {}, facts = {}) => ({
   phase: "hold",
   mismatches: 0,
@@ -27,7 +30,7 @@ const run = (result = {}, facts = {}) => ({
     particlesPerPixel: 68.8,
     bytesPerParticle: 8,
     gpuMs: 29.1,
-    gpuCount: 142_606_336,
+    gpuCount: result.particles ?? 142_606_336,
     gpuCountVerified: true,
     tier1: true,
     adapter: "nvidia turing",
@@ -57,9 +60,25 @@ test("while the search runs, the frame rate is live and never attached to the co
     assert.equal(t.over, false);
     assert.equal(t.shareable, false, "nothing to copy before the search is done");
   }
-  const first = viewerText(run({ sustained: false, tier1: false, particles: 0, fps: 0 }, { phase: "climb" }));
+  const first = viewerText(run({ sustained: false, tier1: false, particles: 0, fps: 0, gpuCount: null }, { phase: "climb" }));
   assert.equal(first.figure, "--");
   assert.match(first.conditions, /^-- fps/);
+});
+
+test("the number on screen is the GPU's own count, not the count that was asked for", () => {
+  const searching = { sustained: false, stoppedBy: null, tier1: false, fps: 52 };
+  // The search asked for more, and the GPU's latest checked frame still ran the count before.
+  const asked = viewerText(run({ ...searching, particles: 41_943_040, gpuCount: 33_554_432 }, { phase: "climb" }));
+  assert.equal(asked.figure, "33,554,432");
+  // No checked frame yet in this run: no number, whatever was asked for.
+  const unchecked = viewerText(run({ ...searching, particles: 41_943_040, gpuCount: null }, { phase: "climb" }));
+  assert.equal(unchecked.figure, "--");
+  // A finished run whose latest checked frame came up short shows what the GPU did, with no frame rate attached.
+  const short = viewerText(run({ gpuCount: 142_000_000, gpuCountVerified: false, tier1: false }, { mismatches: 1 }));
+  assert.equal(short.figure, "142,000,000");
+  assert.equal(short.what, "particles simulated every frame");
+  assert.equal(short.caption, "result invalid: the GPU counted a different number");
+  assert.equal(short.shareable, false);
 });
 
 test("every count says simulated or rendered, in every state", () => {
