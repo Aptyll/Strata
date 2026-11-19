@@ -29,7 +29,7 @@ Measured on one RTX 2070 (8 GB, 2018) on 2026-11-19.
 | --- | ---: | --- | --- |
 | Realtime, simulated | 100,000,000 | stepped and drawn every frame | 111 fps |
 | Realtime, simulated | 800,000,000 | stepped and drawn every frame | 15 fps, or 54 fps with culling and LOD |
-| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time, then drawn if in view | 26 to 52 seconds per 4K frame |
+| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds exactly one unit of light (count weighting, used for the record frames and proof shots) | 26 to 52 seconds per 4K frame |
 
 The realtime rows come from the benchmark page at 1920x1080 without vsync, and
 the full table is in [docs/perf.md](docs/perf.md). The brute force path moves

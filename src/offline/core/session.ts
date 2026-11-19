@@ -232,6 +232,11 @@ export function defaultLabel(stats: FrameStats, job: OfflineJob): string[] {
   const lines: string[] = [
     `${withCommas(totalParticles(job))} particles, every one evaluated every frame`,
     "Stateless: closed-form motion, nothing stored per particle",
+    // Flux weighting rounds each weight at random, so a faint far particle is
+    // drawn only in expectation. Say so instead of implying one unit each.
+    job.weighting === "count"
+      ? "Each particle in frame adds exactly one unit of light"
+      : "Far particles dimmed by random rounding: drawn on average, not each",
   ];
   return [...lines, `In frame: ${withCommas(stats.landed)}`];
 }
