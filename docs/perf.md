@@ -115,8 +115,8 @@ to this path's bind group and without the engine's f32 particle array. The
 entry point unpacks a particle to the standard `Particle { pos, vel }`, calls
 `simulateParticle` (the behavior's `update` plus pointer brushes, exactly as
 the core engine's entry point does), and packs the result.
-`src/perf/shaders.verify.ts` compiles this shader for every registered
-behavior (`npm run verify`).
+`src/verify/cases/shaders.verify.ts` compiles this shader for every
+registered behavior (`npm run verify`).
 
 ### One pass: simulate and rasterize together
 
