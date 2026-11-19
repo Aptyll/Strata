@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Strata offline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --fg: 255, 255, 255;
+        --strong: 0.9;
+        --dim: 0.45;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #000; }
+      body {
+        color: rgba(var(--fg), var(--strong));
+        font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0.04em;
+        display: grid;
+        grid-template-columns: 280px 1fr;
+      }
+      aside { padding: 16px; overflow-y: auto; border-right: 1px solid rgba(var(--fg), 0.12); }
+      main { display: grid; place-items: center; overflow: hidden; padding: 16px; }
+      canvas { max-width: 100%; max-height: 100%; image-rendering: auto; background: #000; }
+      h1 { font: inherit; text-transform: lowercase; margin: 0 0 16px; }
+      label { display: grid; grid-template-columns: 1fr 120px; gap: 8px; align-items: center; margin: 4px 0; color: rgba(var(--fg), var(--dim)); }
+      input, select {
+        font: inherit; color: inherit; background: transparent; width: 100%;
+        border: 0; border-bottom: 1px solid rgba(var(--fg), 0.2); padding: 2px 0;
+      }
+      select option { background: #000; }
+      button {
+        font: inherit; color: rgba(var(--fg), var(--strong)); background: transparent; cursor: pointer;
+        border: 1px solid rgba(var(--fg), 0.3); padding: 4px 8px; margin: 4px 4px 0 0; text-transform: lowercase;
+      }
+      button:disabled { color: rgba(var(--fg), 0.25); border-color: rgba(var(--fg), 0.12); cursor: default; }
+      .section { margin: 16px 0 4px; color: rgba(var(--fg), var(--dim)); text-transform: lowercase; }
+      #status, #summary { white-space: pre-wrap; color: rgba(var(--fg), var(--dim)); margin-top: 12px; }
+      #summary { color: rgba(var(--fg), var(--strong)); }
+      @media (max-width: 720px) {
+        body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+        aside { border-right: 0; border-bottom: 1px solid rgba(var(--fg), 0.12); }
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <h1>strata offline</h1>
+      <label>preset <select id="preset"></select></label>
+      <label>particles <input id="particles" /></label>
+      <label>sheets <input id="planes" /></label>
+      <label>width <input id="width" /></label>
+      <label>height <input id="height" /></label>
+      <label>fps <input id="fps" /></label>
+      <label>seconds <input id="seconds" /></label>
+      <label>splat <select id="splat"><option>point</option><option>bilinear</option></select></label>
+      <label>seed <input id="seed" /></label>
+      <div id="summary"></div>
+
+      <div class="section">frames</div>
+      <button id="folder">choose folder</button>
+      <button id="render">render</button>
+      <button id="stop" disabled>stop</button>
+
+      <div class="section">video</div>
+      <button id="export">export mp4</button>
+
+      <div id="status"></div>
+    </aside>
+    <main><canvas id="view" width="640" height="360"></canvas></main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
