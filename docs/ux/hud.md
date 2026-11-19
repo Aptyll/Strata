@@ -52,7 +52,8 @@ without the bundler.
 | Keys sheet | centre | hidden | `?` |
 
 Stats stay on once asked for, idle or not, since asking for them is a
-deliberate act. They are remembered only for the session.
+deliberate act. The choice is remembered across visits. On touch screens the
+same switch is the `stats` button in the menu footer.
 
 ## The die
 
@@ -122,9 +123,24 @@ picks the value up.
 
 ## Wiring it to the engine
 
-The short way is `mountHud` in `src/ux/hud/wire.ts`. It creates the HUD with
-the shared `TOKENS`, hooks the die to `rollScene` and `startRoll` from
-`src/ux/behavior-ui/roll.ts`, and feeds `app.stats()` to the stats line:
+The short way is `mountHud` in `src/ux/hud/wire.ts`. It talks to the engine
+only through `AppContext`, so it plugs into any engine that implements the
+contract. It:
+
+- creates the HUD with the shared `TOKENS`
+- hooks the die to `rollScene` and `startRoll` from `src/ux/behavior-ui/roll.ts`
+- feeds `app.stats()` to the stats line
+- adds a **particles** slider (log scale, applied on release) that rebuilds the
+  world with every plane scaled, through `getScene` and `loadScene`
+- adds a **brightness** slider when the engine implements the optional
+  `AppContext.setRender`
+- adds one section of sliders per behavior in the world, built from each
+  behavior's `ParamSpec`s, for the three most used behaviors. A slider sets the
+  param on every plane running that behavior. The sections are rebuilt when a
+  roll changes the cast, and the sliders follow the values while a roll glides.
+  Touching a slider cancels a roll in flight.
+
+In `src/main.ts` that is two lines, plus removing the old text overlay:
 
 ```ts
 import { mountHud } from './ux/hud/wire';
@@ -192,15 +208,17 @@ Notes:
   `--hud-tracking`, `--hud-ease`, `--hud-fade-in`, `--hud-fade-out`,
   `--hud-unit`, `--hud-edge`, `--hud-panel-w`.
 
-## Demo
+## Demos
 
-`src/ux/hud/demo.html` runs the HUD over a cheap 2D point field that stands in
-for the engine. Run `npm run dev` and open `/src/ux/hud/demo.html`.
+Both run today without WebGPU. Start `npm run dev`, then open:
+
+- `/src/ux/hud/demo/`: the HUD exactly as the app mounts it (`mountHud`), over
+  a small CPU stand-in that implements the parts of `AppContext` the HUD uses.
+  The die really rolls behaviors and the menu really drives them.
+- `/src/ux/hud/demo.html`: the bare HUD module with hand-registered params.
 
 ## Open questions
 
-- Touch: the die and the dot work by tap, but stats have no touch gesture yet.
-  A switch inside the menu is the likely answer.
 - Whether the menu should pause the simulation, as a game's Esc menu would. It
   does not today, because the point of the menu is to tune a running system.
 - The announce text uses wide letter spacing, which is outside `TOKENS`. It is

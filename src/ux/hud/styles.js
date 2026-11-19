@@ -45,6 +45,8 @@ export const CSS = `
 .strata-hud > .sh-stats { opacity: 0; }
 .strata-hud.stats-on > .sh-stats { opacity: 1; }
 
+.strata-hud-idle, .strata-hud-idle * { cursor: none !important; }
+
 /* ---- stats ---------------------------------------------------------- */
 .sh-stats {
   position: absolute;
@@ -191,6 +193,7 @@ export const CSS = `
 }
 .sh-foot button { cursor: pointer; padding: 2px 0; }
 .sh-foot button:hover, .sh-foot button:focus-visible { color: rgb(var(--hud-fg)); }
+.sh-foot button[aria-pressed=true] { color: rgba(var(--hud-fg), var(--hud-a-strong)); }
 
 /* ---- menu dot: the only chrome besides the dice --------------------- */
 .sh-dot {

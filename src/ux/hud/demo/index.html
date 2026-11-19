@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Strata HUD, wired</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+</style>
+<canvas id="c"></canvas>
+<!-- The HUD exactly as the app mounts it (mountHud), over a CPU stand-in for the engine.
+     Run `npm run dev` and open /src/ux/hud/demo/ -->
+<script type="module" src="./main.ts"></script>
