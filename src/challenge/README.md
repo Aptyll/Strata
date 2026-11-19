@@ -66,7 +66,7 @@ for the record. Files: `viewer.ts` (the block and its buttons) and `share.ts`
 
 | state | the block says | buttons |
 | --- | --- | --- |
-| searching | the count being tried, "simulated every frame", the live frame rate | back to the world, details |
+| searching | the GPU's own count of the particles in its latest checked frame, "simulated every frame", the live frame rate | back to the world, details |
 | done | the sustained count with the frame rate measured at it, and the GPU's name | copy result, run again, back to the world, details |
 | cannot run | why, in plain words (no WebGPU, no graphics card reached) | back to the world |
 | device lost | "the graphics device stopped" | reload, back to the world |
@@ -76,6 +76,10 @@ for the record. Files: `viewer.ts` (the block and its buttons) and `share.ts`
   sheets) on NVIDIA GeForce RTX 2070. <link>`. On a phone it opens the share
   sheet. It is offered only when the run finished and the GPU's own count
   matched. Key `C` still copies the full JSON.
+- **The number is the GPU's own count.** The figure at the top is what the
+  kernels counted in the latest checked frame (see "Counted on the GPU"),
+  not the count the search asked for, so it can trail a change of count by
+  a few frames. A finished, verified run's record is the same number.
 - **A frame rate belongs to a count.** While the search runs, the frame rate
   on screen is the last measured window, which may be from the count before,
   so it is shown apart from the count. Only a finished run says "N particles

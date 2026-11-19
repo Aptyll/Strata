@@ -155,6 +155,9 @@ were not in the project files when this page was written.
 
 ## Open
 
+*Later: both reruns came back by 8:31 PM and are on
+[page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md).*
+
 - Count-up: render it again with [#148](https://github.com/Aptyll/Strata/pull/148),
   so the picture changes through the whole clip.
 - Loupe: confirm on a rerun that the dots stand apart.

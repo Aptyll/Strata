@@ -1,0 +1,337 @@
+[
+  {
+    "file": "candidates/01-number-world.jpg",
+    "concept": "The number over the whole trillion, every particle in frame",
+    "on_image_text": [
+      "1,000,000,000,000"
+    ],
+    "brightness": {
+      "mean": 0.188,
+      "share_above_25pct": 0.225,
+      "share_above_50pct": 0.197
+    },
+    "jpeg_quality": 95,
+    "bytes": 262628,
+    "sources": [
+      {
+        "file": "docs/record/trillion-still-f0.png",
+        "view": "frame 0, the far opener: the whole cluster",
+        "keys": "32-bit pcg, commit 41e853a or c42ceda",
+        "claim": "10^12 particles rendered, not 10^12 distinct particles: the 32-bit keys give about 4.3 billion distinct keys, reused on every sheet under its own transform",
+        "rendered_on": "NVIDIA GeForce RTX 2070, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (the job's count: these early stills have no GPU count of evaluated particles)",
+        "particles_in_view": "all 1,000,000,000,000: every sheet lies inside the frame (no in-view line on this early label)",
+        "weighting": "flux, most likely (docs/record/README.md)",
+        "exported_contrast": 4096
+      }
+    ],
+    "crop_4k": [
+      1009,
+      491,
+      2849,
+      1526
+    ],
+    "share_of_frame_light_in_crop": 0.971
+  },
+  {
+    "file": "candidates/02-number-spiral.jpg",
+    "concept": "The number under the spiral disc and the ring sheet",
+    "on_image_text": [
+      "1,000,000,000,000"
+    ],
+    "brightness": {
+      "mean": 0.186,
+      "share_above_25pct": 0.343,
+      "share_above_50pct": 0.121
+    },
+    "jpeg_quality": 95,
+    "bytes": 192719,
+    "sources": [
+      {
+        "file": "docs/record/trillion64-A.png",
+        "view": "close-up: spiral disc, Lissajous ribbon, ring sheet",
+        "keys": "64-bit particleKey, commit 1e7e66e",
+        "claim": "10^12 distinct keys",
+        "manifest": "docs/record/trillion64-A.manifest.json",
+        "rendered_on": "NVIDIA GeForce RTX 2070 8 GB (Turing), driver 621.01, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (GPU count)",
+        "particles_in_view": "985,878,422,357 (GPU count)",
+        "weighting": "flux",
+        "exported_contrast": 256
+      }
+    ],
+    "crop_4k": [
+      71,
+      0,
+      3538,
+      1950
+    ],
+    "share_of_frame_light_in_crop": 0.997
+  },
+  {
+    "file": "candidates/03-number-tower.jpg",
+    "concept": "The number through the column of sheets",
+    "on_image_text": [
+      "1,000,000,000,000"
+    ],
+    "brightness": {
+      "mean": 0.144,
+      "share_above_25pct": 0.185,
+      "share_above_50pct": 0.153
+    },
+    "jpeg_quality": 95,
+    "bytes": 114925,
+    "sources": [
+      {
+        "file": "docs/record/trillion64-B.png",
+        "view": "a column of stacked sheets seen from the side",
+        "keys": "64-bit particleKey, commit 1e7e66e",
+        "claim": "10^12 distinct keys",
+        "manifest": "docs/record/trillion64-B.manifest.json",
+        "rendered_on": "NVIDIA GeForce RTX 2070 8 GB (Turing), driver 621.01, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (GPU count)",
+        "particles_in_view": "927,901,486,604 (GPU count)",
+        "weighting": "flux",
+        "exported_contrast": 256
+      }
+    ],
+    "crop_4k": [
+      266,
+      65,
+      3569,
+      1922
+    ],
+    "share_of_frame_light_in_crop": 0.893
+  },
+  {
+    "file": "candidates/04-one-vs-trillion.jpg",
+    "concept": "Plan concept A: one against all of them",
+    "on_image_text": [
+      "1",
+      "1,000,000,000,000"
+    ],
+    "brightness": {
+      "mean": 0.117,
+      "share_above_25pct": 0.139,
+      "share_above_50pct": 0.121
+    },
+    "jpeg_quality": 95,
+    "bytes": 193101,
+    "sources": [
+      {
+        "file": "docs/record/trillion-still-f0.png",
+        "view": "frame 0, the far opener: the whole cluster",
+        "keys": "32-bit pcg, commit 41e853a or c42ceda",
+        "claim": "10^12 particles rendered, not 10^12 distinct particles: the 32-bit keys give about 4.3 billion distinct keys, reused on every sheet under its own transform",
+        "rendered_on": "NVIDIA GeForce RTX 2070, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (the job's count: these early stills have no GPU count of evaluated particles)",
+        "particles_in_view": "all 1,000,000,000,000: every sheet lies inside the frame (no in-view line on this early label)",
+        "weighting": "flux, most likely (docs/record/README.md)",
+        "exported_contrast": 4096
+      }
+    ],
+    "crop_4k": [
+      1087,
+      572,
+      2771,
+      1673
+    ],
+    "share_of_frame_light_in_crop": 0.993,
+    "dot": "a symbol for one particle, not a render (one particle is one 4K pixel)"
+  },
+  {
+    "file": "candidates/05-old-record.jpg",
+    "concept": "Plan concept B: the old record struck through above the new one, same size",
+    "on_image_text": [
+      "4,000,000",
+      "1,000,000,000,000"
+    ],
+    "brightness": {
+      "mean": 0.203,
+      "share_above_25pct": 0.38,
+      "share_above_50pct": 0.133
+    },
+    "jpeg_quality": 95,
+    "bytes": 210644,
+    "sources": [
+      {
+        "file": "docs/record/trillion64-A.png",
+        "view": "close-up: spiral disc, Lissajous ribbon, ring sheet",
+        "keys": "64-bit particleKey, commit 1e7e66e",
+        "claim": "10^12 distinct keys",
+        "manifest": "docs/record/trillion64-A.manifest.json",
+        "rendered_on": "NVIDIA GeForce RTX 2070 8 GB (Turing), driver 621.01, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (GPU count)",
+        "particles_in_view": "985,878,422,357 (GPU count)",
+        "weighting": "flux",
+        "exported_contrast": 256
+      }
+    ],
+    "crop_4k": [
+      346,
+      0,
+      3648,
+      1858
+    ],
+    "share_of_frame_light_in_crop": 0.999
+  },
+  {
+    "file": "candidates/06-inside-one-pixel.jpg",
+    "concept": "One pixel of the far opener, opened up: every dot is one particle",
+    "on_image_text": [
+      "1 PIXEL"
+    ],
+    "brightness": {
+      "mean": 0.105,
+      "share_above_25pct": 0.131,
+      "share_above_50pct": 0.117
+    },
+    "jpeg_quality": 95,
+    "bytes": 189854,
+    "sources": [
+      {
+        "file": "docs/record/trillion-still-f0.png",
+        "view": "frame 0, the far opener: the whole cluster",
+        "keys": "32-bit pcg, commit 41e853a or c42ceda",
+        "claim": "10^12 particles rendered, not 10^12 distinct particles: the 32-bit keys give about 4.3 billion distinct keys, reused on every sheet under its own transform",
+        "rendered_on": "NVIDIA GeForce RTX 2070, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (the job's count: these early stills have no GPU count of evaluated particles)",
+        "particles_in_view": "all 1,000,000,000,000: every sheet lies inside the frame (no in-view line on this early label)",
+        "weighting": "flux, most likely (docs/record/README.md)",
+        "exported_contrast": 4096
+      },
+      {
+        "file": "loupe/ (render-stills.mjs)",
+        "job": "thumbnail loupe 2096,921 at 1,000,000,000,000",
+        "particles_in_world": 1000000000000,
+        "sheets_rendered": 1,
+        "particles_evaluated": 1000000000,
+        "particles_in_view": 91002,
+        "weighting": "count",
+        "keys": "64-bit particleKey, main at cf36c3f (byte-identical to the render at 45c2ec0)",
+        "render_seconds": 39.7,
+        "pixel_4k": [
+          2096,
+          921
+        ]
+      }
+    ],
+    "crop_4k": [
+      1041,
+      313,
+      2817,
+      1932
+    ],
+    "share_of_frame_light_in_crop": 0.995,
+    "pixel_4k": [
+      2096,
+      921
+    ],
+    "particles_inside_that_pixel": 91002,
+    "marker": "a 12 px square around a pixel that is 0.44 px wide at this size",
+    "loupe_display": "1024 x 1024 render shrunk to 420 px by block maximum, so every particle stays a dot"
+  },
+  {
+    "file": "candidates/07-cold-open.jpg",
+    "concept": "A frame grab of the opening shot, counter included",
+    "on_image_text": [
+      "1,000,000,000,000",
+      "PARTICLES"
+    ],
+    "brightness": {
+      "mean": 0.142,
+      "share_above_25pct": 0.213,
+      "share_above_50pct": 0.131
+    },
+    "jpeg_quality": 95,
+    "bytes": 263745,
+    "sources": [
+      {
+        "file": "docs/record/trillion-key1-f0.png",
+        "view": "inside the field, the shot that opens the video",
+        "keys": "32-bit pcg, commit 41e853a or c42ceda",
+        "claim": "10^12 particles rendered, not 10^12 distinct particles: the 32-bit keys give about 4.3 billion distinct keys, reused on every sheet under its own transform",
+        "rendered_on": "NVIDIA GeForce RTX 2070, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (the job's count: these early stills have no GPU count of evaluated particles)",
+        "particles_in_view": "about 843 billion (two digits of the label are hidden behind a sheet)",
+        "weighting": "flux, most likely (docs/record/README.md)",
+        "exported_contrast": 4096
+      }
+    ],
+    "crop_4k": [
+      151,
+      0,
+      3689,
+      1990
+    ],
+    "share_of_frame_light_in_crop": 0.928
+  },
+  {
+    "file": "candidates/08-pure-image.jpg",
+    "concept": "Plan concept C: the column of sheets alone",
+    "on_image_text": [],
+    "brightness": {
+      "mean": 0.214,
+      "share_above_25pct": 0.317,
+      "share_above_50pct": 0.253
+    },
+    "jpeg_quality": 95,
+    "bytes": 168269,
+    "sources": [
+      {
+        "file": "docs/record/trillion64-B.png",
+        "view": "a column of stacked sheets seen from the side",
+        "keys": "64-bit particleKey, commit 1e7e66e",
+        "claim": "10^12 distinct keys",
+        "manifest": "docs/record/trillion64-B.manifest.json",
+        "rendered_on": "NVIDIA GeForce RTX 2070 8 GB (Turing), driver 621.01, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (GPU count)",
+        "particles_in_view": "927,901,486,604 (GPU count)",
+        "weighting": "flux",
+        "exported_contrast": 256
+      }
+    ],
+    "crop_4k": [
+      996,
+      259,
+      2839,
+      1296
+    ],
+    "share_of_frame_light_in_crop": 0.529
+  },
+  {
+    "file": "candidates/09-trillion-word.jpg",
+    "concept": "The number as a word",
+    "on_image_text": [
+      "1 TRILLION"
+    ],
+    "brightness": {
+      "mean": 0.226,
+      "share_above_25pct": 0.33,
+      "share_above_50pct": 0.176
+    },
+    "jpeg_quality": 95,
+    "bytes": 158022,
+    "sources": [
+      {
+        "file": "docs/record/trillion64-A.png",
+        "view": "close-up: spiral disc, Lissajous ribbon, ring sheet",
+        "keys": "64-bit particleKey, commit 1e7e66e",
+        "claim": "10^12 distinct keys",
+        "manifest": "docs/record/trillion64-A.manifest.json",
+        "rendered_on": "NVIDIA GeForce RTX 2070 8 GB (Turing), driver 621.01, 2026-11-19",
+        "particles_evaluated": "1,000,000,000,000 (GPU count)",
+        "particles_in_view": "985,878,422,357 (GPU count)",
+        "weighting": "flux",
+        "exported_contrast": 256
+      }
+    ],
+    "crop_4k": [
+      115,
+      136,
+      3341,
+      1950
+    ],
+    "share_of_frame_light_in_crop": 0.966
+  }
+]

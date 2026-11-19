@@ -58,11 +58,19 @@ burned-in label.
 | `trillion256-K0.png` | the far view again | not reported | | 1,000,000,000,000 | contrast 256 |
 | `trillion-clip-k068.mp4` | 8 frames, the key2 camera with a slow push | about 32 s per frame | 31 B/s | 107,787,615,782 on the first frame, 107,743,038,598 on the last | contrast 256 |
 
-**Correction (added 2026-11-19 02:35 UTC):** A, `trillion256-A` and B were
-rendered on 32-bit keys (before PR #45) with stacked identical sheets, so they
-are **not** a trillion distinct particles: A holds at most about 17.2 billion
-distinct, B about 137 billion. The cluster frames are still 1T distinct. See
-[docs/record/README.md](../../record/README.md#distinct-particles-and-keys).
+**Correction (8:31 PM, extended 8:40 PM).** Every frame in this table was
+rendered at commit `c42ceda` or `41e853a`: on the old 32-bit keys, and before
+the GPU counted evaluated particles ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)). Two consequences:
+
+- A, `trillion256-A` and B stack identical sheets, so on those keys they are
+  **not** a trillion distinct particles. A holds at most about 17.2 billion
+  distinct particles and B about 137 billion. They are retired, and both
+  compositions were rendered again on 64-bit keys with manifests.
+- The cluster frames (the far view, key1, key2, C, K0 and the clip) put 10^12
+  particles in different places, but draw them from about 4.3 billion keys.
+  They are 10^12 particles rendered, not 10^12 distinct particles.
+
+See [docs/record/README.md](../../record/README.md#distinct-particles-and-keys).
 
 The first six are in git under [`docs/record/`](../../record/README.md). The
 last three are in the project files only.
@@ -123,6 +131,11 @@ Not established, and said so here on purpose:
   later ([#67](https://github.com/Aptyll/Strata/pull/67)) are a second take on
   the same three ideas. As far as the project chat shows, these stills were
   not rendered from those presets.
+
+**Settled later** ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)): the keys (32-bit for every frame on this
+page), the commits (`c42ceda` for the first still, `41e853a` for the rest)
+and the evaluated count (none of these frames has a GPU count of it). The
+weighting is still not confirmed.
 
 ## Pictures
 
@@ -229,6 +242,8 @@ The desktop cannot push to the repo, so the frames went to the project's
 shared files first and were committed from there.
 
 ## Open
+
+What happened next is on [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md).
 
 - The full 10 second 1T clip. The 8 frames are saved, so the clip can resume.
 - A re-render of A with the bilinear splat, to remove the ring moiré.
