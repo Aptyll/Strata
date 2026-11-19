@@ -17,6 +17,7 @@ export {
   type FocusTrackerOptions,
 } from './focus';
 export { ParallaxRig, type ParallaxOptions } from './parallax';
+export { createParallaxCamera, type ParallaxCamera, type ParallaxCameraOptions } from './parallax-camera';
 export {
   createDepthSpritePass,
   depthSettingsForWorld,

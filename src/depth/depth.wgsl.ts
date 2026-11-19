@@ -42,7 +42,7 @@ struct DepthParams {
 
   bokehEdge: f32,       // 0 = flat disc, >0 = brighter rim on defocused discs
   cullIntensity: f32,   // sprites dimmer than this may be discarded
-  pad0: f32,
+  pointGainMax: f32,    // cap on the brightness gain of near particles in the point path
   pad1: f32,
 };
 
@@ -108,6 +108,44 @@ fn depth_point_intensity(viewZIn: f32, dist: f32, p: DepthParams) -> f32 {
   let coc = depth_coc_px(viewZ, p);
   let rr = max(rGeo * rGeo + coc * coc, 1.0);
   return depth_attenuation(viewZ, dist, p) * rGeo * rGeo / rr;
+}
+
+// ---- Point and accumulation renderers (offline, record scale) -------------
+// These draw each particle as a single sample, so they cannot grow a sprite.
+// Depth of field comes from lens sampling instead: every particle is nudged
+// by a random point inside its circle of confusion. One sample is noise; a
+// dense plane, or many accumulated frames, converges to the same bokeh the
+// sprite path draws, at no extra cost per particle.
+
+// Weight of one sample: fog, near fade, brightness, and the size cue turned
+// into gain (a particle twice as close covers four times the area, so it
+// carries four times the light, capped by pointGainMax). Use this together
+// with depth_lens_jitter_px; the jitter does the defocus spreading, so no
+// energy is removed for blur here.
+fn depth_point_weight(viewZIn: f32, dist: f32, p: DepthParams) -> f32 {
+  let viewZ = max(viewZIn, 1e-4);
+  let gain = min(pow(p.refDist / viewZ, 2.0 * p.sizeAttenuation), max(p.pointGainMax, 1.0));
+  return depth_attenuation(viewZ, dist, p) * gain;
+}
+
+// Pixel offset for one lens sample. u is two independent uniform numbers in
+// [0, 1), different per particle (and per frame if frames are accumulated).
+// bokehEdge pushes samples toward the rim, matching depth_bokeh.
+fn depth_lens_jitter_px(viewZ: f32, u: vec2f, p: DepthParams) -> vec2f {
+  let coc = depth_coc_px(viewZ, p);
+  // Radial density 1 + e t^4: a uniform disc (radius sqrt(u)) mixed with a rim
+  // term (radius u^(1/6)) that is picked with probability e / (3 + e). The
+  // pick reuses the low bits of u.y, which the angle does not visibly need.
+  let e = p.bokehEdge;
+  let rim = fract(u.y * 64.0) < e / (3.0 + e);
+  let r = select(sqrt(u.x), pow(u.x, 1.0 / 6.0), rim);
+  let a = 6.2831853 * u.y;
+  return coc * r * vec2f(cos(a), sin(a));
+}
+
+// The same offset in NDC. Multiply by clip.w and add to clip.xy.
+fn depth_lens_jitter_ndc(viewZ: f32, u: vec2f, viewport: vec2f, p: DepthParams) -> vec2f {
+  return depth_lens_jitter_px(viewZ, u, p) * 2.0 / viewport;
 }
 
 // NDC offset for one quad corner (corner in [-1, 1]^2). Multiply by clip.w

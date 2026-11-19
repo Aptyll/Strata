@@ -24,6 +24,8 @@ export interface DepthSettings {
   refDist: number;
   bokehEdge: number;
   cullIntensity: number;
+  /** Cap on the brightness gain of near particles in the point path. */
+  pointGainMax: number;
 }
 
 export interface DepthCameraInfo {
@@ -60,6 +62,7 @@ export const DEPTH_DEFAULTS: Readonly<DepthSettings> = Object.freeze({
 
   bokehEdge: 0.25,
   cullIntensity: 1 / 2048,
+  pointGainMax: 4,
 });
 
 export interface DepthParams extends DepthSettings {}
@@ -91,7 +94,7 @@ export class DepthParams {
     out[15] = this.refDist;
     out[16] = dof ? this.bokehEdge : 0;
     out[17] = this.cullIntensity;
-    out[18] = 0;
+    out[18] = this.pointGainMax;
     out[19] = 0;
     return out;
   }
@@ -108,6 +111,47 @@ export class DepthParams {
     if (!this.dof) return 0;
     const off = Math.max(Math.abs(viewZ - this.focusDist) - this.focusRange, 0);
     return Math.min((this.aperture * off) / Math.max(viewZ, 1e-4), this.maxCocPx);
+  }
+
+  /** Smoothstep fade for particles about to pass through the lens. Mirrors depth_near_fade. */
+  nearFadeAt(viewZ: number): number {
+    const f = Math.min(Math.max(viewZ / Math.max(this.nearFade, 1e-6), 0), 1);
+    return f * f * (3 - 2 * f);
+  }
+
+  /**
+   * Weight of one point sample for a CPU or accumulation renderer. Mirrors
+   * depth_point_weight: fog, near fade, brightness and the size cue as gain.
+   */
+  pointWeight(viewZ: number, dist: number): number {
+    const z = Math.max(viewZ, 1e-4);
+    const atm = this.atmosphere;
+    const gain = Math.min(Math.pow(this.refDist / z, 2 * (atm ? this.sizeAttenuation : 0)), Math.max(this.pointGainMax, 1));
+    const dim = Math.pow(1 + dist / this.refDist, -(atm ? this.distDim : 0));
+    return this.brightness * this.fogAt(dist) * this.nearFadeAt(z) * dim * gain;
+  }
+
+  /**
+   * Pixel offset of one lens sample, for depth of field without sprites.
+   * u1, u2 are independent uniform numbers in [0, 1). Mirrors
+   * depth_lens_jitter_px.
+   */
+  lensJitterPx(viewZ: number, u1: number, u2: number): [number, number] {
+    const coc = this.cocAt(viewZ);
+    if (coc <= 0) return [0, 0];
+    const e = this.bokehEdge;
+    const rim = (u2 * 64) % 1 < e / (3 + e);
+    const r = rim ? Math.pow(u1, 1 / 6) : Math.sqrt(u1);
+    const a = 2 * Math.PI * u2;
+    return [coc * r * Math.cos(a), coc * r * Math.sin(a)];
+  }
+
+  /**
+   * Set the aperture from a physical lens: the circle of confusion at
+   * infinity is lensRadius * projScaleY * viewportH / (2 * focusDist) px.
+   */
+  setLens(lensRadius: number, camera: DepthCameraInfo): void {
+    this.aperture = (lensRadius * camera.projScaleY * camera.viewportH) / (2 * Math.max(this.focusDist, 1e-6));
   }
 
   /**

@@ -39,6 +39,7 @@ is sharp, blurred or smaller than a pixel.
 | `params.ts` | `DepthParams`: defaults, cue switches, `pack()` into the 80 byte uniform, CPU mirrors `fogAt`, `cocAt`, `fogCullDistance`. |
 | `focus.ts` | `FocusTracker`, `nearestPlaneDistance`, `focusPlaneFromDesc` (from a `PlaneDesc`). |
 | `parallax.ts` | `ParallaxRig`. |
+| `parallax-camera.ts` | `createParallaxCamera(camera)`: wraps any `CameraController` and adds pointer parallax. |
 | `sprite-pass.ts` | `createDepthSpritePass(gpu)`: a `rasterize` stage `Pass` built on `src/core/contracts.ts`. |
 | `demo/` | Standalone page with its own tiny renderer. |
 | `test/` | Unit tests for the CPU side: `node src/depth/test/run.mjs`. |
@@ -79,6 +80,16 @@ pass.fitWorld(strata.planes);   // after the world changes scale
 Planes that fog has fully erased are not submitted at all
 (`pass.culledPlanes`), so fog also buys performance.
 
+### Parallax
+
+`src/main.ts` draws through `createParallaxCamera(camera)`. With `?parallax=1`
+or the "pointer parallax" toggle in the HUD, the eye slides sideways with the
+pointer while the focus distance holds still on screen, so nearer planes slide
+against the pointer and farther planes with it. Travel is a fraction of the
+focus distance (`pointerAmount`, default 0.03), so it looks the same at any
+world scale. The focus distance is the sprite pass's focus when sprites are
+on, otherwise the camera's orbit distance.
+
 ### Using the library in another shader
 
 ```wgsl
@@ -88,9 +99,36 @@ let s = depth_sprite(clip.w, distance(world.xyz, eye), dp);
 // s.radiusPx, s.intensity, s.defocus
 ```
 
-A renderer that must stay on one pixel points can still call
-`depth_point_intensity(clip.w, dist, dp)` and multiply its brightness by it.
-That keeps fog, size dimming and the energy loss of defocus, without the blur.
+## Offline and record scale renderers
+
+A renderer that draws every particle as a single sample (points, compute
+splats, an accumulation buffer) cannot grow a sprite. It gets the same cues
+from two calls per particle:
+
+```wgsl
+// dp: DepthParams uniform, packed by DepthParams.pack() on the CPU
+let clip = viewProj * world;
+let viewZ = clip.w;
+let weight = depth_point_weight(viewZ, distance(world.xyz, eye), dp); // fog, near fade, size gain
+let u = vec2f(rand(i, 0u), rand(i, 1u));                              // two uniform numbers per particle
+let ndc = clip.xy / clip.w + depth_lens_jitter_ndc(viewZ, u, viewport, dp);
+// splat `weight` at `ndc`
+```
+
+Depth of field here is lens sampling: each particle lands on a random point
+inside its circle of confusion. With one sample per particle a sparse plane
+looks grainy, a dense one already looks blurred, and at record counts or with
+accumulated frames it converges to the same bokeh the sprite pass draws. It
+costs two random numbers per particle and no extra fill. Use a different `u`
+each frame if frames are accumulated or motion blurred, and the same `u` each
+frame if single frames must not shimmer.
+
+A CPU renderer has the same functions on `DepthParams`: `pointWeight(viewZ,
+dist)`, `lensJitterPx(viewZ, u1, u2)`, `fogAt`, `cocAt`. `setLens(radius,
+camera)` sets the aperture from a physical lens radius in world units.
+
+If only brightness can change, `depth_point_intensity(clip.w, dist, dp)` keeps
+fog, size dimming and the energy loss of defocus, without drawing the blur.
 
 ## Cost and limits
 
@@ -104,7 +142,8 @@ That keeps fog, size dimming and the energy loss of defocus, without the blur.
   guess and will want tuning by eye.
 - While `depth-sprites` is on, the points pass still runs and its output is
   cleared. Disabling `points` at the same time saves that work.
-- Parallax is only wired up in the demo. In the engine the orbit camera gives
-  parallax on its own whenever it moves; adding the idle drift needs a hook on
-  the camera.
+- Pointer parallax in the app is off by default (`?parallax=1` or the HUD
+  toggle). Idle drift is left to the camera rig, which already has its own.
+- The lens sampling functions are unit tested on the CPU side only. No
+  renderer on main calls them yet.
 - The demo's tone map is a placeholder.
