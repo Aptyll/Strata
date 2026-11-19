@@ -15,5 +15,6 @@ node tools/montage/record-looks.mjs tools/montage/looks-randomizer.json out/look
 - Themes are an SVG filter in the app, invisible to a readback, so the recorder applies the same ramp
   (parsed from `src/ux/theme/index.ts`) to the pixels.
 - Sidecar counts are `strata.stats().particles` per captured frame (the budget's active count).
+- Output fps below 30 runs several app steps per frame (the app clamps a step to 1/30 s), so 24 fps still plays at real-time speed; `looks-randomizer-24fps.json` is the 24 fps cut.
 - Software GPU: about 0.7 s per 720p frame at 300k particles, much slower with `raster=sprites`.
   It shows looks and motion, never speed. Concatenate the clips with ffmpeg's concat demuxer.

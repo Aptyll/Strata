@@ -84,6 +84,18 @@ export const MENU: MenuPage[] = [
         ],
       },
       {
+        // Reasons to come back (src/ux/returning). The kept list and "forget" show once a world has been kept.
+        group: "your worlds",
+        rows: [
+          { id: "returning.today", hint: "A world that is new every day: the same roll of the dice for everyone on that date." },
+          { id: "returning.previous", hint: "Back to the world before this one, so a roll of the dice can be undone." },
+          { id: "returning.keep", hint: "Keeps this world as it is now, in this browser: every sheet, the sliders and the view." },
+          { id: "returning.kept", hint: "Worlds you kept. Pick one to open it exactly as it was." },
+          { id: "returning.forget", hint: "Takes the kept world that is on screen off the list." },
+          { id: "returning.news", hint: "Shows the newest additions again, one line at a time." },
+        ],
+      },
+      {
         group: "camera",
         rows: [
           { id: "autocam", hint: "The camera flies itself between dense sheets. Any camera input takes over." },

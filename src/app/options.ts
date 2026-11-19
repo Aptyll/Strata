@@ -29,6 +29,9 @@
  *                        so ?depth=1 alone gives the compute rasterizer with depth cues
  *   &theme=red           color theme (src/ux/theme/index.ts)
  *   #r=<seed>            replay a shared dice roll (src/ux/hud/wire.ts)
+ *   &daily=0             open on the usual opening, not on today's world (src/ux/returning).
+ *                        Any option here other than &theme does the same: today's world
+ *                        only ever replaces the opening on the plain address.
  *   ?record=1e12 &size= &frames= &seconds= &fps= &sheets= &seed= &weighting= &fresh=
  *                        what the record job renders (src/record/index.ts). Note that
  *                        &fps and &seed mean something else to the app itself.

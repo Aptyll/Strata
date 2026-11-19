@@ -27,6 +27,7 @@ export type KeyOwner =
   | "theme" // src/ux/theme/index.ts registers it itself; keep the row in sync
   | "autocam" // src/ux/autocam/index.ts registers the row main.ts passes in
   | "info" // src/ux/info/index.ts registers the row src/app/hud.ts passes in
+  | "returning" // src/ux/returning/index.ts registers the rows main.ts passes in
   | "panels" // src/ui/index.ts, only while a src/ui/*.panel.ts exists
   | "sound"; // src/audio/app.ts registers the row main.ts passes in
 
@@ -69,6 +70,10 @@ export const KEYS = {
   about: { key: "i", code: "KeyI", owner: "info", label: "what is this" },
 
   sound: { key: "m", code: "KeyM", owner: "sound", label: "sound on or off" },
+
+  todaysWorld: { key: "n", code: "KeyN", owner: "returning", label: "today's world" },
+  keepWorld: { key: "k", code: "KeyK", owner: "returning", label: "keep this world" },
+  previousWorld: { key: "backspace", code: "Backspace", owner: "returning", label: "previous world (shift: next)" },
 
   panels: { key: "tab", code: "Tab", owner: "panels", label: "panels" },
 } as const satisfies Record<string, KeyBinding>;
