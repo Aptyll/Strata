@@ -1,20 +1,46 @@
+/**
+ * Device setup for the engine, and the helpers every engine path shares:
+ *
+ *   requestGpuDevice        a device with the large buffer limits (the app and the perf bench)
+ *   initGpu                 the app's GpuContext: device, canvas, bind group layouts, Globals buffer
+ *   compileComputePipeline  shader module + compute pipeline, logging WGSL errors with line numbers
+ *   writeGlobals            uploads one frame's Globals uniform
+ */
+
 import type { GpuContext } from "../core/contracts";
 import { BRUSH_FLOATS, MAX_BRUSHES } from "../core/contracts";
 import { GLOBALS_BRUSHES_OFFSET, GLOBALS_SIZE } from "./shaderLib";
 
 export const HDR_FORMAT: GPUTextureFormat = "rgba16float";
 
+export interface GpuDeviceOptions {
+  /** Also ask for 'timestamp-query' when the adapter has it (GPU pass timing). Default false. */
+  timestamps?: boolean;
+}
 
-export async function initGpu(canvas: HTMLCanvasElement): Promise<GpuContext> {
+/**
+ * The high-performance adapter's device, with maxBufferSize and
+ * maxStorageBufferBindingSize raised to what the adapter allows, so one
+ * storage buffer can hold far more than the default 128 MiB binding.
+ * Throws a readable error when WebGPU or an adapter is missing.
+ */
+export async function requestGpuDevice(opts: GpuDeviceOptions = {}): Promise<GPUDevice> {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("No WebGPU adapter found.");
-  const device = await adapter.requestDevice({
+  const requiredFeatures: GPUFeatureName[] = [];
+  if (opts.timestamps && adapter.features.has("timestamp-query")) requiredFeatures.push("timestamp-query");
+  return adapter.requestDevice({
+    requiredFeatures,
     requiredLimits: {
       maxBufferSize: adapter.limits.maxBufferSize,
       maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     },
   });
+}
+
+export async function initGpu(canvas: HTMLCanvasElement): Promise<GpuContext> {
+  const device = await requestGpuDevice();
   device.lost.then((info) => console.error("WebGPU device lost:", info.message));
 
   const context = canvas.getContext("webgpu");
@@ -55,6 +81,26 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<GpuContext> {
   });
 
   return { device, canvas, context, canvasFormat, hdrFormat: HDR_FORMAT, layouts, globalsBuffer, globalsBindGroup };
+}
+
+/**
+ * Compiles `code` into a compute pipeline with entry point `main`. WGSL
+ * errors are logged as `[label] line N: message`; `label` also names the
+ * module and pipeline in browser GPU errors.
+ */
+export function compileComputePipeline(
+  device: GPUDevice,
+  label: string,
+  code: string,
+  layout: GPUPipelineLayout,
+): GPUComputePipeline {
+  const module = device.createShaderModule({ label, code });
+  module.getCompilationInfo().then((info) => {
+    for (const m of info.messages) {
+      if (m.type === "error") console.error(`[${label}] line ${m.lineNum}: ${m.message}`);
+    }
+  });
+  return device.createComputePipeline({ label, layout, compute: { module, entryPoint: "main" } });
 }
 
 export interface FrameGlobals {

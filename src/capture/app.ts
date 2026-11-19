@@ -30,7 +30,11 @@ export interface CaptureHost {
   flush?: () => Promise<unknown>;
   /** While on, the app's realtime loop must not draw: this module calls `frame` itself. */
   setOffline(on: boolean): void;
-  /** Fixes the drawing buffer size, or null to follow the window again. */
+  /**
+   * Fixes the drawing buffer size, or null to follow the window again. While the size is
+   * fixed, a host whose particles light a fixed number of pixels should scale their light
+   * by (height / window height)^2, or captures taller than the window come out darker.
+   */
   setResolution(size: { width: number; height: number } | null): void;
   /**
    * Keys for the two live actions, as HUD shortcut names. The app passes its

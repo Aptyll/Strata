@@ -35,6 +35,12 @@ export const MODES = 4;
 export const V_MAX = 4;
 /** Stride of one entry in the dispatch table (uniform, dynamic offset). */
 export const DISPATCH_STRIDE = 256;
+/**
+ * u32 slots of the GPU particle count. Workgroups spread their adds over the
+ * slots so they do not contend for one address; the CPU sums them. 256 slots
+ * keep every slot far below 2^32 even at the stateless mode's largest count.
+ */
+export const COUNT_SLOTS = 256;
 
 const common = (wg: number) => /* wgsl */ `
 const WG: u32 = ${wg}u;
@@ -80,6 +86,24 @@ struct Dispatch {
 
 @group(0) @binding(0) var<uniform> G: Globals;
 @group(0) @binding(1) var<storage, read_write> fb: array<atomic<u32>>;
+// The frame's GPU count of processed particles, spread over slots. See countWorkgroup.
+@group(0) @binding(2) var<storage, read_write> counted: array<atomic<u32>, ${COUNT_SLOTS}>;
+
+// The frame's particle count, taken on the GPU: the first invocation of every
+// workgroup that runs adds how many particles its workgroup processes (the
+// part of its WG consecutive ids below D.count). Ids in a workgroup are
+// consecutive and the kernels have no early exit past the bounds check, so
+// this equals counting every particle, at one atomic per workgroup instead of
+// a workgroup atomic and a barrier per particle. It proves on the GPU that
+// every dispatch ran at its full size, and it reads zero for work the browser
+// dropped (a command buffer that fails validation runs nothing at all).
+fn countWorkgroup(wid: vec3u, lid: u32) {
+  if (lid != 0u) { return; }
+  let first = wid.y * ROW + wid.x * WG;
+  if (first < D.count) {
+    atomicAdd(&counted[(wid.x + wid.y) % ${COUNT_SLOTS}u], min(WG, D.count - first));
+  }
+}
 
 // PCG RXS-M-XS: a permutation of u32, so distinct inputs give distinct outputs.
 fn pcg(v: u32) -> u32 {
@@ -145,7 +169,11 @@ ${common(wg)}
 @group(1) @binding(1) var<storage, read_write> P: array<vec2u>;
 
 @compute @workgroup_size(WG)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
+fn main(
+  @builtin(global_invocation_id) gid: vec3u,
+  @builtin(workgroup_id) wid: vec3u,
+  @builtin(local_invocation_index) lid: u32,
+) {
   let i = gid.y * ROW + gid.x;
   if (i >= D.count) { return; }
   let id = D.base + i;
@@ -198,6 +226,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   P[i] = vec2u(pu.x | (pu.y << 16u), vq.x | (vq.y << 16u));
 
   splat(pi, vec2f(pu) * (1.0 / 32768.0) - 1.0, f32(h4 >> 8u) * (1.0 / 16777216.0));
+  countWorkgroup(wid, lid);
 }
 `;
 
@@ -223,7 +252,11 @@ ${common(wg)}
 const TAU: f32 = 6.283185307179586;
 
 @compute @workgroup_size(WG)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
+fn main(
+  @builtin(global_invocation_id) gid: vec3u,
+  @builtin(workgroup_id) wid: vec3u,
+  @builtin(local_invocation_index) lid: u32,
+) {
   let i = gid.y * ROW + gid.x;
   if (i >= D.count) { return; }
   let pi = (i >> 8u) % G.planeCount;
@@ -259,6 +292,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     pos = vec2f(e.x * ct - e.y * st, e.x * st + e.y * ct);
   }
   splat(pi, pos, f32(h3 >> 8u) * (1.0 / 16777216.0));
+  countWorkgroup(wid, lid);
 }
 `;
 
