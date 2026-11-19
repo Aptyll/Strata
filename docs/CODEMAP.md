@@ -98,7 +98,8 @@ the stateless renderers have their own motion code.
 **Engine uniforms and the 16-byte particle**: the header of
 `src/gpu/shaderLib.ts` lists every byte offset of `Particle`, `Globals`
 (208 bytes, group 0) and `Plane` (112 bytes, group 1), next to the WGSL
-declarations and offset constants. Change them there and nowhere else.
+declarations, the offset constants and the only CPU writers, `packGlobals`
+and `packPlane`. Change them there and nowhere else.
 
 **8-byte packed particles** (two u32 words):
 
@@ -183,9 +184,15 @@ Worth knowing before adding a fourth of anything:
 - **Several tone mappers.** One density look for the app, `basicTone` for
   previews, and separate ones for challenge and the offline grade. Table in
   "Rendering, depth and the 1T path" below.
+- **Small math modules.** `src/math.ts` serves the engine, the perf path and
+  the behavior preview. `src/ux/camera/math.ts` (reversed-Z perspective),
+  `src/ux/experience/math.ts`, `src/world/math.ts` and
+  `src/offline/core/math.ts` serve their own folders, and several demos keep a
+  private `perspective` and `lookAt`. New engine code uses `src/math.ts`.
 - **WGSL copies.** The pcg hash and the fullscreen triangle used to be pasted
   into many shaders; new code takes them from `src/gpu/wgsl.ts`, and the old
-  copies are being switched over area by area. `STATELESS_RNG_WGSL`
+  copies are being switched over area by area. The only other `fn pcg` left is
+  in `src/challenge/shaders.ts`, which stays self-contained on purpose. `STATELESS_RNG_WGSL`
   (`src/stateless/rng.ts`) keeps its own `pcg` and `u01`, the same math, so the
   1T laws stay self-contained: never put it in one module with `PCG_WGSL` or
   `U01_WGSL` (WGSL rejects a second declaration).
@@ -194,16 +201,123 @@ Worth knowing before adding a fourth of anything:
 
 ## Engine core: contracts, GPU, simulation
 
-_Details to come with the GPU and perf cleanup._
+The realtime world runs on `src/core` (types, frame graph, default budget),
+`src/gpu` (device setup and the CPU/GPU byte contract) and `src/sim` (the
+simulation).
+
+**From a behavior to a dispatch** (`src/sim/simulation.ts`):
+
+1. `addPlane(desc)` looks up the behavior, allocates `capacity` x 16 bytes of
+   particles (capped by the device's buffer limits) and seeds them on the CPU:
+   the behavior's `init()`, else uniform random positions at rest.
+2. `buildSimShader(behavior)` puts the behavior's `update` inside the prelude
+   (`behaviorPreludeWGSL`: Globals, Particle, a `Params` struct named after the
+   behavior's params, Plane, the helpers), then `simulateParticle` and an entry
+   point. `compileComputePipeline` compiles it once per behavior id.
+3. `updatePlane` packs the plane's uniform with `packPlane` (model from
+   `planeModelMatrix`, params from `planeParamValues`). Each frame only
+   `count` is rewritten.
+4. Each frame `writeGlobals` packs the Globals uniform with `packGlobals`, and
+   the simulate pass dispatches `dispatchSize(activeCount)` workgroups for
+   every plane that has active particles and is not paused.
+
+**Bind groups** (layouts created in `initGpu`):
+
+| group | binding | buffer | written by |
+| --- | --- | --- | --- |
+| 0 | 0 | Globals uniform, 208 bytes | `writeGlobals`, once per frame |
+| 1 | 0 | the plane's Plane uniform, 112 bytes | `Simulation.updatePlane`; `count` patched per frame |
+| 1 | 1 | the plane's particles, `array<Particle>` | seeded by `addPlane`, then only the GPU |
+
+Rasterize passes bind the same group 0 and a plane's `simBindGroup` (uniform
+and particles) or `renderBindGroup` (uniform only, vertex stage) from
+`PlaneInstance`.
+
+**Where to change what:**
+
+- A uniform field: the header table, the offset constants, the WGSL struct
+  (and `PLANE_STRUCT_WGSL` for passes) and the packer, all in
+  `src/gpu/shaderLib.ts`. `PerfEngine` packs the same blocks with the same
+  packers, so it follows. `npm run verify` compiles every shader built from
+  them.
+- A helper every behavior can call: the prelude in `behaviorPreludeWGSL`, and
+  its name in the reserved list of the header.
+- The frame's stage order: `PASS_ORDER` in `src/core/contracts.ts`, in its own
+  small PR.
+- Which planes run and with how many particles: the budget. `VisibleOnlyBudget`
+  (`src/core/budget.ts`) by default, `PerfBudget` (`src/perf/budget.ts`) with
+  `?adaptive=1`; `src/app/budget.ts` picks one.
 
 ## The perf path
 
-_Details to come with the GPU and perf cleanup. Meanwhile see `docs/perf.md`._
+`src/perf` has two parts (see `src/perf/index.ts`):
+
+- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`) is the
+  default rasterizer: one compute dispatch per plane reads the engine's
+  16-byte particles, projects them and adds `plane.brightness * LIGHT_ONE` to a
+  u32 per pixel with `atomicAdd`; a fullscreen triangle then adds each pixel's
+  sum `/ LIGHT_ONE * globals.brightness` to the HDR target. `PerfBudget`
+  (`budget.ts`) is the adaptive budget: a density cap per plane, and a governor
+  that steps toward the target frame rate every 0.5 s.
+- **On the bench page.** `PerfEngine` (`engine.ts`), the 8-byte particle path
+  behind the 100M and 800M numbers in `docs/perf.md`.
+
+**One `PerfEngine` frame** (`encode`):
+
+1. CPU, per plane: `classifyPlane` (`culling.ts`) culls against the frustum
+   and picks the LOD: draw only a prefix of the particles (`drawCount`) at a
+   proportionally higher weight, and simulate every 1st, 2nd or 4th frame (8th
+   when culled) with the accumulated dt.
+2. CPU: one 768-byte uniform slot per dispatched plane: Globals at +0 and Plane
+   at +256 in the engine's own layout (`packGlobals`, `packPlane`), the Perf
+   block at +512 (`packPerf` in `src/perf/shaders.ts`). One `writeBuffer`
+   uploads every slot.
+3. GPU: clear the u32 framebuffer, then one compute pass with one dispatch per
+   plane, bound with dynamic offsets `k * SLOT_STRIDE`. Each invocation
+   unpacks a particle, calls `simulateParticle` (the behavior plus brushes),
+   packs it back with stochastic rounding, projects it and adds its weight.
+4. GPU: a fullscreen resolve (`RESOLVE_WGSL`). `fsTonemap` writes the finished
+   picture with `basicTone`; `fsHdr` adds linear light to a float target.
+
+**Storage.** `ParticlePool` keeps pages of 8,388,608 particles (64 MiB, inside
+the default WebGPU limits). A plane is one contiguous range of one page, and
+`Perf.base` is its offset. Velocity clamps at `velMax` (4 by default,
+overridable per behavior).
+
+**Checks.** `/src/perf/bench/?selftest=1` runs exact-sum checks on a real
+device: the framebuffer total must equal particles on screen times weight,
+across steps and LOD. The bench's URL options are listed at the top of
+`src/perf/bench/main.ts`.
 
 ## Behaviors
 
-_Details to come with the GPU and perf cleanup. Meanwhile see
-`docs/behaviors.md` and `docs/behavior-library.md`._
+A behavior is one file, `src/behaviors/<id>.behavior.ts`, whose default export
+is `defineBehavior({ id, label, description, params, wgsl, init? })` from
+`src/behaviors/core`. `src/behaviors/index.ts` registers every such file by
+name and warns when two share a label. How to write one is in
+`docs/behaviors.md`; the built-in ones are in `docs/behavior-library.md`.
+
+- **WGSL contract.** Define `fn update(p: Particle, i: u32) -> Particle`. In
+  scope: `globals` (time, dt, frame), `plane.params.<name>`, `plane.seed`, and
+  the helpers `rand(i, salt)`, `noise2`, `outside`, `wrap`, `respawn`,
+  `brushAccel`. The prelude's names are reserved (list in the
+  `src/gpu/shaderLib.ts` header), so prefix your own helpers (`cf_`, `sa_`,
+  `gw_`).
+- **Params.** At most 8 floats, in declaration order (`paramSlotNames`).
+  `PlaneDesc.params` holds overrides, and the engine uploads them as given
+  (`planeParamValues`, no clamping).
+- **Where behaviors run.** The engine (`buildSimShader`), `PerfEngine`
+  (`buildSimRasterWGSL`, same prelude) and the preview page (the engine's own
+  shader on one sheet). Challenge mode and the stateless renderers have their
+  own motion code.
+- **Checks.** `defineBehavior` validates when the file loads (id, param ranges,
+  `update` present, every `plane.params.x` declared), and `npm run verify`
+  compiles every behavior for both engines.
+- **Tools.** `src/behaviors/core` also has param and preset helpers and
+  reusable WGSL blocks (`CURL`, `ORBITERS`, `DAMP`, ...). The app's dice
+  (`src/ux/behavior-ui/roll.ts`) and Esc menu sliders (`src/ux/hud/wire.ts`)
+  do not use the param and preset helpers; the dice reads the same
+  `randomize` and `randomRange` hints with its own code.
 
 ## Rendering, depth and the 1T path
 

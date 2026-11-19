@@ -1,3 +1,21 @@
+/**
+ * The engine's simulation: `Simulation` owns every plane's particles and steps
+ * them on the GPU. It is both the `simulate` pass of the frame graph and the
+ * PlaneHost the world streamer and the dice call to add, remove and change
+ * planes.
+ *
+ * Per plane:
+ *   particles   one storage buffer of 16-byte `Particle`s (pos, vel; layouts in
+ *               src/gpu/shaderLib.ts), capped by the device's buffer limits.
+ *               Seeded once on the CPU: the behavior's init(), else uniform
+ *               random positions at rest, from seededRandom(desc.seed).
+ *   uniform     the 112-byte Plane uniform, packed by packPlane whenever the
+ *               desc changes (updatePlane); each frame only `count` is patched.
+ *   pipeline    buildSimShader(behavior), compiled once per behavior id.
+ *
+ * Per frame: one compute pass, one dispatch per plane that has active
+ * particles and is not paused (the budget sets activeCount and paused).
+ */
 import { getBehavior } from "../behaviors";
 import type {
   Behavior,
