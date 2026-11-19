@@ -29,6 +29,10 @@
  *   ?record=1e12 &size= &frames= &seconds= &fps= &sheets= &seed= &weighting= &fresh=
  *                        what the record job renders (src/record/index.ts). Note that
  *                        &fps and &seed mean something else to the app itself.
+ *
+ * An option the URL sets explicitly holds for that visit: the settings menu
+ * neither restores a saved choice over it nor saves it (`fromUrl`, used by
+ * src/app/hud.ts).
  */
 
 export interface AppOptions {
@@ -60,7 +64,25 @@ export interface AppOptions {
   fps: number;
   /** ?record: start the record job (src/record) once the app is up. */
   record: boolean;
+  /** The options the URL set explicitly. A saved menu setting never overrides one of these. */
+  fromUrl: ReadonlySet<keyof AppOptions>;
 }
+
+/** The URL keys behind each option, for `fromUrl`. ?depth=1 picks a rasterizer too. */
+const URL_KEYS: Partial<Record<keyof AppOptions, readonly string[]>> = {
+  world: ["world"],
+  particles: ["particles"],
+  planes: ["planes"],
+  behaviors: ["behaviors"],
+  brightness: ["brightness"],
+  seed: ["seed"],
+  raster: ["raster", "depth"],
+  parallax: ["parallax"],
+  interplane: ["interplane"],
+  intro: ["intro"],
+  adaptive: ["adaptive"],
+  fps: ["fps"],
+};
 
 export function readOptions(search: string): AppOptions {
   const query = new URLSearchParams(search);
@@ -87,5 +109,8 @@ export function readOptions(search: string): AppOptions {
     adaptive: query.get("adaptive") === "1",
     fps: num("fps", 60),
     record: query.has("record"),
+    fromUrl: new Set(
+      (Object.keys(URL_KEYS) as (keyof AppOptions)[]).filter((option) => URL_KEYS[option]!.some((key) => query.has(key))),
+    ),
   };
 }
