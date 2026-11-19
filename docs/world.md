@@ -168,7 +168,10 @@ struct PlaneSlot {
 
 Open the app with `?world=strata` (any seed) and it streams the endless world
 instead of the fixed layout. `&particles=` sets the total particle budget
-(default 8 million in this mode).
+(default 8 million in this mode). The streamer sizes this world, so the
+settings menu has no planes or particles sliders here and `]` `[` are off.
+The camera follows the streamed planes, so G, double click and `,` `.` focus
+them like fixed ones.
 
 That is one call in `main.ts`, `startStreamingWorld(app, options)`, plus
 `streaming.tick(dt)` each frame. Underneath, `createWorldDriver(host, source, options)`

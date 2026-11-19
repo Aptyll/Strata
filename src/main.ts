@@ -104,7 +104,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
 
   // ---- people: HUD, pointer forces, the opening ----------------------------
   // Brushes swallow a held pointer's moves, so they must register after the HUD's own pointer listeners.
-  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view });
+  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view, options });
   mountMobileControls(ui.hud); // tap target for the Esc menu on touch screens
   const brushes = attachBrushes(canvas, view, () => sim.planes);
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.

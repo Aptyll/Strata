@@ -74,6 +74,11 @@ export function createSceneHost({ sim, camera, depthSprites, options }: SceneHos
   let total = 0;
   /** Camera of the last scene handed out by getScene, to tell "same camera" from "move the camera". */
   let handedOut = "";
+  /**
+   * The camera can focus, pick and step through every live plane (G, double click, comma and period),
+   * streamed ones too: a streamed world's scene lists none of them.
+   */
+  const followPlanes = () => camera.rig.setPlanes(sim.planes.map((p) => planeTargetFromDesc(p.desc)));
 
   const host: SceneHost = {
     get current() {
@@ -90,7 +95,7 @@ export function createSceneHost({ sim, camera, depthSprites, options }: SceneHos
       scene = next;
       sim.setPlanes(scene.planes);
       total = sim.planes.reduce((n, p) => n + p.capacity, 0);
-      camera.rig.setPlanes(scene.planes.map(planeTargetFromDesc));
+      followPlanes();
       depthSprites?.fitWorld(sim.planes);
       if (JSON.stringify(scene.camera) !== handedOut) {
         camera.state = structuredClone(scene.camera);
@@ -113,6 +118,7 @@ export function createSceneHost({ sim, camera, depthSprites, options }: SceneHos
     addPlane(desc) {
       const plane = sim.addPlane(desc);
       total += plane.capacity;
+      followPlanes();
       return plane;
     },
 
@@ -120,6 +126,7 @@ export function createSceneHost({ sim, camera, depthSprites, options }: SceneHos
       if (!sim.planes.includes(plane)) return;
       total -= plane.capacity;
       sim.removePlane(plane);
+      followPlanes();
     },
   };
 
