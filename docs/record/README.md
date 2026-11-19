@@ -12,7 +12,7 @@ often zero, so it counts as in view but is drawn only on average. That mode is
 now the page's "flux, quick" choice (`fluxBits: 16`); flux frames rendered since
 keep every far particle's light and say so in their label. The
 in-view numbers are exact GPU counts of positions inside the frame, not of
-units of light added. With flux weighting a frame takes 26 to 52
+units of light added. With that flux weighting a frame took 26 to 52
 seconds on this card when the sheets cover part of the frame, and 172 to 205
 seconds when they fill it (composition A). Count weighting takes about 160 to
 193 seconds.
