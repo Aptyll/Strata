@@ -121,9 +121,8 @@ counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
 splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
 u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
 flux weighting becomes a per-sheet keep probability from the sheet center's
-depth, and `evaluated` is summed by the host from dispatch sizes (the stats
-JSON says `"evaluatedBy": "host"`, and the default label says "dispatched"
-instead of "evaluated"). Camera motion blur is in the offline kernel only; the
+depth. Both kernels count `evaluated` and `landed` on the GPU. Camera motion
+blur is in the offline kernel only; the
 trillion kernel uses the mid-shutter camera. `bench --kernel both` compares them on one
 machine. The page has the same choice.
 

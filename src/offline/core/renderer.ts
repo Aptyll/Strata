@@ -22,7 +22,7 @@ import { STATELESS_LAWS } from "../../stateless/laws";
  *   trillion  src/trillion's splat kernel: fire-and-forget u32 atomics folded
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
- *             depth, and evaluated is counted by the host from dispatch sizes.
+ *             depth. Evaluated and landed are both counted on the GPU.
  *             Camera motion blur is offline only: the trillion kernel projects
  *             every particle with the mid-shutter camera, so an A/B with a
  *             moving camera compares blurred against unblurred camera moves.
@@ -59,8 +59,7 @@ export interface Accumulation {
   /**
    * Particles evaluated for this frame (includes work restored from a
    * checkpoint). Equals the world's total when the frame is done. Counted on
-   * the GPU by the offline kernel; by the host from dispatch sizes with the
-   * trillion kernel (see `evaluatedBy`).
+   * the GPU by both kernels.
    */
   gpuEvaluated: bigint;
 }
@@ -133,9 +132,13 @@ export class StatelessRenderer {
   private tk: TrillionKernel | null = null;
   private tkRead: GPUBuffer | null = null;
   readonly kernel: KernelChoice;
-  /** Who counted `gpuEvaluated`. */
+  /**
+   * Who counted `gpuEvaluated`. Always the GPU now: the trillion kernel has
+   * its own evaluated tally since src/trillion #82. "host" stays in the type
+   * for stats written before that.
+   */
   get evaluatedBy(): "gpu" | "host" {
-    return this.tk ? "host" : "gpu";
+    return "gpu";
   }
 
   private constructor(
@@ -167,7 +170,7 @@ export class StatelessRenderer {
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
     this.tally = device.createBuffer({ label: "offline tally", size: 16, usage: acc });
-    this.readTally = device.createBuffer({ label: "offline readTally", size: 16, usage: read });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: 32, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -443,9 +446,14 @@ export class StatelessRenderer {
       sum += n;
     }
     this.device.queue.writeBuffer(tk.counts, 0, counts);
-    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view.
+    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view, [4..5]
+    // patch counters (statistics only), [6..7] evaluated on the GPU.
     const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
-    this.device.queue.writeBuffer(tk.tallyBuffer, 0, new Uint32Array([...split(sum), ...split(acc.landed)]));
+    this.device.queue.writeBuffer(
+      tk.tallyBuffer,
+      0,
+      new Uint32Array([...split(sum), ...split(acc.landed), 0, 0, ...split(acc.gpuEvaluated)]),
+    );
     tk.evaluated = Number(acc.gpuEvaluated);
   }
 
@@ -456,7 +464,7 @@ export class StatelessRenderer {
     const enc = device.createCommandEncoder();
     tk.fold(enc);
     enc.copyBufferToBuffer(tk.counts, 0, read, 0, cells * 8);
-    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 16);
+    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 32);
     device.queue.submit([enc.finish()]);
     tk.submitted();
     await Promise.all([read.mapAsync(GPUMapMode.READ), this.readTally.mapAsync(GPUMapMode.READ)]);
@@ -473,9 +481,11 @@ export class StatelessRenderer {
     }
     const t = new Uint32Array(this.readTally.getMappedRange());
     const landed = BigInt(t[2]) + (BigInt(t[3]) << 32n);
+    // Counted by the kernel, one atomic per workgroup (src/trillion, #82).
+    const gpuEvaluated = BigInt(t[6]) + (BigInt(t[7]) << 32n);
     read.unmap();
     this.readTally.unmap();
-    return { lo, hi, landed, gpuEvaluated: BigInt(tk.evaluated) };
+    return { lo, hi, landed, gpuEvaluated };
   }
 
   /**
