@@ -70,6 +70,7 @@ async function start(): Promise<void> {
     getScene: () => ({ ...scene, camera: structuredClone(camera.state) }),
     loadScene,
     updatePlane: (plane) => sim.updatePlane(plane),
+    setPlaneBehavior: (plane, change) => sim.setBehavior(plane, change),
     stats: () => ({
       fps: overlay.fps,
       particles: sim.planes.reduce((n, p) => n + p.activeCount, 0),

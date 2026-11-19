@@ -1,5 +1,5 @@
 import { getBehavior } from "../behaviors";
-import type { Behavior, FrameContext, GpuContext, Pass, PlaneDesc, PlaneInstance } from "../core/contracts";
+import type { Behavior, FrameContext, GpuContext, Pass, PlaneBehaviorChange, PlaneDesc, PlaneInstance } from "../core/contracts";
 import {
   buildSimShader,
   dispatchSize,
@@ -125,6 +125,21 @@ export class Simulation implements Pass {
     f32[PLANE_SEED_OFFSET / 4] = desc.seed;
     this.gpu.device.queue.writeBuffer(plane.uniform, 0, buf);
     plane.uploadedCount = plane.activeCount;
+  }
+
+  /**
+   * Swap the rule a plane's particles follow. The particle buffer is untouched,
+   * so particles carry on from where they are under the new behavior.
+   */
+  setBehavior(instance: PlaneInstance, change: PlaneBehaviorChange): void {
+    const plane = instance as PlaneGpu & { behavior: Behavior };
+    const behavior = getBehavior(change.behaviorId);
+    plane.behavior = behavior;
+    plane.pipeline = this.pipelineFor(behavior);
+    plane.desc.behaviorId = behavior.id;
+    plane.desc.params = change.params;
+    if (change.seed !== undefined) plane.desc.seed = change.seed;
+    this.updatePlane(plane);
   }
 
   /** Encode one simulation step for every plane's active particles. */
