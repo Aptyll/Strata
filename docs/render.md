@@ -247,3 +247,81 @@ passes in `passes.ts` have only been type checked because there is no engine
 to run them in yet, and nothing here was run on real hardware. The statements
 above about which mode is faster come from how the techniques work, not from
 measurements.
+
+## Huge counts: integer hit counters
+
+For renders where a pixel is hit tens of thousands to billions of times (the
+trillion particle render averages about 120,000 hits per pixel at 4K), use
+`CountToneMapper` from `counts.ts`. It reads an integer counter buffer
+directly, so the kernel never has to touch a float target.
+
+```ts
+import { CountToneMapper } from '../render';
+
+const mapper = new CountToneMapper(device, { format: targetFormat, words: 1 });
+mapper.resize(width, height);
+
+// counters: GPUBuffer with STORAGE usage, one u32 per pixel, row major, top row first
+await mapper.measureAndExpose(counters);   // GPU histogram, 1 KiB readback
+const encoder = device.createCommandEncoder();
+mapper.encode(encoder, counters, targetView);
+device.queue.submit([encoder.finish()]);
+```
+
+Buffer layout:
+
+| `words` | layout | max count per pixel |
+| --- | --- | --- |
+| 1 | `array<u32>`, counter i at word i | 4.29 billion |
+| 2 | 64 bit, low word first: words 2i (lo), 2i+1 (hi) | effectively unlimited |
+
+`stride` (counters per row) and `offset` (first counter) let it read a
+padded or shared buffer. `scale` is counter units per unit of density, for
+kernels that add fixed point energy instead of 1 per hit. Leave it at 1 when
+each hit adds 1.
+
+The counters are resolved to an `r32float` density texture (`densityView`),
+which keeps 24 bits of mantissa: counts above 16.7 million round to 1 part in
+16 million, far below one display step under a log curve. From there the
+usual `DensityPost` chain runs, and `mapper.post.settings` holds the tone,
+bloom and trail settings. Trails start disabled here.
+
+### Auto exposure
+
+A fixed white point does not survive counts this large: white = 64, which
+suits single particles, saturates 81% of the test image. `measure()` builds
+a histogram of log2(count) on the GPU (256 bins, four per doubling, up to
+2^63) and `autoExpose()` places the curve from percentiles of the pixels that
+were hit at least once. Empty pixels are left out, since the void would drag
+every percentile to zero.
+
+- black point at the 5th percentile: counts below it fall into the toe
+- white point at the 99.9th percentile times 1.5 headroom
+- at least 64x between them, so a flat image does not become pure contrast
+
+The log curve then becomes `log(1 + count/black) / log(1 + white/black)`:
+every doubling of the count above the black point adds the same brightness
+step. All of these are options (`low`, `high`, `headroom`, `minRange`).
+For video, pass `blend: 0.1` per frame so exposure follows the scene in log
+space without flicker. For an offline sequence, measure once on a
+representative frame and keep the values, so brightness does not pump.
+
+`tone.contrast` (default 1) raises luma to a power after the curve. Above 1
+it pushes faint regions toward black and separates the bright ones, which
+helps when the log curve spans many orders of magnitude and the picture
+looks flat. `display: 'filmic'` has a similar effect with a toe.
+
+The pure functions `histogramPercentile` and `exposureFromHistogram` work on
+a CPU-built `CountHistogram` too, for a renderer that already reads its
+counters back.
+
+Demo: `/src/render/demo/counts.html` builds a synthetic counter image with a
+mean of 120,000 hits per pixel (`?mean=`, `?words=2`). Keys: A auto exposure,
+1 and 2 fixed white points for comparison, D display curve, C contrast,
+B bloom.
+
+Checked headless on a software GPU at 640 x 360: u32 and u64 counters give
+the same image and the same chosen points, output is monochrome, auto
+exposure leaves 0% of pixels saturated against 81% for white = 64. Not
+checked on real hardware or against the real trillion kernel, which does not
+exist on main yet; the layout above is the contract it should write.
