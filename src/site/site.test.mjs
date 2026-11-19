@@ -1,6 +1,6 @@
 // Unit tests for the site's head tags and its page table. Run with `npm test -- site`.
 import assert from "node:assert/strict";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -193,5 +193,21 @@ test("the share card exists and is small enough for every chat app", () => {
     // Some chat apps skip preview images above about 300 kB.
     assert.ok(statSync(path).size <= 300 * 1024, `${card.file} is ${Math.round(statSync(path).size / 1024)} kB, keep it under 300 kB`);
     assert.ok(card.alt.length <= 420, `${card.file}: alt text is ${card.alt.length} characters, X cuts at 420`);
+  }
+});
+
+test("the particle counts in the share card's description are the GPU's counts for its frame", () => {
+  const cards = [SITE.card, ...PAGES.map((page) => page.card).filter(Boolean)].filter((card) => card.manifest);
+  assert.ok(cards.includes(SITE.card), "the site's card names the render manifest of its frame");
+  for (const card of cards) {
+    const manifest = JSON.parse(readFileSync(join(root, card.manifest), "utf8"));
+    const [frame] = manifest.frames;
+    assert.equal(manifest.mode, "rendered-stateless", `${card.manifest}: the frame is rendered, not simulated`);
+    assert.equal(frame.allEvaluated, true, `${card.manifest}: every particle was evaluated`);
+    // Counts are decimal strings in a manifest: a trillion fits a double, larger totals may not.
+    const grouped = (digits) => BigInt(digits).toLocaleString("en-US");
+    for (const [what, digits] of [["evaluated", frame.evaluated], ["landed", frame.landed]]) {
+      assert.ok(card.alt.includes(grouped(digits)), `${card.file}: alt text should name the ${what} count ${grouped(digits)} from ${card.manifest}`);
+    }
   }
 });

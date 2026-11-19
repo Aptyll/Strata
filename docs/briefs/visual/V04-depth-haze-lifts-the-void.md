@@ -1,5 +1,7 @@
 # V04: depth cues fix the blown core but fill the void with grey haze
 
+Status: **step 1 done** in PR #136 (aperture 3, `maxCocPx` 12). Steps 2 and 3 below (a floor in depth mode, stronger fog) are still open.
+
 Severity: medium (`?depth=1` and the "depth sprites" rasterizer only; off by default).
 Lines are as of main `793eefc`.
 

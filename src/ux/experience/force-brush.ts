@@ -94,6 +94,12 @@ export class ForceBrush {
     this.charge = 0;
   }
 
+  /** Call off a deliberate force that was not meant: no burst. */
+  cancel(): void {
+    this.mode = this.hasPos ? 'wake' : 'idle';
+    this.charge = 0;
+  }
+
   /** The pointer left the surface entirely. */
   leave(): void {
     this.mode = 'idle';
