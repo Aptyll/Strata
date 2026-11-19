@@ -4,10 +4,11 @@
  * color themes (src/ux/theme: a "theme" menu section and T), then adds what
  * only the app knows about:
  *
- *   menu      planes, rasterizer, look (bloom, trails, white point, contrast,
- *             pointer parallax, plane crossings), performance (hold frame rate,
- *             target fps, challenge)
- *   stats     "total": particle capacity across every plane
+ *   menu      planes, render (which rasterizer), look (bloom, trails, white
+ *             point, contrast, pointer parallax, plane crossings), performance
+ *             (hold frame rate, target fps, challenge)
+ *   stats     "total": every particle in the world, shown (and the HUD's own
+ *             count named "active") only while the budget pauses some sheets
  *   keys      ] [ particles, = - brightness, G nearest plane (rows in ./keys.ts)
  *
  * Capture adds its own "capture" section and keys (src/capture/app.ts).
@@ -17,7 +18,7 @@ import type { AppContext } from "../core/contracts";
 import type { ParallaxCamera } from "../depth";
 import type { DensitySettings } from "../render";
 import type { EngineCamera } from "../ux/camera";
-import { formatCount, type Hud } from "../ux/hud/index.js";
+import { formatCount, formatExact, type Hud } from "../ux/hud/index.js";
 import { mountHud } from "../ux/hud/wire";
 import { mountThemes } from "../ux/theme";
 import type { BudgetChoice } from "./budget";
@@ -63,11 +64,33 @@ export function mountAppHud({ app, canvas, scenes, render, budget, camera, view 
   registerMenu(hud, { scenes, render, budget, view });
   registerKeys(hud, { scenes, camera });
 
+  // The HUD's own count ("particles", from app.stats()) is what is being stepped;
+  // "total" is every particle in the world. They differ only while the budget
+  // pauses sheets, so show one number when they read the same, and otherwise
+  // "1.20M active  2.00M total".
+  let split: boolean | undefined;
+  const refreshCounts = () => {
+    const active = app.stats().particles;
+    const total = scenes.total;
+    const nowSplit = formatCount(active) !== formatCount(total);
+    if (nowSplit !== split) {
+      split = nowSplit;
+      // Redefining a stat resets it, so repeat the HUD's own format and tooltip.
+      hud.defineStat("particles", {
+        label: split ? "active" : "",
+        format: formatCount,
+        title: (v) => `${formatExact(v)} ${split ? "active " : ""}particles`,
+      });
+      hud.setStat("particles", active); // the label and the number change together
+    }
+    hud.setStat("total", split ? total : null);
+  };
+
   return {
     hud,
     update(dt) {
       update(dt);
-      hud.setStat("total", scenes.total);
+      refreshCounts();
     },
   };
 }
@@ -84,7 +107,9 @@ function registerMenu(
     },
   });
   hud.registerParam({
-    id: "rasterizer", type: "select", group: "performance",
+    // Keep the label short: the select is as wide as its longest option, up to the
+    // HUD's 150px cap, which leaves room for about nine characters (changed dot included).
+    id: "rasterizer", label: "render", type: "select", group: "performance",
     value: render.rasterizer.current(),
     options: RASTERIZERS.map((r) => ({ value: r.pass, label: r.label })),
     onChange: render.rasterizer.set,

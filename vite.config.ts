@@ -12,6 +12,7 @@ const pages = {
   verify: "src/verify/index.html",
   colorLife: "src/color-life/demo/index.html",
   stateless: "src/stateless/demo/index.html",
+  design: "src/ux/design/demo/index.html",
 };
 
 export default defineConfig({

@@ -1,3 +1,8 @@
+/**
+ * Public API of src/perf. The app uses createAtomicRasterPass (its default
+ * rasterizer) and PerfBudget (the adaptive budget). PerfEngine and the rest
+ * run the 8-byte particle path on the bench page (docs/perf.md).
+ */
 export { PerfEngine } from './engine';
 export type { PerfEngineOptions, FrameParams, FrameStats } from './engine';
 export { classifyPlane, DEFAULT_LOD } from './culling';
