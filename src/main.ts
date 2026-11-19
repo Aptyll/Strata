@@ -39,6 +39,7 @@ import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
 import { mountRecovery, reportBootFailure } from "./ux/recovery";
+import { mountReturning } from "./ux/returning";
 import { startStreamingWorld } from "./world";
 
 const options = applyMobileBudget(readOptions(location.search), location.search); // phones get a smaller budget (src/ux/mobile)
@@ -124,6 +125,13 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
 
   // One-line gesture hints and the die's breathing, on one schedule; never during the opening.
   const hints = mountAppHints({ canvas, hud: ui.hud, isOpening: () => intro?.active ?? false, canHold: brushes.touches });
+  // Second and later visits: today's world, kept worlds, undo for the dice, what is new (src/ux/returning).
+  const returning = mountReturning({
+    app,
+    hud: ui.hud,
+    isOpening: () => intro?.active ?? false,
+    keys: { today: KEYS.todaysWorld, keep: KEYS.keepWorld, previous: KEYS.previousWorld },
+  });
 
   // ---- frame loop ----------------------------------------------------------
   const loop = createFrameLoop({
@@ -150,6 +158,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
+  loop.hooks.push({ afterFrame: (f) => void (f.offline || returning.update(f.dt)) });
 
   // ---- sound: off on every load; M or the Esc menu turns it on (src/audio, docs/audio.md) ----
   const sound = mountSound({

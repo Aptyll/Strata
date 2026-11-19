@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Strata, coming back</title>
+<style>
+  /* Chrome here is styled with the design tokens (src/ux/design); demo.ts installs them. */
+  html, body { margin: 0; height: 100%; background: var(--st-void, #000); overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #visit { position: fixed; left: var(--st-edge-left); top: var(--st-edge-top); z-index: var(--st-z-top);
+    font: var(--st-font-fine); letter-spacing: var(--st-track); color: var(--st-faint); }
+  #visit button { font: inherit; letter-spacing: inherit; color: var(--st-strong); background: none;
+    border: 1px solid var(--st-stroke); border-radius: var(--st-radius); min-height: var(--st-hit);
+    padding: 0 var(--st-space-2); margin: 0 var(--st-space-2) var(--st-space-1) 0; cursor: pointer;
+    transition: border-color var(--st-fast) var(--st-ease); }
+  #visit button:hover { border-color: var(--st-lit); }
+  #visit button:focus-visible { outline: var(--st-focus); }
+  #visit pre { margin: var(--st-space-2) 0 0; font: inherit; text-shadow: var(--st-halo); }
+</style>
+<canvas id="c"></canvas>
+<!-- What a visitor gets on the second and later visits (src/ux/returning), with the real HUD and dice
+     over a CPU stand-in for the engine, and a clock that can be moved so tomorrow does not take a day.
+     It keeps its own storage, apart from the app's. Run `npm run dev` and open /src/ux/returning/demo/ -->
+<div id="visit">
+  <button id="tomorrow" type="button">come back tomorrow</button>
+  <button id="today" type="button">come back today</button>
+  <button id="update" type="button">come back after an update</button>
+  <button id="first" type="button">first visit again</button>
+  <pre id="readout"></pre>
+</div>
+<script type="module" src="./demo.ts"></script>

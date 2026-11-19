@@ -43,6 +43,7 @@ verify, color life, the stateless laws demo and the design specimen.
 | `/src/ux/autocam/demo/` | `src/ux/autocam/demo/main.ts` | auto camera tour flying over dot-cloud sheets, no WebGPU |
 | `/src/ux/design/demo/` | `src/ux/design/demo/main.ts` | design tokens specimen: every type role, ink level, spacing step and timing in use, no WebGPU (also in the production build) |
 | `/src/ux/info/demo/` | `src/ux/info/demo/main.ts` | the information layer over a CPU stand-in engine: labelled counts, the sheet label, the full keys sheet, the about card; no WebGPU |
+| `/src/ux/returning/demo/` | `src/ux/returning/demo/demo.ts` | what coming back is like: today's world, kept worlds, undo and news lines over a CPU stand-in engine, with buttons that move the clock to tomorrow, no WebGPU |
 
 ## Folders
 
@@ -61,7 +62,7 @@ verify, color life, the stateless laws demo and the design specimen.
 | `src/hue` | one color per sheet: a points rasterizer that tags each sheet's light with its hue, and a tint pass after the tone map | `sheetHue.ts` |
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
-| `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll, the words on screen (`info/`) | `docs/ux/` |
+| `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll, the words on screen (`info/`), reasons to come back (`returning/`) | `docs/ux/` |
 | `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
@@ -519,6 +520,10 @@ is what input, scenes, the intro and the world move.
   pass goes in the list in `src/app/graph.ts`.
 - **URL option**: a field in `AppOptions` and a line in the table at the top of
   `src/app/options.ts`.
+- **Something a visitor can now do**: append one line to `NEWS` in
+  `src/ux/returning/news.ts` ("color themes", "press T"). Returning visitors
+  are told once, two lines a visit. Append only: records store how many lines
+  were told.
 
 ### `src/ux`
 
@@ -530,6 +535,7 @@ is what input, scenes, the intro and the world move.
 | `ux/design` | the design tokens every piece of chrome is styled with (`--st-*` custom properties: type roles, ink levels, spacing, motion, the theme accent); rules in `docs/ux/design.md` | chrome modules, as each is moved over |
 | `ux/info` | the information layer: what the words on screen say. Words the stats line ("1.21M simulated  2.00M stored  32 sheets"), the sheet label (the sheet the camera faces: name, one sentence, its count), the pointer and camera rows on the keys sheet, and the about card (I): simulated versus rendered. `words.ts` holds the vocabulary (`TERMS`) and the numbers the app may quote (`MEASURED`); rules in `docs/ux/information.md` | `src/app/hud.ts` |
 | `ux/theme` | color themes: a gradient map applied as one SVG filter on the canvas after the tone map, no per-particle cost; T cycles, `?theme=` shares | `src/app/hud.ts` |
+| `ux/returning` | reasons to come back, from the second visit on: today's world (N, and what the plain address opens on), kept worlds (K), previous world (Backspace) and "new since you were here" lines. One record in `localStorage` (`strata.returning.v1`); changes the world only through `hud.randomize` and `loadScene`; rules in `docs/ux/returning.md` | `src/main.ts` |
 | `ux/experience` | the first-run experience. The app uses `intro-runner.ts` (through `src/app/intro.ts`), `engine-brushes.ts` (pointer forces), `capability.ts` and `fallback.ts` (no WebGPU). `createExperience` (`index.ts`) and `hints.ts` drive only the standalone demo, and `camera-rig.ts` is a thin front for `ux/camera` kept for that API | parts, from `src/main.ts` |
 
 Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module`.
