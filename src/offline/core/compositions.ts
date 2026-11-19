@@ -1,6 +1,8 @@
 /**
  * Hero compositions: hand-placed sheets and a fixed camera, for stills and
- * short clips at record scale.
+ * short clips at record scale. Bilinear splat by default (about 2x the cost
+ * of point with the offline kernel, the same with the trillion kernel's
+ * stochastic bilinear), because ring sheets alias with point splats.
  *
  *   heroA  close: four sheets fill the frame, one seen exactly edge-on as a
  *          thin line of light
@@ -109,7 +111,8 @@ function buildJob(
     timeScale: o.timeScale ?? 1,
     timeOffset: 40,
     ssaa: o.ssaa ?? 1,
-    splat: o.splat ?? "point",
+    // Bilinear: sheets with rings finer than a pixel alias into moire with point splats.
+    splat: o.splat ?? "bilinear",
     weighting: o.weighting ?? "flux",
     fluxRef: look.fluxRef,
     shutter: o.shutter ?? 0.5,

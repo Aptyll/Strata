@@ -57,7 +57,8 @@ Presets: `smoke`, `preview`, `billion`, `ten_billion`, `trillion`, plus three
 hand-placed hero compositions that default to a 1T 4K still (`core/compositions.ts`):
 `heroA` (close, four sheets, one edge-on as a line of light), `heroB` (a
 cathedral stack of floors), `heroC` (the camera inside a cloud of sheets).
-Low-resolution previews at 30M particles are in `docs/record/`. Sheets past
+They default to bilinear splats, since sub-pixel rings alias into moire with
+point splats. Low-resolution previews at 30M particles are in `docs/record/`. Sheets past
 2^32 particles are split into layers with the same transform and their own seeds. Any field can
 be overridden, for example `--preset trillion --seconds 5 --fps 30`. Run the
 command with no arguments for the full list of options.
