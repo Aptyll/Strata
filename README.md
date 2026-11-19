@@ -29,7 +29,7 @@ Measured on one RTX 2070 (8 GB, 2018) on 2026-11-19.
 | --- | ---: | --- | --- |
 | Realtime, simulated | 100,000,000 | stepped and drawn every frame | 111 fps |
 | Realtime, simulated | 800,000,000 | stepped and drawn every frame | 15 fps, or 54 fps with culling and LOD |
-| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a randomly rounded, often zero, weight with flux weighting) | per 4K frame: 26 to 52 s with flux weighting when the sheets fill part of the frame; 172 to 205 s with flux when they fill it (composition A); about 160 to 193 s with count weighting |
+| Offline, rendered | 1,000,000,000,000 | position computed from its id and the time; in view, it adds light to the grid (exactly one unit with count weighting; a randomly rounded, often zero, weight with flux weighting) | per 4K frame: 26 to 52 s with flux weighting when the sheets fill part of the frame; 161 to 205 s with flux when they fill it (composition A); about 160 to 193 s with count weighting |
 
 The realtime rows come from the benchmark page at 1920x1080 without vsync, and
 the full table is in [docs/perf.md](docs/perf.md). The brute force path moves
@@ -56,7 +56,7 @@ How long a 4K frame takes on the RTX 2070 depends on the shot and the weighting:
 | shot | weighting | seconds per 4K frame |
 | --- | --- | ---: |
 | sheets cover part of the frame (wide and medium stills) | flux | 26 to 52 |
-| sheets fill the frame (composition A close-up) | flux | 172 to 205 |
+| sheets fill the frame (composition A close-up) | flux | 161 to 205 |
 | proof shots and the far opener | count | about 160 to 193 |
 
 The record stills were most likely rendered with flux weighting: far

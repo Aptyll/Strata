@@ -205,7 +205,7 @@ renderBtn.addEventListener("click", async () => {
     const r = await renderJob(device, job, store, browserZlib, {
       // Browsers reset the GPU if one submission runs for about 2 s. Keep batches short.
       targetBatchMs: 120,
-      kernel: kernelEl.value === "trillion" ? "trillion" : "offline",
+      kernel: kernelEl.value === "trillion" || kernelEl.value === "trillion-strata" ? kernelEl.value : "offline",
       checkpointSeconds: canPickFolder() ? 300 : 0,
       shouldStop: () => stopRequested,
       signal: abort.signal,

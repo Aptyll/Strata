@@ -82,7 +82,7 @@ const rendererOptions = (args) => ({
   perInvocation: args["per-invocation"] ? parseCount(args["per-invocation"]) : undefined,
   targetBatchMs: args["batch-ms"] ? Number(args["batch-ms"]) : undefined,
   maxBatch: args["max-batch"] ? parseCount(args["max-batch"]) : undefined,
-  kernel: args.kernel === "trillion" ? "trillion" : undefined,
+  kernel: args.kernel === "trillion" || args.kernel === "trillion-strata" ? args.kernel : undefined,
 });
 
 // ------------------------------------------------------------------- gpu ----
@@ -125,8 +125,14 @@ async function bench(args) {
   console.log(`Adapter: ${name}`);
   console.log(`Grid: ${base.width * base.ssaa} x ${base.height * base.ssaa}. Measuring about ${seconds} s per case.\n`);
   const results = [];
-  // --kernel both runs every case on both kernels, for an A/B on one machine.
-  const kernels = args.kernel === "both" ? ["offline", "trillion"] : [args.kernel === "trillion" ? "trillion" : "offline"];
+  // --kernel both runs every case on offline and trillion, for an A/B on one
+  // machine; --kernel all adds trillion-strata.
+  const kernels =
+    args.kernel === "all"
+      ? ["offline", "trillion", "trillion-strata"]
+      : args.kernel === "both"
+        ? ["offline", "trillion"]
+        : [args.kernel === "trillion" || args.kernel === "trillion-strata" ? args.kernel : "offline"];
   for (const kernel of kernels)
   for (const splat of ["point", "bilinear"]) {
     for (const law of ["kepler", "vortex", "lissajous"]) {

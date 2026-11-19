@@ -6,8 +6,9 @@
 //   // in the frame loop:
 //   ui.update(dt);
 
-import { TOKENS, type AppContext, type Behavior, type PlaneInstance } from "../../core/contracts";
+import type { AppContext, Behavior, PlaneInstance } from "../../core/contracts";
 import { rollScene, startRoll, type RollOptions, type RollTransition, type RollTransitionOptions } from "../behavior-ui/roll";
+import { installTokens } from "../design";
 import { createHud, type Hud, type HudOptions } from "./index.js";
 
 export interface MountHudOptions {
@@ -47,14 +48,15 @@ const HASH = /[#&]r=([0-9a-z]+)/i;
 const BRIGHTNESS = "brightness";
 
 /**
- * Create the HUD, bind it to the shared tokens, and connect it to the engine:
+ * Create the HUD, put the design tokens it follows on the page, and connect it to the engine:
  * the dice starts a roll, the stats line shows app.stats(), and the settings
  * menu gets a particle count slider, a brightness slider (when the engine
  * offers setRender) and one slider per param of the behaviors in the world.
  */
 export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHud {
   // Scene state lives in the engine, so only the HUD's own preferences are persisted, not these params.
-  const hud = createHud({ tokens: TOKENS, ...opts.hud });
+  installTokens(); // the HUD's --hud-* properties follow the --st-* tokens (src/ux/design)
+  const hud = createHud(opts.hud);
   const interval = opts.statsInterval ?? 0.25;
   const maxGroups = opts.maxBehaviorGroups ?? 3;
   let roll: RollTransition | null = null;

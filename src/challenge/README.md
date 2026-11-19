@@ -24,12 +24,30 @@ says "TIER 1 REACHED" when all of this holds:
   no culling of whole sheets. Each particle is also projected and splatted
   every frame. A particle outside the view is still simulated.
 - **Sustained.** The count must pass three one-second windows in a row.
+  While searching, a failed window is measured again before it counts (three
+  failed windows in a row make a fail), because a garbage collection or a
+  busy compositor can spoil one window. That only steers the search: the
+  record still needs its three passing windows in a row.
 - **Honest frame rate.** Frames are counted between two moments at which the
   GPU had finished all submitted work, so a queue backlog cannot inflate it.
 - **Counted on the GPU.** The kernels count the particles they actually process
   (one atomic add per workgroup) and the readout shows that count. A tier needs
   it to equal the reported count in every checked frame. A frame the browser
   dropped counts zero, which refuses the tier for the rest of the run.
+
+**A screen at the target frame rate.** A screen that refreshes 30 times a
+second (a phone in low power mode, a browser's energy saver, a 30 Hz monitor)
+can meet 30 fps but never exceed it. "At least 30" then passes or fails on
+measurement noise, and the search used to end far too low on such a screen: on
+a pretend device that holds 40M, it reported between 0.7M and 24M and took up
+to 90 windows. Challenge mode now measures the refresh rate before the run
+(`refresh.ts`). On a screen
+within 5 percent of the target or slower, a window passes at 95 percent of the
+refresh rate (every refresh shown), the climb doubles instead of reading
+headroom the screen hides, the block and the copied sentence say "screen
+capped at 30 Hz", and the JSON carries `refreshHz` and `passFps`. Tier 1 stays
+strict: it needs a measured 30 fps or more. `refresh.test.js` runs the search
+on pretend devices with fast and capped screens.
 
 Procedural mode (key `M`) is reported separately and never as a tier. Its
 particles have no stored state: position is a closed-form function of id and
@@ -91,6 +109,8 @@ it is. What was checked there:
 - Particles move and velocities change from frame to frame.
 - The ramp logic converges to within 2 percent of a simulated device's limit
   and handles the memory ceiling and "cannot hold the target at all" cases.
+  `npm test -- challenge` runs it against a simulated RTX 2070, also with one
+  window in five spoiled by a hiccup.
 - One preview frame of each mode looks right.
 
 Not checked: presenting to a real canvas (the headless software GPU cannot),

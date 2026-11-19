@@ -42,7 +42,7 @@ is sharp, blurred or smaller than a pixel.
 | `parallax-camera.ts` | `createParallaxCamera(camera)`: wraps any `CameraController` and adds pointer parallax. |
 | `sprite-pass.ts` | `createDepthSpritePass(gpu)`: a `rasterize` stage `Pass` built on `src/core/contracts.ts`. |
 | `demo/` | Standalone page with its own tiny renderer. |
-| `test/` | Unit tests for the CPU side: `node src/depth/test/run.mjs`. |
+| `test/` | Unit tests for the CPU side: `npm test -- depth`. |
 
 ## Demo
 

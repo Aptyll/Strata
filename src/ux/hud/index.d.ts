@@ -26,7 +26,7 @@ export type RandomizeHandler = (roll: Roll) => RollName | Promise<RollName>;
 export interface HudOptions {
   /** Element to overlay. Default document.body. */
   parent?: HTMLElement;
-  /** Pass TOKENS from src/core/contracts.ts so the HUD follows the shared design tokens. */
+  /** Override single values. Left out, the HUD follows the design tokens (src/ux/design), which is what the app does. */
   tokens?: HudTokens;
   /** Show the stats line on load. Default: off on a first visit, then whatever the visitor last chose. */
   stats?: boolean;

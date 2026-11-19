@@ -1,7 +1,7 @@
 // Plain node:test, no extra dependencies. The sources are TypeScript, so
-// run.mjs bundles them first with the esbuild that ships with vite:
+// npm test bundles them first with the esbuild that ships with vite:
 //
-//   node src/depth/test/run.mjs
+//   npm test -- depth
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

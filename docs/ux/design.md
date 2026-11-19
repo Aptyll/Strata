@@ -43,7 +43,8 @@ const CSS = `
 - **Inline styles** take the same tokens: `el.style.font = "var(--st-font-fine)"`.
 - **Plain JS stylesheets** (the HUD) and **`index.html`** cannot import the
   module, so they write `var(--st-dim, rgba(255, 255, 255, 0.65))` with the
-  value as a fallback. The fallback must match the token.
+  value as a fallback. The fallback must match the token; the HUD has a test
+  for that (`src/ux/hud/tokens.test.js`).
 - **Canvas text and tests** read the raw values from `DESIGN`.
 
 ## Type
@@ -91,7 +92,9 @@ Every piece of text is exactly one of six roles.
 - **A panel** is `background: var(--st-surface)` with a `--st-hair` border and
   `backdrop-filter: blur(var(--st-blur))`. At 0.88 black, faint text stays
   above 4.5:1 even with white-hot particles behind the panel.
-- **A full-screen sheet** (the keys sheet) dims the world with `--st-scrim`.
+- **A full-screen sheet** (the keys sheet) dims the world with `--st-scrim`
+  (0.8 black). More of the world shows through than through a panel, so text
+  on a sheet is `--st-dim` or stronger.
 - `npm test` checks these contrast numbers, so a token edit that breaks them fails.
 
 ## Space and shape
@@ -134,8 +137,8 @@ signature color (the last stop before its white-hot end), and `--st-mark`
 draws with it. With the white theme the accent is the ink.
 
 Marks take the accent: a slider's fill and thumb, a switch that is on, the
-underline of the selected tab, a progress bar. Text, outlines, the die and the
-focus ring never do. `npm test` checks that every theme's accent keeps 3:1 on
+underline of the selected tab, a progress bar, a graph's line. Text, outlines,
+the die and the focus ring never do. `npm test` checks that every theme's accent keeps 3:1 on
 black.
 
 ## System settings
@@ -145,7 +148,7 @@ Handled once, in the tokens, so every piece of chrome follows:
 | setting | what changes |
 | --- | --- |
 | reduced motion | no travel, slow timings become fast |
-| more contrast | every ink level rises, panels become solid black |
+| more contrast | every ink level rises, panels become solid black, no blur |
 | reduced transparency | panels become solid black, no blur |
 | touch screen | targets grow to 44 px |
 | narrow screen | the edge shrinks to 16 px |
@@ -183,7 +186,7 @@ they do not stack.
 | surface | file | uses the tokens |
 | --- | --- | --- |
 | specimen | `src/ux/design/demo/` | yes |
-| HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | not yet |
+| HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | yes, through `--hud-*` properties that follow the tokens |
 | hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | not yet |
 | title card | `index.html` | not yet |
 | Challenge count and buttons | `src/challenge/viewer.ts` | yes |
@@ -194,17 +197,21 @@ they do not stack.
 
 `TOKENS` in `src/core/contracts.ts` is the first, smaller set (one font, two
 opacities) and still styles the demo pages. Its values agree with the tokens
-here, except `opacityDim` (0.45), which sits just under `--st-faint`. The HUD's
-`--hud-*` properties map like this:
+here, except `opacityDim` (0.45), which sits just under `--st-faint`.
+
+The HUD keeps its own `--hud-*` names, and each one follows a token (declared
+at the top of `src/ux/hud/styles.js`):
 
 | HUD property | token |
 | --- | --- |
-| `--hud-fg`, `--hud-bg` | `--st-ink`, `--st-shade` |
-| `--hud-a-strong` | `--st-a-strong` |
-| `--hud-a-dim` | `--st-a-dim` for labels, `--st-a-faint` for idle icons |
-| `--hud-a-ghost` | `--st-a-faint` |
-| `--hud-a-line` | `--st-a-hair` for separators, `--st-a-stroke` for control outlines |
+| `--hud-fg`, `--hud-bg`, `--hud-mark` | `--st-ink`, `--st-shade`, `--st-accent` |
+| `--hud-a-strong`, `--hud-a-dim` | `--st-a-strong`, `--st-a-dim` |
+| `--hud-a-ghost` | `--st-a-faint` (small print, idle icons) |
+| `--hud-a-stroke`, `--hud-a-line` | `--st-a-stroke` (control outlines), `--st-a-hair` (separators) |
+| `--hud-a-panel`, `--hud-scrim`, `--hud-blur`, `--hud-halo` | `--st-a-surface`, `--st-scrim`, `--st-blur`, `--st-halo` |
 | `--hud-unit`, `--hud-edge` | `--st-u`, `--st-edge` |
-| `--hud-fade-in`, `--hud-fade-out` | `--st-fast`, `--st-slow` |
-| `--hud-ease` | `--st-ease` |
-| `--hud-font`, `--hud-tracking` | `--st-font-fine` or `--st-font-data`, `--st-track` |
+| `--hud-fade-in`, `--hud-fade-text`, `--hud-fade-out` | `--st-fast`, `--st-medium`, `--st-slow` |
+| `--hud-ease`, `--hud-ease-soft` | `--st-ease`, `--st-ease-soft` |
+| `--hud-font`, `--hud-font-fine`, `--hud-font-figure` | `--st-font-data`, `--st-font-fine`, `--st-font-figure` |
+| `--hud-font-voice`, `--hud-font-body` | `--st-font-caption`, `--st-font-body` |
+| `--hud-tracking`, `--hud-tracking-wide`, `--hud-tracking-title` | `--st-track`, `--st-track-wide`, `--st-track-title` |

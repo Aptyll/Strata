@@ -30,6 +30,7 @@ import { attachCameraInput, cameraMath, createCamera } from "../ux/camera";
 import { BYTES_PER_PARTICLE, ChallengeEngine } from "./engine";
 import type { ChallengeMode } from "./engine";
 import { Ramp } from "./ramp";
+import { measureRefresh, screenLimit } from "./refresh";
 import { ROW } from "./shaders";
 import { describeGpu, mountChallengeViewer } from "./viewer";
 import { adapterOptions } from "../gpu/adapter-options";
@@ -45,10 +46,22 @@ export interface ChallengeResult {
   /** Frames per second measured over GPU-completed frames. */
   fps: number;
   targetFps: number;
+  /**
+   * Frames per second a measured window had to reach. It is `targetFps`, or
+   * 95 percent of `refreshHz` on a screen that refreshes at the target or
+   * slower: such a screen can meet the target but never exceed it.
+   */
+  passFps: number;
+  /** The screen's refresh rate as this page is paced, measured before the run. Null when it could not be measured. */
+  refreshHz: number | null;
   /** True once the count passed several measurement windows in a row. */
   sustained: boolean;
   /** Why the ramp stopped: frame rate, a memory or mode ceiling, or the floor. */
   stoppedBy: string | null;
+  /** Failed windows the ramp measured again instead of believing at once (noise it ignored). */
+  remeasuredWindows: number;
+  /** Times a confirming count's headroom reopened the ramp's search. */
+  rampReopens: number;
   width: number;
   height: number;
   planes: number;
@@ -156,6 +169,9 @@ export async function startChallenge(
   const say = (text: string) => {
     hud.textContent = text;
   };
+
+  // How often this screen shows a frame. Measured while the GPU is being set up, used by the search below.
+  const refreshing = measureRefresh();
 
   // The count block: the number, what it means, and buttons (viewer.ts).
   const viewer = mountChallengeViewer({ readout: hud, restart: () => restart() });
@@ -276,6 +292,14 @@ export async function startChallenge(
     );
   };
 
+  // A screen that refreshes at the target or slower (30 Hz: a phone in low
+  // power mode, a browser's energy saver) can meet the target but never
+  // exceed it, so "at least 30 fps" would pass or fail on measurement noise
+  // and the search would end far too low. There, holding the frame rate means
+  // showing every refresh, and the result says which screen it was measured on.
+  const refreshHz = await refreshing;
+  const { screenHz, passFps } = screenLimit(refreshHz, targetFps);
+
   const restart = () => {
     engine.resetCountCheck();
     if (fixedCount) {
@@ -283,7 +307,7 @@ export async function startChallenge(
       status = "fixed count";
       apply(fixedCount);
     } else {
-      ramp = new Ramp({ targetFps, start: startCount, quantum: ROW });
+      ramp = new Ramp({ targetFps: passFps, start: startCount, quantum: ROW, blind: screenHz !== null });
       status = "climbing";
       apply(ramp.count);
     }
@@ -301,8 +325,12 @@ export async function startChallenge(
       particles,
       fps: Math.round(rate * 10) / 10,
       targetFps,
+      passFps: Math.round(passFps * 10) / 10,
+      refreshHz: refreshHz > 0 ? Math.round(refreshHz * 10) / 10 : null,
       sustained,
       stoppedBy: ramp?.stop ?? null,
+      remeasuredWindows: ramp?.remeasured ?? 0,
+      rampReopens: ramp?.reopens ?? 0,
       width: canvas.width,
       height: canvas.height,
       planes: engine.planeCount,
@@ -353,6 +381,7 @@ export async function startChallenge(
       mismatches: engine.countMismatches,
       memoryLimited: engine.memoryLimited,
       software: card.software,
+      screenHz,
       lost,
     });
     if (hud.style.display === "none") return;
@@ -395,6 +424,7 @@ export async function startChallenge(
     const gpu = r.gpuMs === null ? "" : `GPU ${r.gpuMs.toFixed(1)} ms   `;
     const mem = r.mode === "sim" ? `${(engine.stateBytes / 2 ** 20).toFixed(0)} MB state   ` : "";
     lines.push(`${gpu}${mem}${canvas.width}x${canvas.height}   ${r.planes} sheets   target ${targetFps} fps`);
+    if (screenHz) lines.push(`screen ${screenHz.toFixed(1)} Hz, at or under the target: a window passes at ${passFps.toFixed(1)} fps`);
     lines.push(card.name && card.name !== adapterName ? `${card.name}   (${adapterName})` : adapterName);
     if (lost) lines.push(`GPU device lost: ${lost}`);
     if (errorText) lines.push(errorText);

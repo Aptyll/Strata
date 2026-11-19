@@ -54,7 +54,7 @@ Standalone demo with no WebGPU: `/src/ux/autocam/demo/` under `npm run dev`
 
 ## Checks
 
-`node src/ux/autocam/test/run.mjs` plays 10-minute tours over five seeded
+`npm test -- autocam` plays 10-minute tours over five seeded
 worlds (12 to 128 sheets) through the real `CameraRig` and asserts the eye
 never crosses a sheet, never jumps more than 10 percent of its distance in a
 frame, and uses at least three kinds of shot. About a second. `SEEDS=1,2,3`
