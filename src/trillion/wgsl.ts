@@ -237,17 +237,26 @@ fn patchRow(c: u32, lid: u32) -> Row {
   return r;
 }
 
-fn stratQ(r: Row, lid: u32, j: u32, key: Key) -> vec2f {
+// Per thread constants of the stratified grid: q = o + (cell + jitter) * s.
+struct Grid { o: vec2f, s: vec2f, row: f32 };
+
+fn rowGrid(r: Row, lid: u32) -> Grid {
   let gu = f32(B.strata0.w);
   let gv = f32(B.strata1.x);
-  return vec2f(
-    (f32(r.cu) + (f32(j) + u01(key.x)) / f32(r.len)) / gu,
-    (f32(r.cv) + (f32(lid) + u01(key.y)) / f32(r.rows)) / gv);
+  var g: Grid;
+  g.o = vec2f(f32(r.cu) / gu, f32(r.cv) / gv);
+  g.s = vec2f(1.0 / (f32(max(r.len, 1u)) * gu), 1.0 / (f32(max(r.rows, 1u)) * gv));
+  g.row = f32(lid);
+  return g;
 }
 
-fn samplePixel(r: Row, lid: u32, j: u32, p: array<f32, 8>) -> vec2i {
+fn stratQ(g: Grid, j: u32, key: Key) -> vec2f {
+  return g.o + (vec2f(f32(j), g.row) + vec2f(u01(key.x), u01(key.y))) * g.s;
+}
+
+fn samplePixel(r: Row, g: Grid, j: u32, p: array<f32, 8>) -> vec2i {
   let key = particleKey(r.first + j, B.seed);
-  SQ = stratQ(r, lid, j, key);
+  SQ = stratQ(g, j, key);
   return project(key, pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt), p);
 }
 
@@ -257,13 +266,14 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   if (wgIndex >= B.groups) { return; }
   let p = params();
   let r = patchRow(B.strata0.x + wgIndex, lid);
+  let g = rowGrid(r, lid);
 
   // 1. Footprint of the patch from its two u edges (first and last id of every row).
   var lo = vec2u(0xffffffffu);
   var hi = vec2u(0u);
   if (r.len > 0u) {
-    let a = samplePixel(r, lid, 0u, p);
-    let b = samplePixel(r, lid, r.len - 1u, p);
+    let a = samplePixel(r, g, 0u, p);
+    let b = samplePixel(r, g, r.len - 1u, p);
     if (a.x >= 0) { lo = min(lo, vec2u(a)); hi = max(hi, vec2u(a) + 1u); }
     if (b.x >= 0) { lo = min(lo, vec2u(b)); hi = max(hi, vec2u(b) + 1u); }
   }
@@ -309,7 +319,7 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
     if (id - B.start >= B.count) { continue; }   // outside this batch
     let key = particleKey(id, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
-    SQ = stratQ(r, lid, j, key);
+    SQ = stratQ(g, j, key);
     let px = project(key, jr, p);
     if (px.x < 0) { continue; }
     inView += 1u;
