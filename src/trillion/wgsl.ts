@@ -1,32 +1,41 @@
 // WGSL for the trillion particle splat kernel. See docs/trillion.md.
 //
-// One invocation evaluates `perThread` stateless particles of one plane and
-// adds exactly 1 to exactly one pixel counter for each particle that lands
-// in the frame. Nothing is stored per particle.
+// One invocation evaluates stateless particles of one plane and adds exactly
+// 1 to exactly one pixel counter for each particle that lands in the frame.
+// Nothing is stored per particle.
 
 import { STATELESS_RNG_WGSL } from '../stateless/rng';
 
 /** Bytes per batch record in the uniform ring (minUniformBufferOffsetAlignment). */
 export const SLOT_BYTES = 256;
 export const WORKGROUP = 256;
+/** Longest row one strata thread walks: run counts are kept in 16 bits. */
+export const MAX_ROW = 65535;
+
+// tri() from src/stateless/rng.ts with one int-to-float conversion instead of
+// two (conversions run at quarter rate on many GPUs). Bit-identical: both
+// 24-bit integers and their difference are exact in f32. If rng.ts changes
+// tri, the original is used unchanged.
+const TRI_TWO_CONVERTS = 'return (f32(h >> 8u) - f32(pcg(h) >> 8u)) * (1.0 / 16777216.0);';
+const TRI_ONE_CONVERT = 'return f32(i32(h >> 8u) - i32(pcg(h) >> 8u)) * (1.0 / 16777216.0);';
 
 /**
  * Helpers every law may call: the shared stateless RNG from src/stateless
  * (Key = vec2u, particleKey, pcg, u01, tri, draw, TAU), so laws written for
  * src/offline and src/stateless plug in unchanged.
  */
-export const LAW_PRELUDE = STATELESS_RNG_WGSL;
+export const LAW_PRELUDE = STATELESS_RNG_WGSL.replace(TRI_TWO_CONVERTS, TRI_ONE_CONVERT);
 
 const BATCH_STRUCT = /* wgsl */ `
 struct Batch {
-  r0: vec4f,        // homography rows: (px*w, py*w, w) = r.x*sx + r.y*sy + r.z
+  r0: vec4f,        // homography rows at mid shutter: (px*w, py*w, w) = r.x*sx + r.y*sy + r.z
   r1: vec4f,
   r2: vec4f,        // r2.w = smallest w accepted (near plane)
   p0: vec4f,        // law params 0..3
   p1: vec4f,        // law params 4..7
   start: u32,       // first plane-local particle index of this dispatch
   count: u32,       // particles in this dispatch, <= 2^31
-  perThread: u32,   // particles per invocation
+  perThread: u32,   // particles per invocation (direct, tiled)
   gridX: u32,       // workgroups per row of the 2D dispatch
   groups: u32,      // workgroups that do work (gridX * gridY may overshoot)
   seed: u32,        // plane seed
@@ -34,16 +43,25 @@ struct Batch {
   keep: u32,        // keep a particle when (hash >> 8) < keep; 2^24 keeps all
   width: u32,
   height: u32,
-  flags: u32,       // bit 0: stochastic sub-pixel splat, bit 1: math only (no counter writes, bench), bit 2: no tile (bench)
-  _pad: u32,
+  flags: u32,       // bit 0 stochastic splat, 1 math only (bench), 2 no tile (bench), 3 time shutter, 4 camera blur
+  fixBits: u32,     // F: fraction bits of the fixed point pixel position (8 up to 32764 pixels)
   time: f32,        // seconds
-  shutter: f32,     // seconds of exposure; 0 = no motion blur
-  _pad2: vec2f,
+  shutter: f32,     // seconds of exposure
+  fixHi: vec2f,     // clamp of the scaled position: (width + 3) * 2^F, (height + 3) * 2^F
   tile: vec4i,      // shared memory window: x0, y0, w, h (w * h <= TILE_BINS); w = 0: none
   strata0: vec4u,   // strata: first patch of this dispatch, base particles per patch, remainder, gu
   strata1: vec4u,   // strata: gv, _, _, _
+  fix: vec4f,       // 2^F, (1 - splat offset) * 2^F, _, _
+  d0: vec4f,        // camera blur: homography rows at shutter close minus open (w = 0)
+  d1: vec4f,
+  d2: vec4f,
 };
 `;
+
+/** True when the law reads its stratified coordinate. */
+export function usesStrat(law: { wgsl: string }): boolean {
+  return /\bstrat\s*\(/.test(law.wgsl);
+}
 
 /**
  * The splat module for one law. Three entry points:
@@ -53,12 +71,14 @@ struct Batch {
  *           workgroup from a sample of the patch, runs merge in registers
  */
 export function splatWgsl(law: { fn: string; wgsl: string }, tileBins: number, prelude = LAW_PRELUDE): string {
+  // Plain entry points: the stratified coordinate is just the key's own bits.
+  const plainSQ = usesStrat(law) ? 'SQ = vec2f(unit23(key.x), unit23(key.y)) - 1.0;' : '';
   return /* wgsl */ `
 ${prelude}
 // The particle's stratified coordinate in [0, 1)^2. In the strata entry
 // point neighbouring ids get neighbouring coordinates (a jittered grid over
 // the plane's ids), so a workgroup's particles land close together. In the
-// other entry points it is (u01(key.x), u01(key.y)): same distribution, no
+// other entry points it comes from the key's own bits: same distribution, no
 // coherence. Laws that use it for their main two coordinates get the fast path.
 var<private> SQ: vec2f;
 fn strat(key: Key) -> vec2f { return SQ; }
@@ -83,33 +103,68 @@ fn add64(i: u32, n: u32) {
   if (old > 0xffffffffu - n) { atomicAdd(&tally[i + 1u], 1u); }
 }
 
-// Pixel for particle (key, jitter bits), or (-1, -1) when it misses the frame.
-fn project(key: Key, jr: u32, p: array<f32, 8>) -> vec2i {
+// 23 bits of h as a float in [1, 2), without a conversion instruction.
+fn unit23(h: u32) -> f32 {
+  return bitcast<f32>(0x3f800000u | (h >> 9u));
+}
+
+// Sub-pixel and shutter jitter: 32 bits mixed from the whole key and the
+// frame salt with two multiplies. The top 16 bits choose the splat corner,
+// the low 16 bits the instant inside the shutter.
+fn jitter(key: Key) -> u32 {
+  let h = (key.x ^ B.salt) * 0x9e3779b9u + key.y;
+  return (h ^ (h >> 16u)) * 0x85ebca6bu;
+}
+
+const MAGIC: f32 = 8388608.0;   // 2^23
+
+// Where the particle lands, in biased fixed point: n >> F = floor(q - off) + 1
+// and n & (2^F - 1) is the fraction, where q is the pixel position and off is
+// 0.5 for the stochastic splat (0 for the point splat). Rounding goes through
+// the f32 mantissa (adding 2^23), so there is no float-to-int conversion. The
+// clamp keeps n >> F in [0, size + 3]; inFrame rejects what is off the frame,
+// and n = 0 (rejected) when the particle is behind the camera.
+fn project(key: Key, jr: u32, p: array<f32, 8>) -> vec2u {
   var t = B.time;
-  if (B.shutter != 0.0) { t += B.shutter * (f32(jr >> 22u) * (1.0 / 1024.0) - 0.5); }
-  let s = ${law.fn}(key, t, p);
-  let hw = B.r2.x * s.x + B.r2.y * s.y + B.r2.z;
-  if (!(hw > B.r2.w)) { return vec2i(-1); }       // behind the camera, or NaN
-  let inv = 1.0 / hw;
-  let qx = (B.r0.x * s.x + B.r0.y * s.y + B.r0.z) * inv;
-  let qy = (B.r1.x * s.x + B.r1.y * s.y + B.r1.z) * inv;
-  var ix: i32;
-  var iy: i32;
-  if ((B.flags & 1u) != 0u) {
-    // Stochastic bilinear: pick one of the 4 nearest pixels with the bilinear
-    // weight as probability. floor + compare, never floor(x + r) (f32 creep).
-    let ax = qx - 0.5;
-    let ay = qy - 0.5;
-    let bx = floor(ax);
-    let by = floor(ay);
-    ix = i32(bx) + select(0, 1, f32(jr & 0x7ffu) * (1.0 / 2048.0) < ax - bx);
-    iy = i32(by) + select(0, 1, f32((jr >> 11u) & 0x7ffu) * (1.0 / 2048.0) < ay - by);
-  } else {
-    ix = i32(floor(qx));
-    iy = i32(floor(qy));
+  var r0 = B.r0.xyz;
+  var r1 = B.r1.xyz;
+  var r2 = B.r2.xyz;
+  if ((B.flags & 24u) != 0u) {
+    // One instant inside the shutter, for the law's time and the camera alike.
+    let s = bitcast<f32>(0x3f800000u | ((jr & 0xffffu) << 7u)) - 1.5;   // [-0.5, 0.5)
+    t += B.shutter * s;
+    if ((B.flags & 16u) != 0u) {
+      r0 += s * B.d0.xyz;
+      r1 += s * B.d1.xyz;
+      r2 += s * B.d2.xyz;
+    }
   }
-  if (u32(ix) >= B.width || u32(iy) >= B.height) { return vec2i(-1); }
-  return vec2i(ix, iy);
+  let sp = ${law.fn}(key, t, p);
+  let hw = r2.x * sp.x + r2.y * sp.y + r2.z;
+  if (!(hw > B.r2.w && hw < 1e30)) { return vec2u(0u); }   // behind the camera, inf or NaN
+  let q = vec2f(r0.x * sp.x + r0.y * sp.y + r0.z, r1.x * sp.x + r1.y * sp.y + r1.z) * (1.0 / hw);
+  let v = clamp(q * B.fix.x + B.fix.y, vec2f(0.0), B.fixHi) + MAGIC;
+  return bitcast<vec2u>(v) & vec2u(0x7fffffu);
+}
+
+// Splat corner (0 or 1 per axis). Stochastic bilinear: 1 with probability
+// equal to the fraction, so the expected hit is the bilinear weight. Point
+// splat: always 0.
+fn corner(n: vec2u, jr: u32) -> vec2u {
+  if ((B.flags & 1u) == 0u) { return vec2u(0u); }
+  let f = B.fixBits;
+  let mask = (1u << f) - 1u;
+  let t = vec2u(jr >> (32u - f), (jr >> (24u - f)) & mask);
+  return select(vec2u(0u), vec2u(1u), (n & vec2u(mask)) > t);
+}
+
+// The pixel: block + corner - 1, wrapping to a huge value left of or above the frame.
+fn pixelOf(n: vec2u, d: vec2u) -> vec2u {
+  return (n >> vec2u(B.fixBits)) + d - 1u;
+}
+
+fn inFrame(px: vec2u) -> bool {
+  return px.x < B.width && px.y < B.height;
 }
 
 fn params() -> array<f32, 8> {
@@ -134,15 +189,16 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
     if (off >= B.count) { break; }
     evaluated += 1u;
     let key = particleKey(B.start + off, B.seed);
-    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
-    SQ = vec2f(u01(key.x), u01(key.y));
-    let px = project(key, jr, p);
-    if (px.x < 0) { continue; }
+    let jr = jitter(key);
+    ${plainSQ}
+    let n = project(key, jr, p);
+    let px = pixelOf(n, corner(n, jr));
+    if (!inFrame(px)) { continue; }
     inView += 1u;
     if (!kept(jr)) { continue; }
     landed += 1u;
     if ((B.flags & 2u) != 0u) { continue; }   // math only: no counter write
-    atomicAdd(&acc[u32(px.y) * B.width + u32(px.x)], 1u);
+    atomicAdd(&acc[px.y * B.width + px.x], 1u);
   }
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgInView, inView);
@@ -173,19 +229,20 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
     if (off >= B.count) { break; }
     evaluated += 1u;
     let key = particleKey(B.start + off, B.seed);
-    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
-    SQ = vec2f(u01(key.x), u01(key.y));
-    let px = project(key, jr, p);
-    if (px.x < 0) { continue; }
+    let jr = jitter(key);
+    ${plainSQ}
+    let n = project(key, jr, p);
+    let px = pixelOf(n, corner(n, jr));
+    if (!inFrame(px)) { continue; }
     inView += 1u;
     if (!kept(jr)) { continue; }
     landed += 1u;
-    let lx = u32(px.x - tile.x);
-    let ly = u32(px.y - tile.y);
+    let lx = px.x - u32(tile.x);
+    let ly = px.y - u32(tile.y);
     if (lx < tw && ly < th) {
       atomicAdd(&bins[ly * tw + lx], 1u);
     } else {
-      atomicAdd(&acc[u32(px.y) * B.width + u32(px.x)], 1u);
+      atomicAdd(&acc[px.y * B.width + px.x], 1u);
     }
   }
   atomicAdd(&wgLanded, landed);
@@ -214,10 +271,9 @@ var<workgroup> sNY0: atomic<u32>;
 var<workgroup> sX1: atomic<u32>;    // max of x + 1; 0 when no sample landed
 var<workgroup> sY1: atomic<u32>;
 
-fn flushRun(pk: u32, n: u32, tile: vec4i) {
+// Adds n hits to pixel (x, y): the workgroup's tile when inside it, else global.
+fn addHits(x: u32, y: u32, n: u32, tile: vec4i) {
   if (n == 0u) { return; }
-  let x = pk & 0xffffu;
-  let y = pk >> 16u;
   let lx = x - u32(tile.x);
   let ly = y - u32(tile.y);
   if (lx < u32(tile.z) && ly < u32(tile.w)) {
@@ -225,6 +281,19 @@ fn flushRun(pk: u32, n: u32, tile: vec4i) {
   } else {
     atomicAdd(&acc[y * B.width + x], n);
   }
+}
+
+// A run's hits on the 2x2 block the splat picks from. blk = (by + 1) << 16 |
+// (bx + 1) for top-left pixel (bx, by); c0 counts the top pixels (bx in the
+// low 16 bits, bx + 1 in the high), c1 the bottom ones. A corner left of or
+// above the frame never has hits, so its wrapped coordinate is never used.
+fn flushBlock(blk: u32, c0: u32, c1: u32, tile: vec4i) {
+  let x = (blk & 0xffffu) - 1u;
+  let y = (blk >> 16u) - 1u;
+  addHits(x, y, c0 & 0xffffu, tile);
+  addHits(x + 1u, y, c0 >> 16u, tile);
+  addHits(x, y + 1u, c1 & 0xffffu, tile);
+  addHits(x + 1u, y + 1u, c1 >> 16u, tile);
 }
 
 struct Row { first: u32, len: u32, rows: u32, cu: u32, cv: u32 };
@@ -247,8 +316,9 @@ fn patchRow(c: u32, lid: u32) -> Row {
   return r;
 }
 
-// Per thread constants of the stratified grid: q = o + (cell + jitter) * s.
-struct Grid { o: vec2f, s: vec2f, row: f32 };
+// Per thread constants of the stratified grid: q = o + (cell + jitter) * s,
+// written as o + ((cell - 1) + unit23) * s since unit23 is in [1, 2).
+struct Grid { o: vec2f, s: vec2f, rowm1: f32 };
 
 fn rowGrid(r: Row, lid: u32) -> Grid {
   let gu = f32(B.strata0.w);
@@ -256,18 +326,22 @@ fn rowGrid(r: Row, lid: u32) -> Grid {
   var g: Grid;
   g.o = vec2f(f32(r.cu) / gu, f32(r.cv) / gv);
   g.s = vec2f(1.0 / (f32(max(r.len, 1u)) * gu), 1.0 / (f32(max(r.rows, 1u)) * gv));
-  g.row = f32(lid);
+  g.rowm1 = f32(lid) - 1.0;
   return g;
 }
 
-fn stratQ(g: Grid, j: u32, key: Key) -> vec2f {
-  return g.o + (vec2f(f32(j), g.row) + vec2f(u01(key.x), u01(key.y))) * g.s;
+// Stratified coordinate of cell (j, row) with 23 bits of jitter from the
+// key. jm1 = j - 1 as a float: the row walk keeps a float counter.
+fn stratQ(g: Grid, jm1: f32, key: Key) -> vec2f {
+  return g.o + (vec2f(jm1, g.rowm1) + vec2f(unit23(key.x), unit23(key.y))) * g.s;
 }
 
-fn samplePixel(r: Row, g: Grid, j: u32, p: array<f32, 8>) -> vec2i {
+fn samplePixel(r: Row, g: Grid, j: u32, p: array<f32, 8>) -> vec2u {
   let key = particleKey(r.first + j, B.seed);
-  SQ = stratQ(g, j, key);
-  return project(key, pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt), p);
+  let jr = jitter(key);
+  SQ = stratQ(g, f32(j) - 1.0, key);
+  let n = project(key, jr, p);
+  return pixelOf(n, corner(n, jr));
 }
 
 @compute @workgroup_size(${WORKGROUP})
@@ -284,8 +358,8 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   if (r.len > 0u) {
     let a = samplePixel(r, g, 0u, p);
     let b = samplePixel(r, g, r.len - 1u, p);
-    if (a.x >= 0) { lo = min(lo, vec2u(a)); hi = max(hi, vec2u(a) + 1u); }
-    if (b.x >= 0) { lo = min(lo, vec2u(b)); hi = max(hi, vec2u(b) + 1u); }
+    if (inFrame(a)) { lo = min(lo, a); hi = max(hi, a + 1u); }
+    if (inFrame(b)) { lo = min(lo, b); hi = max(hi, b + 1u); }
   }
   if (hi.x > 0u) {
     atomicMax(&sNX0, ~lo.x);
@@ -343,38 +417,56 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
     }
   }
 
-  // 2. Walk the row. Consecutive ids are neighbours on the grid, so runs of
-  // hits on one pixel are merged in registers before any atomic.
+  // 2. This dispatch's part of the row: j in [jlo, jhi).
+  var jlo = 0u;
+  var jhi = 0u;
+  if (r.first >= B.start) {
+    let rel = r.first - B.start;
+    if (rel < B.count) { jhi = min(r.len, B.count - rel); }
+  } else {
+    let d = B.start - r.first;
+    if (d < r.len) { jlo = d; jhi = min(r.len, d + B.count); }
+  }
+
+  // 3. Walk it. Consecutive ids are neighbours on the grid, so the 2x2 block
+  // of pixels the splat picks from rarely changes: hits are counted per
+  // corner in registers and added when the block changes. Each particle still
+  // lands on its own randomly chosen pixel; only the adds are grouped.
   var landed = 0u;
   var inView = 0u;
-  var evaluated = 0u;
-  var runPix = 0xffffffffu;
-  var runN = 0u;
-  for (var j = 0u; j < r.len; j++) {
-    let id = r.first + j;
-    if (id - B.start >= B.count) { continue; }   // outside this batch
-    evaluated += 1u;
-    let key = particleKey(id, B.seed);
-    let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
-    SQ = stratQ(g, j, key);
-    let px = project(key, jr, p);
-    if (px.x < 0) { continue; }
+  var blk = 0xffffffffu;
+  var c0 = 0u;
+  var c1 = 0u;
+  var jm1 = f32(jlo) - 2.0;
+  for (var j = jlo; j < jhi; j++) {
+    jm1 += 1.0;
+    let key = particleKey(r.first + j, B.seed);
+    let jr = jitter(key);
+    SQ = stratQ(g, jm1, key);
+    let n = project(key, jr, p);
+    let d = corner(n, jr);
+    let b1 = n >> vec2u(B.fixBits);
+    let px = b1 + d - 1u;
+    if (!inFrame(px)) { continue; }
     inView += 1u;
     if (!kept(jr)) { continue; }
     landed += 1u;
-    let pk = (u32(px.y) << 16u) | u32(px.x);
-    if (pk == runPix) {
-      runN += 1u;
-    } else {
-      flushRun(runPix, runN, tile);
-      runPix = pk;
-      runN = 1u;
+    if ((B.flags & 2u) != 0u) { continue; }   // math only (bench): no counter write
+    let k = (b1.y << 16u) | b1.x;
+    if (k != blk) {
+      flushBlock(blk, c0, c1, tile);
+      blk = k;
+      c0 = 0u;
+      c1 = 0u;
     }
+    let inc = select(1u, 0x10000u, d.x != 0u);
+    c0 += select(inc, 0u, d.y != 0u);
+    c1 += select(0u, inc, d.y != 0u);
   }
-  flushRun(runPix, runN, tile);
+  flushBlock(blk, c0, c1, tile);
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgInView, inView);
-  atomicAdd(&wgEvaluated, evaluated);
+  atomicAdd(&wgEvaluated, jhi - jlo);
   workgroupBarrier();
   if (lid == 0u) {
     atomicAdd(&tally[4], 1u);
