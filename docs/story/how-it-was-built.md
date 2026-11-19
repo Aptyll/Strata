@@ -266,6 +266,11 @@ particle's random numbers come from chained 32-bit hashes, there are only about
 4.29 billion distinct particles, repeated over and over. And it listed what a
 skeptical viewer would need to see: an on-screen count that sums to exactly
 10^12, zooms that resolve single dots, and a published seed and code.
+The fix (64-bit keys, PR #45) landed, but the first trillion stills had already
+been rendered on the old 32-bit keys: their sheets reuse about 4.3 billion key
+values, each sheet under its own transform, and the stacked compositions A and
+B repeated particles outright. They were re-rendered on 64-bit keys
+(`docs/record/README.md`, "Distinct particles and keys").
 
 The artist proposed the best ending for the video: collapse all trillion
 particles into a single white pixel, identical to the opening frame.
@@ -356,7 +361,7 @@ the cache. The first still's cluster lit only 4% of the 4K frame, so its hits
 stayed in the 2070's 4 MB L2 cache, while the benchmark's single camera-filling
 sheet spreads hits over the whole grid and pays a trip to video memory for most
 of them. With flux weighting (far particles drawn on average), real trillion frames
-took 26 to 52 seconds when the sheets covered part of the frame and 172 to 205
+took 26 to 52 seconds when the sheets covered part of the frame and 161 to 205
 seconds when they filled it (composition A). Count weighting, one exact unit
 per particle in view, took about 160 to 193 seconds per frame.
 

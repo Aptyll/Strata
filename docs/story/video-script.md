@@ -13,7 +13,7 @@ against the real results before recording.
 - Fill in bracketed lines only with numbers measured on the RTX 2070. The
   first trillion still is confirmed: 28.9 seconds, exactly 10^12 particles
   evaluated (with flux weighting, frames took 26 to 52 seconds when the sheets
-  covered part of the frame and 172 to 205 seconds when they filled it;
+  covered part of the frame and 161 to 205 seconds when they filled it;
   count-weighted frames take about 160 to 193 seconds).
 - Say "rendered", never "simulated", for the trillion. The simulated tiers are
   the 100 million and 1 billion runs.
@@ -154,6 +154,10 @@ screenshots from the visual QA agents. A slow push-in on the summary line
 > video. You'll see it.
 
 **On screen:** `4.29 billion distinct particles, repeated 233 times, is not a trillion`.
+
+*Note:* the first trillion stills were rendered before that fix and draw on
+about 4.3 billion 32-bit keys. Use the 64-bit frames (`docs/record/trillion64-*`)
+or new renders for any shot that claims a trillion distinct particles.
 
 ## 5:05 The renderer lands (45 s)
 
