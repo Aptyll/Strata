@@ -36,6 +36,12 @@ from was not recorded. The two closer stills were already rendering at
 7:34 PM, so the same question applies to them. A render manifest (below)
 records the commit, and none exists for these frames yet.
 
+**Settled at 8:29 PM** ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)): the desktop's git reflog shows that
+every still and the first clip were rendered at two commits older than the
+64-bit keys. All of them used the old 32-bit keys, and none has a GPU count
+of evaluated particles. Compositions A and B were rendered again on 64-bit
+keys, with manifests.
+
 ## The 64-bit key
 
 [#45](https://github.com/Aptyll/Strata/pull/45) added
@@ -158,7 +164,7 @@ journal.
 | Duplicate keys | zero among 16.7 million particles across 4 sheets, counted directly | CPU | [#45](https://github.com/Aptyll/Strata/pull/45) |
 | The old 32-bit scheme | every sampled particle had an exact twin on another sheet | CPU | [#45](https://github.com/Aptyll/Strata/pull/45) |
 | Evaluated equals N | asserted in the conservation check; a 3-frame smoke render writes `"evaluated":"4000000"` | software GPU | [#52](https://github.com/Aptyll/Strata/pull/52) |
-| Evaluated on the real frames | 1,000,000,000,000 in every trillion frame, from the frame stats relayed at 7:39 PM. For the first three stills this was most likely the job's total, not a GPU count: they were rendered or already rendering before [#52](https://github.com/Aptyll/Strata/pull/52) merged | RTX 2070 | [story doc](../../story/how-it-was-built.md), [page 07](2026-11-18-07-first-trillion-frames.md) |
+| Evaluated on the real frames | 1,000,000,000,000 in every trillion frame, from the frame stats relayed at 7:39 PM. For the first three stills this was most likely the job's total, not a GPU count: they were rendered or already rendering before [#52](https://github.com/Aptyll/Strata/pull/52) merged. Settled later: this holds for every still and the first clip ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)) | RTX 2070 | [story doc](../../story/how-it-was-built.md), [page 07](2026-11-18-07-first-trillion-frames.md) |
 
 ## Pictures: the label is the count
 
@@ -186,6 +192,9 @@ of the clip (107,787,615,782 on the first, 107,743,038,598 on the last), which
 is what a real per-frame tally looks like.*
 
 ## Open
+
+What happened to the first three items after 8:20 PM is on
+[page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md).
 
 - **No GPU count of evaluated particles for the first stills.** They were
   rendered before, or while, [#52](https://github.com/Aptyll/Strata/pull/52)
