@@ -22,6 +22,11 @@ export interface CameraInputOptions {
   rotateSpeed?: number;
   /** Called after a double click or double tap that hit no plane. Default: fly home. */
   onEmptyDoubleTap?: () => void;
+  /**
+   * Show what a drag is doing with the cursor: a closed hand while it turns
+   * the view, a four-way arrow while it slides it. Default true.
+   */
+  dragCursor?: boolean;
 }
 
 interface Pointer {
@@ -73,6 +78,14 @@ export function attachCameraInput(
   let pinchX = 0;
   let pinchY = 0;
   let trackpadUntil = 0;
+  /** The cursor this file has put on the element, "" for none. */
+  let shownCursor = "";
+  const showCursor = (cursor: string) => {
+    if (options.dragCursor === false) return;
+    // Only replace a cursor of our own: one set by someone else (a force's ring) stays.
+    if (element.style.cursor === shownCursor) element.style.cursor = cursor;
+    shownCursor = element.style.cursor === cursor ? cursor : "";
+  };
   /** A Shift + two-finger scroll pan is in progress until this time. */
   let scrollPanUntil = 0;
 
@@ -121,6 +134,13 @@ export function attachCameraInput(
   };
 
   const onPointerDown = (e: PointerEvent) => {
+    // A press on the view takes the keys back from a control elsewhere on the page. The
+    // browser would do this itself, but the preventDefault below stops it for a mouse, and a
+    // slider left focused would go on eating the arrow keys.
+    const focused = element.ownerDocument.activeElement;
+    if (focused instanceof HTMLElement && focused !== element && focused !== element.ownerDocument.body) {
+      focused.blur();
+    }
     if (pointers.size === 0) {
       camera.beginGesture();
       downX = e.clientX;
@@ -155,6 +175,7 @@ export function attachCameraInput(
     moved += Math.abs(dx) + Math.abs(dy);
 
     if (pointers.size === 1) {
+      if (moved > TAP_MAX_MOVE && p.type !== "touch") showCursor(panDrag ? "move" : "grabbing");
       if (panDrag) {
         // Scale the pan to the sheet the press landed on, so that sheet stays under the pointer.
         // Done on the first move, not on the press: a press that never moves is not a pan.
@@ -186,6 +207,7 @@ export function attachCameraInput(
     }
     if (pointers.size > 0) return;
     camera.endGesture();
+    showCursor("");
 
     const isTap =
       e.type === "pointerup" &&
@@ -370,6 +392,7 @@ export function attachCameraInput(
     camera.setMove(0, 0, 0);
     if (pointers.size > 0) camera.endGesture();
     pointers.clear();
+    showCursor("");
   };
 }
 
