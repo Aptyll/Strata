@@ -73,6 +73,12 @@ fn update(p: Particle, i: u32) -> Particle {
 });
 ```
 
+`label` and `description` are what people see, so write them for a viewer, not
+for the code. The label must be unique: the Esc menu groups a behavior's
+sliders under it, and two behaviors with one label show up as one (the
+registry warns in the console). The description is one plain sentence saying
+what the sheet looks like, in the style of the ones in `src/behaviors`.
+
 ## Params
 
 The contract's `ParamSpec` is `default, min, max, step?, label?`. `RichParamSpec`
