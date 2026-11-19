@@ -346,6 +346,38 @@ export class CameraRig {
     this.stopMomentum();
   }
 
+  /** The pose the camera is easing toward (no idle drift). */
+  getGoalPose(): CameraPose {
+    return copyPose(this.goal);
+  }
+
+  /**
+   * Scripted authority over the camera, for intros and guided moments. Each
+   * call pulls the goal toward `pose` by `weight` (0..1); the usual smoothing
+   * still applies. At weight 1 the script owns the camera, and when it stops
+   * calling, the camera simply stays where it was left.
+   */
+  steer(pose: CameraPose, weight = 1): void {
+    const w = clamp(weight, 0, 1);
+    if (w <= 0) return;
+    this.interact();
+    this.stopMomentum();
+    this.mode = "orbit";
+    const g = this.goal;
+    g.target = v3lerp(g.target, pose.target, w);
+    g.orientation = quatSlerp(g.orientation, quatNormalize(pose.orientation), w);
+    g.distance = this.clampDistance(
+      Math.exp(lerp(Math.log(g.distance), Math.log(Math.max(pose.distance, 1e-9)), w)),
+    );
+  }
+
+  /** Count as activity: restart the idle timer without moving anything. */
+  wake(): void {
+    this.bakeDrift();
+    this.idleTime = 0;
+    this.tourTime = 0;
+  }
+
   get focused(): PlaneTarget | null {
     return this.focusedPlane;
   }

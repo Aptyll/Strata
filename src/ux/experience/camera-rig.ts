@@ -1,13 +1,18 @@
-// Orbit camera for a world of planes.
+// Camera for the first-run experience.
 //
-// The rig keeps a `goal` and a damped `state`. Input writes to the goal, the
-// state chases it, so every motion has weight and nothing teleports. It
-// implements the shared CameraController contract, so the engine can use it
-// directly or copy the behaviour into its own camera: inertia, idle drift,
-// and flying to a plane to view it face-on.
+// This is a thin front for the shared camera in src/ux/camera, so the intro,
+// the standalone experience and the app all move with one feel: the same
+// smoothing, focus flights, pitch limits and idle drift (docs/ux/camera.md).
+// It keeps the small API the experience was written against.
+//
+// Pose convention here: `pitch` is the elevation of the eye as seen from the
+// target, so a positive pitch looks down. The shared CameraState on main uses
+// the opposite sign (pitch of the view direction). `sharedState()` converts.
 
 import type { CameraController, CameraState, Mat4, PlaneDesc, Quat, Vec2, Vec3 } from '../../core/contracts';
-import { angleDelta, clamp, damp, lerp, m4, v3 } from './math';
+import { CameraRig as SharedRig, orientationFromYawPitch, yawPitchFromOrientation } from '../camera';
+import type { CameraPose as SharedPose } from '../camera';
+import { m4, v3 } from './math';
 
 /**
  * A sheet as the experience layer sees it: where it is and which way it
@@ -40,7 +45,7 @@ export interface CameraRigOptions {
   far?: number;
   minDistance?: number;
   maxDistance?: number;
-  /** Seconds for the camera to cover half the distance to its goal. */
+  /** Smoothing time constant in seconds. Defaults to the shared camera's. */
   halfLife?: number;
   /** Seconds without input before the camera starts to drift on its own. */
   idleDelay?: number;
@@ -55,8 +60,6 @@ export interface CameraMatrices {
   invViewProj: Mat4;
   eye: Vec3;
 }
-
-const MAX_PITCH = 1.35;
 
 function rotate(q: Quat, p: Vec3): Vec3 {
   const [x, y, z, w] = q;
@@ -76,67 +79,102 @@ export function planeFromDesc(desc: Pick<PlaneDesc, 'position' | 'rotation' | 'h
   };
 }
 
-export class CameraRig implements CameraController {
-  near: number;
-  far: number;
-  minDistance: number;
-  maxDistance: number;
-  halfLife: number;
-  idleDelay: number;
-  idleSpeed: number;
+const toShared = (p: CameraPose): SharedPose => ({
+  target: [p.target[0], p.target[1], p.target[2]],
+  orientation: orientationFromYawPitch(p.yaw, -p.pitch),
+  distance: p.distance,
+});
 
-  /** Where the camera is right now. */
-  state: CameraState;
-  /** Where it is heading. Input writes here. */
-  goal: CameraPose;
-  idleTime = 0;
-  driftEnabled = true;
+const fromShared = (p: SharedPose): CameraPose => {
+  const { yaw, pitch } = yawPitchFromOrientation(p.orientation);
+  // `|| 0` turns -0 into 0 so a camera at rest reports clean zeros.
+  return { target: p.target, yaw: yaw || 0, pitch: -pitch || 0, distance: p.distance };
+};
+
+export class CameraRig implements CameraController {
+  /** The shared camera doing the work. Use it for anything not wrapped here. */
+  readonly shared: SharedRig;
   /** Used by viewProjection(); set it from the canvas each frame. */
   aspect = 1;
-  /** Extra damping while flying to a plane, so long moves feel slower. */
-  private flight = 0;
 
   constructor(opts: CameraRigOptions = {}) {
-    this.near = opts.near ?? 0.01;
-    this.far = opts.far ?? 500;
-    this.minDistance = opts.minDistance ?? 0.05;
-    this.maxDistance = opts.maxDistance ?? 60;
-    this.halfLife = opts.halfLife ?? 0.12;
-    this.idleDelay = opts.idleDelay ?? 5;
-    this.idleSpeed = opts.idleSpeed ?? 0.035;
-    this.state = { target: [0, 0, 0], yaw: 0, pitch: 0, distance: 3, fovY: opts.fovY ?? (50 * Math.PI) / 180 };
-    this.goal = { target: [0, 0, 0], yaw: 0, pitch: 0, distance: 3 };
+    this.shared = new SharedRig({
+      fovY: opts.fovY ?? (50 * Math.PI) / 180,
+      near: opts.near ?? 0.01,
+      far: opts.far ?? 500,
+      minDistance: opts.minDistance ?? 0.05,
+      maxDistance: opts.maxDistance ?? 60,
+      ...(opts.halfLife !== undefined ? { smoothing: opts.halfLife / Math.LN2 } : {}),
+      idle: {
+        delay: opts.idleDelay ?? 5,
+        ...(opts.idleSpeed !== undefined ? { orbitRate: opts.idleSpeed } : {}),
+      },
+      initial: toShared({ target: [0, 0, 0], yaw: 0, pitch: 0, distance: 3 }),
+    });
   }
 
+  get near(): number {
+    return this.shared.options.near;
+  }
+  get far(): number {
+    return this.shared.options.far;
+  }
+  get minDistance(): number {
+    return this.shared.options.minDistance;
+  }
+  get maxDistance(): number {
+    return this.shared.options.maxDistance;
+  }
   get fovY(): number {
-    return this.state.fovY;
+    return this.shared.options.fovY;
+  }
+
+  get driftEnabled(): boolean {
+    return this.shared.options.idle.enabled;
+  }
+  set driftEnabled(on: boolean) {
+    this.shared.options.idle.enabled = on;
+  }
+
+  /** Where the camera is right now, in this file's pose convention. */
+  get state(): CameraState {
+    return { ...fromShared(this.shared.getPose()), fovY: this.fovY };
+  }
+
+  /** The same, in the shared CameraState convention used by scenes on main. */
+  sharedState(): CameraState {
+    const s = this.state;
+    return { ...s, pitch: -s.pitch };
+  }
+
+  /** Where it is heading. Read-only: steer with the methods below. */
+  get goal(): CameraPose {
+    // While the idle drift runs it is the drift that is steering, so report that.
+    const s = this.shared;
+    return fromShared(s.idleAmount > 0 ? s.getPose() : s.getGoalPose());
   }
 
   /** Jump with no animation. Used before the first frame, and on replay. */
   snap(pose: Partial<CameraPose>): void {
-    this.goal = clonePose({ ...this.goal, ...pose });
-    Object.assign(this.state, clonePose(this.goal));
+    this.shared.setPose(toShared({ ...this.goal, ...pose }));
+    this.shared.refresh();
   }
 
   /** Mark that the person touched the camera. Stops the idle drift. */
   touch(): void {
-    this.idleTime = 0;
+    this.shared.wake();
   }
 
   /** Orbit by a drag measured in pixels. */
   orbit(dxPx: number, dyPx: number, viewportHeight: number): void {
-    // One viewport height of drag is about 200 degrees: fast enough to flip
-    // the stack from face-on to edge-on in a single short stroke.
-    const k = 3.5 / Math.max(1, viewportHeight);
-    this.goal.yaw -= dxPx * k;
-    this.goal.pitch = clamp(this.goal.pitch + dyPx * k, -MAX_PITCH, MAX_PITCH);
-    this.touch();
+    // One viewport height of drag is half a turn, as everywhere else.
+    const k = Math.PI / Math.max(1, viewportHeight);
+    this.shared.rotate(-dxPx * k, -dyPx * k);
   }
 
   /** Multiply the camera distance. factor < 1 moves in. */
   zoom(factor: number): void {
-    this.goal.distance = clamp(this.goal.distance * factor, this.minDistance, this.maxDistance);
-    this.touch();
+    if (factor > 0) this.shared.zoom(Math.log(factor));
   }
 
   /**
@@ -145,30 +183,25 @@ export class CameraRig implements CameraController {
    * @param fill fraction of the view the sheet should occupy
    */
   focusPlane(plane: Plane, aspect: number, fill = 0.86): void {
-    // Approach from whichever side of the sheet we are already on.
-    const toCam = v3.sub(this.eye(), plane.center);
-    const n = v3.dot(toCam, plane.normal) >= 0 ? plane.normal : v3.scale(plane.normal, -1);
-    const yaw = Math.atan2(n[0], n[2]);
-    const pitch = Math.asin(clamp(n[1], -1, 1));
+    this.shared.setAspect(aspect);
+    const target = {
+      center: plane.center,
+      normal: plane.normal,
+      up: plane.v,
+      width: plane.halfSize[0] * 2,
+      height: plane.halfSize[1] * 2,
+    };
+    // Same flight as the shared camera, framed to this caller's fill.
+    const pose = this.shared.poseForPlane(target);
     const tanY = Math.tan(this.fovY / 2);
-    const fitH = plane.halfSize[1] / tanY;
-    const fitW = plane.halfSize[0] / (tanY * aspect);
-    this.goal.target = [plane.center[0], plane.center[1], plane.center[2]];
-    // Take the short way round rather than unwinding accumulated turns.
-    this.goal.yaw = this.state.yaw + angleDelta(this.state.yaw, yaw);
-    this.goal.pitch = clamp(pitch, -MAX_PITCH, MAX_PITCH);
-    this.goal.distance = clamp(Math.max(fitH, fitW) / fill, this.minDistance, this.maxDistance);
-    this.flight = 1;
-    this.touch();
+    const fit = Math.max(plane.halfSize[1] / tanY, plane.halfSize[0] / (tanY * aspect));
+    pose.distance = fit / Math.max(fill, 1e-3);
+    this.shared.flyTo(pose);
   }
 
   /** Fly to an arbitrary pose (used for "back to overview"). */
   flyTo(pose: Partial<CameraPose>): void {
-    const next = clonePose({ ...this.goal, ...pose });
-    next.yaw = this.state.yaw + angleDelta(this.state.yaw, next.yaw);
-    this.goal = next;
-    this.flight = 1;
-    this.touch();
+    this.shared.flyTo(toShared({ ...this.goal, ...pose }));
   }
 
   /**
@@ -176,49 +209,17 @@ export class CameraRig implements CameraController {
    * @param override a pose the intro wants, and how hard it wants it (0..1)
    */
   update(dt: number, override?: { pose: CameraPose; weight: number }): void {
-    const g = this.goal;
-
-    if (override && override.weight > 0) {
-      // While the intro has full authority it writes the goal directly, so
-      // when it lets go the camera simply stays where it was left.
-      const w = override.weight;
-      g.target = v3.lerp(g.target, override.pose.target, w);
-      g.yaw = lerp(g.yaw, override.pose.yaw, w);
-      g.pitch = lerp(g.pitch, override.pose.pitch, w);
-      g.distance = lerp(g.distance, override.pose.distance, w);
-      this.idleTime = 0;
-    } else {
-      this.idleTime += dt;
-      if (this.driftEnabled && this.idleTime > this.idleDelay) {
-        // Ease into the drift over a few seconds so it is never noticed starting.
-        const ramp = clamp((this.idleTime - this.idleDelay) / 4, 0, 1);
-        g.yaw += this.idleSpeed * ramp * ramp * dt;
-      }
-    }
-
-    const hl = lerp(this.halfLife, 0.32, this.flight);
-    this.flight = damp(this.flight, 0, 0.6, dt);
-    const s = this.state;
-    s.yaw = damp(s.yaw, g.yaw, hl, dt);
-    s.pitch = damp(s.pitch, g.pitch, hl, dt);
-    // Distance is damped in log space so zooming feels the same at any scale.
-    s.distance = Math.exp(damp(Math.log(s.distance), Math.log(g.distance), hl, dt));
-    s.target = [
-      damp(s.target[0], g.target[0], hl, dt),
-      damp(s.target[1], g.target[1], hl, dt),
-      damp(s.target[2], g.target[2], hl, dt),
-    ];
+    if (override && override.weight > 0) this.shared.steer(toShared(override.pose), override.weight);
+    this.shared.update(dt);
   }
 
   /** Unit vector from the target toward the camera. */
   direction(): Vec3 {
-    const { yaw, pitch } = this.state;
-    const c = Math.cos(pitch);
-    return [Math.sin(yaw) * c, Math.sin(pitch), Math.cos(yaw) * c];
+    return v3.scale(this.shared.forward, -1);
   }
 
   eye(): Vec3 {
-    return v3.add(this.state.target, v3.scale(this.direction(), this.state.distance));
+    return this.shared.eye;
   }
 
   viewProjection(aspect: number): Mat4 {
@@ -227,14 +228,14 @@ export class CameraRig implements CameraController {
 
   /** @param aspect viewport width / height */
   matrices(aspect: number): CameraMatrices {
-    const eye = this.eye();
-    const view = m4.lookAt(eye, this.state.target, [0, 1, 0]);
-    const proj = m4.perspective(this.fovY, aspect, this.near, this.far);
-    const viewProj = m4.multiply(proj, view);
-    return { view, proj, viewProj, invViewProj: m4.invert(viewProj) ?? m4.identity(), eye };
+    this.shared.setAspect(aspect);
+    const { view, projection, viewProjection, eye } = this.shared;
+    return {
+      view,
+      proj: projection,
+      viewProj: viewProjection,
+      invViewProj: m4.invert(viewProjection) ?? m4.identity(),
+      eye,
+    };
   }
-}
-
-function clonePose(p: CameraPose): CameraPose {
-  return { target: [p.target[0], p.target[1], p.target[2]], yaw: p.yaw, pitch: p.pitch, distance: p.distance };
 }

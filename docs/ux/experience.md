@@ -196,8 +196,8 @@ No error codes, no "your browser is not supported", no red.
 
 **Camera overlap, stated plainly.** While this was being built, a dedicated
 camera module landed in `src/ux/camera/` with a richer rig (pan, fly,
-momentum, flights). `camera-rig.ts` here is a small stand-in so the demo runs
-on its own, and it should not become a second camera in the product. The
+momentum, flights). `camera-rig.ts` here is now a thin front for that module, so the
+demo, the intro and the product share one camera. The
 experience needs only three things from a camera, and the camera module's
 `CameraRig` already has all of them: `setPose()` while the intro owns the
 view, `focusPlane()` / `flyHome()`, and `screenRay()` for the cursor. The
@@ -264,7 +264,7 @@ and a brief lift on `f.focusedPlane` scaled by `f.focusGlow`.
 | --- | --- |
 | `index.ts` | `createExperience()`, the per-frame contract, `gainToActiveCount()` |
 | `intro.ts` | Opening timeline, ignition order, `IntroDirector` (clock and skip) |
-| `camera-rig.ts` | Orbit camera with inertia, drift, focus; `planeFromDesc()` |
+| `camera-rig.ts` | Thin front for the shared camera in `src/ux/camera` (same feel as the app); `planeFromDesc()` |
 | `pointer-ray.ts` | Cursor to ray to `(plane, u, v)` |
 | `force-brush.ts` | Wake, attract, repel, release burst, GPU packing, reference force |
 | `gestures.ts` | Mouse, pen and touch recogniser |

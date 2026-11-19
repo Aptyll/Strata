@@ -102,6 +102,8 @@ function frame(dtSeconds: number) {
 
 `createCamera` returns an `EngineCamera`: the contract's `state`, `update`, `eye()` and `viewProjection(aspect)`, plus `rig` for everything richer (flights, focus, idle drift, picking). `state` is live. Reading it gives the pose on screen, and assigning it or one of its fields moves the camera at once. `snapshot()` gives a plain copy for saving a scene. `CameraState` has no roll, so a rolled focus view saves as its level equivalent.
 
+For scripted moments such as the intro, `rig.steer(pose, weight)` pulls the camera toward a pose each frame, and lets go cleanly when the calls stop. The first-run experience (`src/ux/experience/camera-rig.ts`) is a thin front for this same rig, so there is one camera feel everywhere.
+
 On `camera.rig`:
 
 - `view`, `projection`, `viewProjection`: column-major `Float32Array(16)`, WebGPU clip space with depth 0 to 1. Right-handed, +Y up, camera looks down -Z.
