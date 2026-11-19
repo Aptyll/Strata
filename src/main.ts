@@ -20,7 +20,7 @@ import { createAppContext } from "./app/context";
 import { createRenderGraph } from "./app/graph";
 import { mountAppHud } from "./app/hud";
 import { mountIntro } from "./app/intro";
-import { KEYS, createKeyRouter } from "./app/keys";
+import { KEYS, MOVES_CAMERA, createKeyRouter } from "./app/keys";
 import { createFpsMeter, createFrameLoop } from "./app/loop";
 import { readOptions, type AppOptions } from "./app/options";
 import { createSceneHost } from "./app/scene";
@@ -78,6 +78,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     raster: options.raster,
     interplane: options.interplane,
     brightness: particleLight,
+    depth: options.depth,
+    subpixel: options.subpixel,
   });
   const { graph, sim, depthSprites } = render;
   const budget = createBudgetChoice(options);
@@ -88,7 +90,12 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // distance holds still on screen. `view` is what gets drawn; `camera` is what input and scenes move.
   const view = createParallaxCamera(camera, {
     enabled: options.parallax,
-    focusDist: () => (depthSprites && depthSprites.enabled !== false ? depthSprites.params.focusDist : camera.state.distance),
+    focusDist: () =>
+      depthSprites && depthSprites.enabled !== false
+        ? depthSprites.params.focusDist
+        : render.computeRaster.depth && render.computeRaster.enabled !== false
+          ? render.computeRaster.params.focusDist
+          : camera.state.distance,
   });
   view.attach(canvas);
   const scenes = createSceneHost({ sim, camera, depthSprites, options });
@@ -104,7 +111,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
 
   // ---- people: HUD, pointer forces, the opening ----------------------------
   // Brushes swallow a held pointer's moves, so they must register after the HUD's own pointer listeners.
-  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view });
+  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view, options });
   mountMobileControls(ui.hud); // tap target for the Esc menu on touch screens
   const brushes = attachBrushes(canvas, view, () => sim.planes);
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.
@@ -137,6 +144,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // Auto camera tour: C, the Esc menu or ?autocam=1; any camera input hands control back.
   const autocam = mountAutoCam({
     hud: ui.hud, canvas, camera, planes: () => sim.planes, busy: () => intro?.active, key: KEYS.autoCamera,
+    cameraKeys: keys.cameraTarget, moveKeys: MOVES_CAMERA,
   });
   loop.hooks.push({ beforeCamera: (f) => autocam.step(f.dt) });
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
@@ -165,6 +173,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       captureGain = size ? (size.height / Math.max(1, graph.height)) ** 2 : 1;
       graph.fixedSize = size;
     },
+    // Videos rendered while the sound is on carry it (src/audio).
+    audio: (fps) => sound.recordingAudio(fps),
     keys: { screenshot: KEYS.screenshot, record: KEYS.record },
   });
 

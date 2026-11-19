@@ -158,6 +158,7 @@ particles.
 | region | lives there |
 | --- | --- |
 | top left | optional fps readout. On a touch screen or a narrow window, the sheet label (under the readout) |
+| top center | Challenge mode only: the count, what it is, and its buttons |
 | top right | menu dot; the Esc menu opens under it |
 | center | title card, a message (loading, unsupported), the keys sheet, the about card (I) |
 | bottom left | stats (H): count, time, fps. Challenge mode's readout |
@@ -186,6 +187,7 @@ they do not stack.
 | HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | not yet |
 | hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | not yet |
 | title card | `index.html` | not yet |
+| Challenge count and buttons | `src/challenge/viewer.ts` | yes |
 | Challenge readout | `src/challenge/main.ts` | not yet |
 | capture status line | `src/capture/app.ts` | not yet |
 

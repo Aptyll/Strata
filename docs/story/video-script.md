@@ -12,8 +12,9 @@ against the real results before recording.
   folder paths, email addresses.
 - Fill in bracketed lines only with numbers measured on the RTX 2070. The
   first trillion still is confirmed: 28.9 seconds, exactly 10^12 particles
-  evaluated (real frames took 26 to 52 seconds depending on framing, with flux
-  weighting; count-weighted frames take about 160 to 193 seconds).
+  evaluated (with flux weighting, frames took 26 to 52 seconds when the sheets
+  covered part of the frame and 172 to 205 seconds when they filled it;
+  count-weighted frames take about 160 to 193 seconds).
 - Say "rendered", never "simulated", for the trillion. The simulated tiers are
   the 100 million and 1 billion runs.
 

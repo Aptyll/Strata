@@ -104,12 +104,19 @@ export interface TransitionOptions {
 export interface CameraOptions {
   /** Vertical field of view in radians. */
   fovY: number;
+  /**
+   * Near clip distance. Keep it well under minDistance: zoom stops minDistance
+   * from a sheet, and a tilted sheet reaches closer to the eye than that at
+   * the edges of the view.
+   */
   near: number;
   /** May be Infinity. */
   far: number;
   /** Near maps to depth 1, far to 0. Recommended for very large worlds. */
   reverseZ: boolean;
+  /** Closest the eye gets to the pivot, and so to a sheet it zooms in on. */
   minDistance: number;
+  /** Farthest the eye backs away from the pivot. */
   maxDistance: number;
   /** "turntable" keeps the horizon level. "free" is an unconstrained trackball. */
   upMode: "turntable" | "free";
@@ -122,12 +129,29 @@ export interface CameraOptions {
   rotateFriction: number;
   /** Time constant of pan inertia after releasing a drag, seconds. */
   panFriction: number;
-  /** Fly speed in "distances per second": speed scales with pivot distance. */
+  /**
+   * Fly speed in "distances per second". With sheets registered the distance
+   * is the clearance to the nearest one, so the camera covers ground in the
+   * open and slows down among sheets. With none it is the distance to the pivot.
+   */
   flySpeed: number;
+  /**
+   * With sheets registered, flying never counts the clearance as less than
+   * this fraction of a typical sheet's shorter side, so a sheet is flown
+   * through instead of being approached forever. Sideways and up or down
+   * still slow to the depth of a sheet the camera looks at from closer than
+   * this, so its particles slide past at a pace the eye can follow.
+   */
+  flyFloor: number;
+  /**
+   * With sheets registered and the pointer over open space, pan and zoom are
+   * never scaled to less than this fraction of a typical sheet's shorter side.
+   */
+  openFloor: number;
   flyBoost: number;
   /** Time constant for fly acceleration and braking, seconds. */
   flyAccel: number;
-  /** Soft sphere that the pivot is pulled back into. null = unbounded. */
+  /** Soft sphere that the pivot is pulled back into. null = unbounded. See limitTo. */
   bounds: { center: Vec3; radius: number } | null;
   idle: IdleOptions;
   transition: TransitionOptions;
@@ -164,7 +188,7 @@ const defaultInitialPose = (): CameraPose => ({
 
 const defaults = (): CameraOptions => ({
   fovY: 50 * DEG,
-  near: 0.05,
+  near: 0.02,
   far: 10000,
   reverseZ: false,
   minDistance: 0.05,
@@ -176,6 +200,8 @@ const defaults = (): CameraOptions => ({
   rotateFriction: 0.35,
   panFriction: 0.25,
   flySpeed: 1,
+  flyFloor: 0.15,
+  openFloor: 0.25,
   flyBoost: 4,
   flyAccel: 0.15,
   bounds: null,
@@ -222,6 +248,12 @@ const Y_AXIS: Vec3 = [0, 1, 0];
 const BACK: Vec3 = [0, 0, 1];
 const FORWARD: Vec3 = [0, 0, -1];
 
+/**
+ * Zooming in on a sheet stops minDistance from it. Within this factor of that
+ * depth the sheet counts as reached, and the next step in goes through it.
+ */
+const REACHED = 1.1;
+
 export class CameraRig {
   readonly options: CameraOptions;
 
@@ -249,8 +281,12 @@ export class CameraRig {
   private cur: CameraPose;
   private home: CameraPose;
   private aspect = 16 / 9;
+  /** The limits the rig was created with: what limitTo falls back to with no sheets. */
+  private readonly baseLimits: Pick<CameraOptions, "bounds" | "maxDistance">;
 
   private planes: PlaneTarget[] = [];
+  /** Mean shorter side of the registered sheets, 0 with none: the unit navigation floors are given in. */
+  private sheetSize = 0;
   private focusedPlane: PlaneTarget | null = null;
   private transition: Transition | null = null;
 
@@ -288,6 +324,7 @@ export class CameraRig {
       initial: { ...d.initial, ...options.initial },
     } as CameraOptions;
     this.options.worldUp = v3normalize(this.options.worldUp, [0, 1, 0]);
+    this.baseLimits = { bounds: this.options.bounds, maxDistance: this.options.maxDistance };
     const init = copyPose(this.options.initial);
     init.orientation = quatNormalize(init.orientation);
     init.distance = this.clampDistance(init.distance);
@@ -317,9 +354,40 @@ export class CameraRig {
     this.writeOutputs(0);
   }
 
-  /** Planes used for picking, next/previous, nearest and the idle tour. */
+  /**
+   * Planes used for picking, next/previous, nearest and the idle tour. Pan,
+   * zoom and fly are also scaled to them (see grab, zoom and flySpeed).
+   */
   setPlanes(planes: PlaneTarget[]): void {
     this.planes = planes;
+    let sum = 0;
+    for (const plane of planes) sum += Math.min(plane.width, plane.height);
+    this.sheetSize = planes.length > 0 ? sum / planes.length : 0;
+  }
+
+  /**
+   * Keep the camera in reach of a fixed set of sheets. The pivot stays within
+   * `reach` radii of the ball around them and the eye backs away at most
+   * twice that far, so the world can shrink to a small cluster on screen but
+   * cannot be lost by zooming out or flying off. With no sheets (a streamed
+   * world has no fixed middle) the limits the rig was created with come back.
+   */
+  limitTo(planes: readonly PlaneTarget[], reach = 4): void {
+    const o = this.options;
+    if (planes.length === 0) {
+      o.bounds = this.baseLimits.bounds;
+      o.maxDistance = this.baseLimits.maxDistance;
+      return;
+    }
+    let center: Vec3 = [0, 0, 0];
+    for (const plane of planes) center = v3add(center, plane.center);
+    center = v3scale(center, 1 / planes.length);
+    let radius = 0;
+    for (const plane of planes) {
+      radius = Math.max(radius, v3dist(plane.center, center) + 0.5 * Math.hypot(plane.width, plane.height));
+    }
+    o.bounds = { center, radius: reach * radius };
+    o.maxDistance = Math.max(2 * reach * radius, o.minDistance);
   }
 
   setHome(pose: CameraPose): void {
@@ -423,6 +491,21 @@ export class CameraRig {
   }
 
   /**
+   * Call when a pan or pinch starts at a screen position (zoom does the same
+   * itself). Puts the pivot at the depth of the sheet under that position,
+   * so the gesture is scaled to what the pointer is on: a panned sheet stays
+   * under the pointer, and a zoom closes in on the sheet instead of on
+   * wherever the pivot was left. Over open space the pivot is kept at least
+   * as far away as the nearest sheet ahead (and a quarter of a sheet), so a
+   * pivot left right in front of the eye cannot make every control crawl.
+   * Nothing moves on screen. Returns true when a sheet is under the position.
+   */
+  grab(ndcX = 0, ndcY = 0): boolean {
+    this.interact();
+    return this.anchorPivot(ndcX, ndcY, 0);
+  }
+
+  /**
    * Slide the pivot so the scene follows the pointer. Deltas are in
    * normalized device units: the full viewport width or height is 2.
    */
@@ -439,13 +522,20 @@ export class CameraRig {
   }
 
   /**
-   * Dolly toward or away from the pivot. `logDelta` < 0 zooms in; the
-   * distance is multiplied by exp(logDelta). The point under (ndcX, ndcY)
-   * stays under the pointer.
+   * Dolly toward or away from what is under (ndcX, ndcY). `logDelta` < 0
+   * zooms in; the distance to that point is multiplied by exp(logDelta), and
+   * the point stays under the pointer.
+   *
+   * With sheets registered the point is on the sheet under the pointer, so a
+   * zoom closes in on something that is there. It stops minDistance from the
+   * sheet, the closest look. The next step in goes through the sheet toward
+   * whatever lies behind it, and over open space each step covers a share of
+   * the way to the nearest sheet ahead: zooming in never stalls.
    */
   zoom(logDelta: number, ndcX = 0, ndcY = 0): void {
     this.interact();
     this.mode = "orbit";
+    this.anchorPivot(ndcX, ndcY, logDelta < 0 ? this.options.minDistance * REACHED : 0);
     const g = this.goal;
     const oldD = g.distance;
     const newD = this.clampDistance(oldD * Math.exp(logDelta));
@@ -567,29 +657,7 @@ export class CameraRig {
   /** The nearest registered plane hit by the ray through a screen position. */
   pick(ndcX: number, ndcY: number): PlaneTarget | null {
     const { origin, direction } = this.screenRay(ndcX, ndcY);
-    let best: PlaneTarget | null = null;
-    let bestT = Infinity;
-    for (const plane of this.planes) {
-      const n = v3normalize(plane.normal, [0, 0, 1]);
-      const denom = v3dot(direction, n);
-      if (Math.abs(denom) < 1e-6) continue;
-      const t = v3dot(v3sub(plane.center, origin), n) / denom;
-      if (t <= 0 || t >= bestT) continue;
-      const hit = v3sub(v3addScaled(origin, direction, t), plane.center);
-      let upAxis = plane.up ?? this.options.worldUp;
-      let rightAxis = v3cross(upAxis, n);
-      if (v3len(rightAxis) < 1e-5) rightAxis = v3cross(BACK, n);
-      rightAxis = v3normalize(rightAxis, X_AXIS);
-      upAxis = v3cross(n, rightAxis);
-      if (
-        Math.abs(v3dot(hit, rightAxis)) <= plane.width * 0.5 &&
-        Math.abs(v3dot(hit, upAxis)) <= plane.height * 0.5
-      ) {
-        best = plane;
-        bestT = t;
-      }
-    }
-    return best;
+    return this.castRay(origin, direction)?.plane ?? null;
   }
 
   // ------------------------------------------------------------------
@@ -620,6 +688,130 @@ export class CameraRig {
 
   private clampDistance(d: number): number {
     return clamp(d, this.options.minDistance, this.options.maxDistance);
+  }
+
+  /** Where the eye is heading: the goal pose's eye, without idle drift. */
+  private goalEye(): Vec3 {
+    const g = this.goal;
+    return v3addScaled(g.target, quatRotate(g.orientation, BACK), g.distance);
+  }
+
+  /** A sheet's unit normal and its two in-plane axes. */
+  private sheetAxes(plane: PlaneTarget): { n: Vec3; right: Vec3; up: Vec3 } {
+    const n = v3normalize(plane.normal, [0, 0, 1]);
+    let right = v3cross(plane.up ?? this.options.worldUp, n);
+    if (v3len(right) < 1e-5) right = v3cross(BACK, n);
+    right = v3normalize(right, X_AXIS);
+    return { n, right, up: v3cross(n, right) };
+  }
+
+  /**
+   * The nearest registered sheet a ray passes through, more than `beyond`
+   * along it. `direction` is unit length.
+   */
+  private castRay(origin: Vec3, direction: Vec3, beyond = 0): { plane: PlaneTarget; t: number } | null {
+    let best: PlaneTarget | null = null;
+    let bestT = Infinity;
+    for (const plane of this.planes) {
+      const { n, right, up } = this.sheetAxes(plane);
+      const denom = v3dot(direction, n);
+      if (Math.abs(denom) < 1e-6) continue;
+      const t = v3dot(v3sub(plane.center, origin), n) / denom;
+      if (t <= beyond || t >= bestT) continue;
+      const hit = v3sub(v3addScaled(origin, direction, t), plane.center);
+      if (
+        Math.abs(v3dot(hit, right)) <= plane.width * 0.5 &&
+        Math.abs(v3dot(hit, up)) <= plane.height * 0.5
+      ) {
+        best = plane;
+        bestT = t;
+      }
+    }
+    return best ? { plane: best, t: bestT } : null;
+  }
+
+  /**
+   * Put the pivot at the depth of what is under a screen position (see
+   * grab). Sheets no deeper than `beyond` along the view axis are passed
+   * over. Returns true when a sheet is under the position.
+   */
+  private anchorPivot(ndcX: number, ndcY: number, beyond: number): boolean {
+    if (this.planes.length === 0) return false;
+    const g = this.goal;
+    const q = g.orientation;
+    const tan = Math.tan(this.options.fovY * 0.5);
+    const eye = this.goalEye();
+    const forward = quatRotate(q, FORWARD);
+    // Left unnormalized: its part along the view axis is 1, so t / |ray| is depth along that axis.
+    const ray = v3add(
+      forward,
+      v3add(
+        v3scale(quatRotate(q, X_AXIS), ndcX * tan * this.aspect),
+        v3scale(quatRotate(q, Y_AXIS), ndcY * tan),
+      ),
+    );
+    const len = v3len(ray);
+    const hit = this.castRay(eye, v3scale(ray, 1 / len), beyond * len);
+    if (hit) {
+      this.setPivotDepth(hit.t / len);
+      return true;
+    }
+    const open = this.openReach(eye, forward);
+    if (open > g.distance) this.setPivotDepth(open);
+    return false;
+  }
+
+  /**
+   * Distance from a point to the closest point of any registered sheet,
+   * Infinity with none. With `ahead` (a unit direction), sheets whose closest
+   * point lies behind the point are left out.
+   */
+  private sheetClearance(point: Vec3, ahead?: Vec3): number {
+    let best = Infinity;
+    for (const plane of this.planes) {
+      const { n, right, up } = this.sheetAxes(plane);
+      const rel = v3sub(point, plane.center);
+      const x = v3dot(rel, right);
+      const y = v3dot(rel, up);
+      const z = v3dot(rel, n);
+      // Offset from the closest point of the rectangle to `point`, in the sheet's own axes.
+      const dx = x - clamp(x, -plane.width * 0.5, plane.width * 0.5);
+      const dy = y - clamp(y, -plane.height * 0.5, plane.height * 0.5);
+      const d = Math.hypot(dx, dy, z);
+      if (d >= best) continue;
+      if (ahead) {
+        const toward = -(dx * v3dot(right, ahead) + dy * v3dot(up, ahead) + z * v3dot(n, ahead));
+        if (toward <= 0) continue;
+      }
+      best = d;
+    }
+    return best;
+  }
+
+  /**
+   * What pan and zoom are scaled to when the pointer is over open space: the
+   * clearance to the nearest sheet ahead, and never less than openFloor
+   * sheets. 0 when no sheets are registered, which leaves the pivot alone.
+   */
+  private openReach(eye: Vec3, forward: Vec3): number {
+    if (this.planes.length === 0) return 0;
+    const ahead = this.sheetClearance(eye, forward);
+    return Math.max(Number.isFinite(ahead) ? ahead : 0, this.options.openFloor * this.sheetSize);
+  }
+
+  /**
+   * Put the pivot `depth` ahead of the eye along the view axis, in the goal
+   * and in the pose on screen alike. Eye and orientation stay where they
+   * are, so nothing moves; only what pan, zoom and orbit are scaled to changes.
+   */
+  private setPivotDepth(depth: number): void {
+    const d = this.clampDistance(depth);
+    for (const pose of [this.goal, this.cur]) {
+      const back = quatRotate(pose.orientation, BACK);
+      const eye = v3addScaled(pose.target, back, pose.distance);
+      pose.target = v3addScaled(eye, back, -d);
+      pose.distance = d;
+    }
   }
 
   /** Any user input lands here: cancel flights, settle drift, reset idle. */
@@ -742,14 +934,26 @@ export class CameraRig {
       y /= l;
       z /= l;
     }
-    const speed = g.distance * o.flySpeed * (this.moveBoost ? o.flyBoost : 1);
     const q = g.orientation;
-    const desired = v3scale(
-      v3add(
-        v3add(v3scale(quatRotate(q, X_AXIS), x), v3scale(quatRotate(q, Y_AXIS), y)),
-        v3scale(quatRotate(q, FORWARD), z),
-      ),
-      speed,
+    const forward = quatRotate(q, FORWARD);
+    // Speed is in distances per second: `along` the view axis and `across` it.
+    let along = g.distance;
+    let across = g.distance;
+    if (l > 0 && this.planes.length > 0) {
+      // With sheets around, the distance is the clearance to the nearest one, and never so
+      // little that a sheet cannot be flown through.
+      const eye = this.goalEye();
+      const floor = Math.min(o.flyFloor * this.sheetSize, o.maxDistance);
+      along = clamp(this.sheetClearance(eye), floor, o.maxDistance);
+      // Sliding across a sheet seen from close up goes at its depth, so what is on screen
+      // moves at the same pace however close the camera is.
+      const seen = this.castRay(eye, forward, o.near);
+      across = seen ? Math.min(along, Math.max(seen.t, o.minDistance)) : along;
+    }
+    const gain = o.flySpeed * (this.moveBoost ? o.flyBoost : 1);
+    const desired = v3add(
+      v3scale(v3add(v3scale(quatRotate(q, X_AXIS), x), v3scale(quatRotate(q, Y_AXIS), y)), across * gain),
+      v3scale(forward, z * along * gain),
     );
     this.flyVel = v3lerp(this.flyVel, desired, damp(dt, o.flyAccel));
     if (v3len(this.flyVel) > 1e-5 * g.distance) {

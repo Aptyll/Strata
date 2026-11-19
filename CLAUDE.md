@@ -25,9 +25,11 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  26 to 52 seconds per 4K frame on the 2070 with flux weighting (the record
-  stills: far particles drawn on average), about 160 to 193 s with count
-  weighting (exactly one unit per particle in view, the proof shots).
+  Per 4K frame on the 2070: 26 to 52 s with flux weighting when the sheets
+  fill part of the frame, 172 to 205 s with flux when they fill it
+  (composition A), about 160 to 193 s with count weighting (exactly one unit
+  per particle in view, the proof shots). Flux draws far particles only on
+  average; the record stills were most likely flux.
 
 ## Rules (Noah's, non-negotiable)
 
@@ -66,22 +68,24 @@ Two very different modes, and the wording must keep them apart:
 | `behaviors/` | particle rules, one `<id>.behavior.ts` each, auto-registered |
 | `passes/` | render passes, one `<name>.pass.ts` each, auto-registered by filename |
 | `render/` | density look: accumulation, counts tone mapper, bloom, trails (`docs/render.md`) |
-| `perf/` | 8-byte particle path, atomic raster, culling/LOD, GPU timer; `bench/` page |
+| `perf/` | 8-byte particle path, culling/LOD, GPU timer; `bench/` page |
+| `raster/` | the app's default compute rasterizer (`atomic-raster`), with optional sub-pixel (`?subpixel=1`) and depth cues (`?depth=1`) |
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
-| `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
+| `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
 | `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
-| `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
+| `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
 | `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
+| `site/` | the published site's wrapper, build-time only: the privacy lock, page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
 
 Frame stage order: `simulate`, `interplane`, `rasterize`, `depth`, `tonemap`,
 `ui`, `capture`. Exactly one rasterize pass is enabled at a time.
@@ -94,6 +98,7 @@ npm run dev          # every page, including dev-only demos
 npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
 npm test             # every *.test.* file under src/: a few seconds, no GPU
+npm run smoke        # after a build: opens every built page headless, fails on errors
 npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
@@ -108,10 +113,16 @@ npm run record       # render manifests: make, check, reproduce (src/manifest)
 | `/src/verify/` | shader checks in a real browser |
 
 Production pages are listed in `vite.config.ts`; other `src/**/demo` pages are
-dev only. Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
+dev only. A production page also gets a row in `src/site/pages.ts`: its title,
+description and link preview come from there, not from tags in its HTML.
+Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
 `*.test.ts` file under `src/` (drop one next to your code and it is picked up
 by name), and `npm run verify` runs the headless shader checks (about a second,
-needs Playwright). Offline Node CLI: `src/offline/README.md`.
+needs Playwright). `npm run smoke` opens every page of the built site on the
+software GPU and fails if one throws, logs an error, raises a WebGPU error or
+stops drawing frames (half a minute, after `npm run build`). A new page is
+covered automatically; give it a light URL in `scripts/smoke.mjs` if its
+defaults are heavy. Offline Node CLI: `src/offline/README.md`.
 
 ## Gotchas
 
@@ -148,8 +159,13 @@ needs Playwright). Offline Node CLI: `src/offline/README.md`.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
+- **The site only talks to its own address.** `src/site` puts a
+  Content-Security-Policy on every page, in dev too: no CDN scripts, no web
+  fonts from another server, no analytics, no `eval`. The browser refuses them
+  and says so in the console. Bundle what you need, or load it with `import()`.
 - **Re-fetch main right before merging.** Many threads merge per hour.
 - **CI is a safety net, not a gate.** `.github/workflows/ci.yml` runs
-  `npm run build` and `npm test` on every PR and on every push to main. It never blocks a
-  merge. A red X on a `main` commit means that merge broke the build: fix it
-  first with a small `fix/` PR.
+  `npm run build`, `npm test`, `npm run verify` and `npm run smoke` on every PR
+  and on every push to main. It never blocks a merge. A red X on a `main`
+  commit means that merge broke the build, a shader or a page's startup: fix
+  it first with a small `fix/` PR.

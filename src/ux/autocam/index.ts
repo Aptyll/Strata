@@ -11,8 +11,10 @@
  * `?autocam=1` in the URL. Any camera input (click or drag on the canvas,
  * the wheel, a camera key) hands control straight back, with the camera left
  * exactly where the tour had it. Keys that do not move the camera (Esc, H,
- * F, ?, I about, P screenshot, V record, T theme, R dice, [ ] - =) leave the tour
- * running, so you can record it or change the look while it plays.
+ * F, ?, P screenshot, V record, T theme, R dice, M sound, [ ] - =) leave the
+ * tour running, so you can record it or change the look while it plays. In
+ * the app the camera keys come from the key router (`cameraKeys`, `moveKeys`),
+ * so a new app key never stops the tour by accident.
  *
  * The director itself is DOM-free (./director.ts, ./shots.ts). Design notes:
  * docs/ux/autocam.md.
@@ -39,6 +41,14 @@ export interface AutoCamOptions {
   director?: DirectorOptions;
   /** The toggle key, as the HUD names it. Default "c". */
   key?: { key: string; label?: string };
+  /**
+   * Where the camera's own key presses arrive (the app's key router cameraTarget). With it, only
+   * those keys and `moveKeys` hand the camera back, so a key added to the app later (M for sound)
+   * leaves the tour running without an edit here. Without it, every key outside PASSTHROUGH does.
+   */
+  cameraKeys?: EventTarget;
+  /** KeyboardEvent.code of keys another module owns that still move the camera (G). Used with cameraKeys. */
+  moveKeys?: ReadonlySet<string>;
 }
 
 export interface AutoCam {
@@ -53,9 +63,9 @@ export interface AutoCam {
 
 const PARAM = "autocam";
 
-/** Keys that never stop the tour: they open menus, capture, or change the look, not the view. */
+/** Without cameraKeys (the demo page): keys that never stop the tour, because they do not move the view. */
 const PASSTHROUGH = new Set([
-  "KeyC", "Escape", "KeyH", "KeyF", "Slash", "KeyP", "KeyV", "KeyT", "KeyR", "KeyI",
+  "KeyC", "Escape", "KeyH", "KeyF", "Slash", "KeyP", "KeyV", "KeyT", "KeyR",
   "BracketLeft", "BracketRight", "Minus", "Equal", "Tab",
   "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight",
 ]);
@@ -92,7 +102,18 @@ export function mountAutoCam(opts: AutoCamOptions): AutoCam {
   const takeOver = () => {
     if (wanted) setActive(false, "input");
   };
+  /** Shift on its own and Ctrl, Alt or Meta shortcuts move nothing. */
+  const plain = (e: KeyboardEvent) => !(e.ctrlKey || e.altKey || e.metaKey) && !e.code.startsWith("Shift");
+  const { cameraKeys, moveKeys } = opts;
+  const onCameraKey = (e: Event) => {
+    if (plain(e as KeyboardEvent)) takeOver();
+  };
   const onKey = (e: KeyboardEvent) => {
+    // The router already sent the camera's own keys to onCameraKey; only owned keys that fly it remain.
+    if (cameraKeys) {
+      if (moveKeys?.has(e.code) && plain(e)) takeOver();
+      return;
+    }
     if (PASSTHROUGH.has(e.code)) return;
     const t = e.target as HTMLElement | null;
     // Typing in a settings field is not camera input.
@@ -102,6 +123,7 @@ export function mountAutoCam(opts: AutoCamOptions): AutoCam {
   canvas.addEventListener("pointerdown", takeOver);
   canvas.addEventListener("wheel", takeOver, { passive: true });
   window.addEventListener("keydown", onKey);
+  cameraKeys?.addEventListener("keydown", onCameraKey);
 
   if (new URLSearchParams(location.search).get("autocam") === "1") setActive(true);
 
@@ -130,6 +152,7 @@ export function mountAutoCam(opts: AutoCamOptions): AutoCam {
       canvas.removeEventListener("pointerdown", takeOver);
       canvas.removeEventListener("wheel", takeOver);
       window.removeEventListener("keydown", onKey);
+      cameraKeys?.removeEventListener("keydown", onCameraKey);
       director.stop();
     },
   };

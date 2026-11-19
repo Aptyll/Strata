@@ -5,7 +5,7 @@
  * pan, dive, face a sheet or push particles around.
  *
  * These rows describe code that lives elsewhere. Keep them true to it:
- *   pointer    src/ux/camera/input.ts (turn, pan, zoom, double click)
+ *   pointer    src/ux/camera/input.ts (turn, pan, zoom, trackpad scroll, double click on a sheet or on empty space)
  *              src/ux/experience/gestures.ts (hold to pull, right button / Shift / Alt to push)
  *   keys       src/ux/camera/input.ts (MOVE_KEYS and the switch below it), minus
  *              the keys the HUD owns in the app (KEYS in src/app/keys.ts)
@@ -23,8 +23,10 @@ export const POINTER_CONTROLS: readonly ControlRow[] = [
   { input: "drag", does: "turn" },
   { input: "right drag, or shift + drag", does: "pan" },
   { input: "alt + drag", does: "look around in place" },
-  { input: "scroll or pinch", does: "dive in and out" },
+  { input: "wheel or pinch", does: "dive in and out" },
+  { input: "two fingers on a trackpad", does: "turn, with shift pan" },
   { input: "double-click a sheet", does: "fly to it and face it" },
+  { input: "double-click empty space", does: "fly home" },
   { input: "hold still on a sheet", does: "pull its particles" },
   { input: "hold with right button, shift or alt", does: "push them away" },
 ];
@@ -35,6 +37,7 @@ export const TOUCH_CONTROLS: readonly ControlRow[] = [
   { input: "drag with two fingers", does: "pan" },
   { input: "pinch", does: "dive in and out" },
   { input: "double-tap a sheet", does: "fly to it and face it" },
+  { input: "double-tap empty space", does: "fly home" },
   { input: "press and hold on a sheet", does: "pull its particles" },
 ];
 

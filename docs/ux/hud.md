@@ -209,7 +209,12 @@ contract. It:
   page is opened from such a link, and adds a **copy link** action to the menu.
   Every roll starts from the behaviors the world opened with, not from the
   previous roll, so a seed alone identifies a world. Turn off with
-  `shareLink: false`.
+  `shareLink: false`. In the app, changing the planes setting writes
+  `?planes=` into the link and drops `#r=`, because the rebuilt layout has no
+  roll in it.
+
+- leaves out the particle count slider with `particles: false`, for a streamed
+  world whose scene lists no planes to scale (the app does this with `?world`).
 
 In `src/main.ts` that is two lines, plus removing the old text overlay:
 

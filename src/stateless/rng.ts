@@ -10,13 +10,19 @@
  *
  * Here the key is 64 bits, and it is a bijection of the particle's identity:
  *
- *   identity = (seed, index)          seed: unique per sheet, index: 0..count-1
- *   key      = Feistel3(seed, index)  two u32 words, fully mixed
+ *   identity = (seed, index)                   seed: unique per sheet, index: 0..count-1
+ *   key      = Feistel3(pcg(seed ^ c), index)  two u32 words, fully mixed
  *
- * A Feistel network is invertible whatever its round function, so two
- * particles get the same key only if they have the same seed and the same
- * index. With unique sheet seeds, every particle in the world has its own key.
- * `keyIdentity` below is the inverse and the check script uses it.
+ * A Feistel network is invertible whatever its round function, and pcg is a
+ * bijection, so two particles get the same key only if they have the same seed
+ * and the same index. With unique sheet seeds, every particle in the world has
+ * its own key. `keyIdentity` below is the inverse and the check script uses it.
+ *
+ * The seed is hashed once before the network. Without that, a seed bit reached
+ * key.x through a single pcg and inherited pcg's own weak spots (flipping input
+ * bit 21 flips output bits 10 to 14 with probability 0.42, not 0.5). The extra
+ * pcg depends only on the seed, so a loop over one sheet can hoist it.
+ * docs/proof/distinctness.md has the measurements.
  *
  * The first two draws of a particle are the two key words themselves, so the
  * 64 bits that make it unique feed straight into the law. Further draws mix
@@ -50,15 +56,21 @@ fn u01(h: u32) -> f32 {
   return f32(h >> 8u) * (1.0 / 16777216.0);
 }
 
-// Triangular distribution on (-1, 1), variance 1/6, from one hash.
+// Triangular distribution on (-1, 1), variance 1/6: the difference of two
+// 24-bit uniforms, one from h and one from pcg(h). Exact in f32. It takes
+// 2^25 - 1 values, so two particles draw the same one with probability 4e-8
+// (summing the two 16-bit halves of h gave 131,071 values and 1e-5).
 fn tri(h: u32) -> f32 {
-  return (f32(h & 0xffffu) + f32(h >> 16u)) * (1.0 / 65536.0) - 1.0;
+  return (f32(h >> 8u) - f32(pcg(h) >> 8u)) * (1.0 / 16777216.0);
 }
 
 // The particle's key: a 3-round Feistel network on the 64-bit word
-// (seed, index). Invertible, so distinct (seed, index) give distinct keys.
+// (pcg(seed ^ c), index). Invertible, so distinct (seed, index) give distinct
+// keys. Hashing the seed first sends every seed bit through two pcg rounds
+// before it reaches key.x; it depends only on the seed, so a loop over one
+// sheet can hoist it.
 fn particleKey(index: u32, seed: u32) -> Key {
-  var l = seed;
+  var l = pcg(seed ^ 0x1f83d9abu);
   var r = index;
   l ^= pcg(r ^ 0x3c6ef372u);
   r ^= pcg(l ^ 0xa54ff53au);
@@ -72,6 +84,12 @@ fn draw(key: Key, k: u32) -> u32 {
   if (k == 0u) { return key.x; }
   if (k == 1u) { return key.y; }
   return pcg(key.x ^ (key.y * (2u * k + 1u)) ^ (k * 0x9e3779b9u));
+}
+
+// Continuous coordinates in [0, 1)^3 for laws written against q (see
+// src/stateless/laws). q.xy are the key words, so all 64 bits reach the law.
+fn qFromKey(key: Key) -> vec3f {
+  return vec3f(u01(key.x), u01(key.y), u01(draw(key, 2u)));
 }
 `;
 
@@ -107,10 +125,13 @@ export function pcgInverse(h: number): number {
 }
 
 export const u01 = (h: number): number => (h >>> 8) / 16777216;
-export const tri = (h: number): number => ((h & 0xffff) + (h >>> 16)) / 65536 - 1;
+export const tri = (h: number): number => ((h >>> 8) - (pcg(h) >>> 8)) / 16777216;
+
+/** Seed pre-hash constant: fractional bits of sqrt(17), like the round constants (sqrt 5, 7, 11; SHA-256's IV). */
+const SEED_SALT = 0x1f83d9ab;
 
 export function particleKey(index: number, seed: number): Key {
-  let l = seed >>> 0;
+  let l = pcg((seed ^ SEED_SALT) >>> 0);
   let r = index >>> 0;
   l = (l ^ pcg((r ^ 0x3c6ef372) >>> 0)) >>> 0;
   r = (r ^ pcg((l ^ 0xa54ff53a) >>> 0)) >>> 0;
@@ -125,7 +146,7 @@ export function keyIdentity(key: Key): { index: number; seed: number } {
   l = (l ^ pcg((r ^ 0x510e527f) >>> 0)) >>> 0;
   r = (r ^ pcg((l ^ 0xa54ff53a) >>> 0)) >>> 0;
   l = (l ^ pcg((r ^ 0x3c6ef372) >>> 0)) >>> 0;
-  return { index: r, seed: l };
+  return { index: r, seed: (pcgInverse(l) ^ SEED_SALT) >>> 0 };
 }
 
 export function draw(key: Key, k: number): number {
@@ -133,6 +154,9 @@ export function draw(key: Key, k: number): number {
   if (k === 1) return key[1] >>> 0;
   return pcg((key[0] ^ Math.imul(key[1], 2 * k + 1) ^ Math.imul(k, 0x9e3779b9)) >>> 0);
 }
+
+/** Mirror of the WGSL `qFromKey`: a key as continuous coordinates in [0, 1)^3. */
+export const qFromKey = (key: Key): [number, number, number] => [u01(key[0]), u01(key[1]), u01(draw(key, 2))];
 
 /**
  * The 32-bit key scheme this replaces, kept for the comparison in the check

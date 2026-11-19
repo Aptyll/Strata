@@ -38,6 +38,43 @@ readout labels it as such.
 
 Press `C` to copy the result as JSON (count, fps, resolution, adapter, GPU
 time, GPU count and whether it matched). That JSON is the number to report.
+The "copy result" button gives the same result as one sentence (next section).
+
+## For someone trying it
+
+The count at the top of the page is for a person; the readout in the corner is
+for the record. Files: `viewer.ts` (the block and its buttons) and `share.ts`
+(every word it says, pure, tested by `share.test.js`).
+
+| state | the block says | buttons |
+| --- | --- | --- |
+| searching | the count being tried, "simulated every frame", the live frame rate | back to the world, details |
+| done | the sustained count with the frame rate measured at it, and the GPU's name | copy result, run again, back to the world, details |
+| cannot run | why, in plain words (no WebGPU, no graphics card reached) | back to the world |
+| device lost | "the graphics device stopped" | reload, back to the world |
+
+- **copy result** copies one sentence for a comment: `Strata challenge:
+  142,606,336 particles simulated every frame at 30.4 fps (1920x1080, 24
+  sheets) on NVIDIA GeForce RTX 2070. <link>`. On a phone it opens the share
+  sheet. It is offered only when the run finished and the GPU's own count
+  matched. Key `C` still copies the full JSON.
+- **A frame rate belongs to a count.** While the search runs, the frame rate
+  on screen is the last measured window, which may be from the count before,
+  so it is shown apart from the count. Only a finished run says "N particles
+  at X fps".
+- **The GPU's name** comes from WebGL's renderer string, because WebGPU gives
+  only a vendor and an architecture in Chrome ("nvidia turing"). It is used
+  only when it is the same vendor as the WebGPU adapter (a laptop with two
+  cards can have WebGL on the other one), never in Firefox (which reports a
+  stand-in model for whole families of cards), and it is left out when nothing
+  is known. The JSON has both: `adapter` (WebGPU's words) and `gpuName`.
+- **A CPU renderer says so.** With hardware acceleration off the browser draws
+  on the CPU, and a small number would be blamed on the graphics card. The
+  block then says "running on the CPU" and the sentence "software renderer".
+- **details** shows the readout. It starts open on a wide screen with a mouse
+  and closed on a phone. Key `I` hides all text, for a clean picture.
+- **back to the world** keeps the options the app itself reads (theme,
+  particles) and drops the ones only Challenge mode reads.
 
 ## Measured so far
 

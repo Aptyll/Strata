@@ -7,8 +7,11 @@ and clusters worth seeing and moves between them with slow, eased shots.
 app with `?autocam=1`. Any camera input (click or drag on the canvas, the
 wheel, a camera key such as WASD, arrows, `,` `.`, Home, Space, G) hands the
 camera straight back, left exactly where the tour had it. Keys that do not
-move the view (Esc, H, F, ?, P, V, T, R, `[` `]` `-` `=`) leave the tour
-running, so you can record it (V) or change the look while it plays.
+move the view (Esc, H, F, ?, P, V, T, R, M, `[` `]` `-` `=`) leave the tour
+running, so you can record it (V) or change the look while it plays. In the
+app the camera keys are the ones the key router (`src/app/keys.ts`) forwards
+to the camera, plus rows marked `camera` in its `KEYS` table (G), so a new
+app key leaves the tour running without an edit here.
 
 Standalone demo with no WebGPU: `/src/ux/autocam/demo/` under `npm run dev`
 (`?planes=64&seed=3`).
