@@ -10,6 +10,7 @@ export interface FrameStatsLike {
   hist: number[];
   seconds: number;
   batches: number;
+  resumes?: number;
 }
 
 export interface JobLike {
@@ -69,8 +70,15 @@ export interface ManifestFrame {
   eachLandedAddedOnce: boolean | null;
   /** Grid light in particles (unitSum / 65536), as a decimal string. Exact for count, expected total for flux. */
   lightParticles: string;
+  /** GPU wall seconds and dispatches for the whole frame, summed over every run of it. */
   seconds: number;
   batches: number;
+  /**
+   * Times the frame was continued from a checkpoint (0: one run). null: the
+   * stats predate this field, so if the frame was continued, `seconds` covers
+   * only its last run and `particlesPerSecond` is too high.
+   */
+  resumes: number | null;
   particlesPerSecond: number;
   gridHash: string;
   imageSha256: string | null;

@@ -6,7 +6,8 @@
  *   batch invariance different batch sizes give bit-identical grids
  *   64-bit carry     more light in one pixel than a u32 holds is still exact
  *   CPU cross-check  the shader agrees with the double-precision reference
- *   resume           a checkpointed frame continues to the identical result
+ *   resume           a checkpointed frame continues to the identical result,
+ *                    and reports the time and batches of every run, not the last
  */
 import { create, globals } from "webgpu";
 
@@ -16,6 +17,7 @@ import { lawPosition, particleKey, draw, u01 } from "../core/laws";
 import { cameraBasis, planeHomography } from "../core/math";
 import { decodeGrayPng16, encodeGrayPng } from "../core/png";
 import { StatelessRenderer, accumulationSum } from "../core/renderer";
+import { renderJob } from "../core/session";
 import { nodeZlib } from "./platform.mjs";
 
 Object.assign(globalThis, globals);
@@ -133,7 +135,7 @@ for (const splat of ["point", "bilinear"]) {
   try {
     await renderOnce(job, opts, 1, {
       signal: controller.signal,
-      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc, progress) => void (saved = { cursor, ...acc, ...progress }) },
       onProgress: () => {
         if (++batches === 7) controller.abort();
       },
@@ -143,6 +145,38 @@ for (const splat of ["point", "bilinear"]) {
   }
   const resumed = saved ? await renderOnce(job, opts, 1, { resume: saved }) : null;
   check("cancel saves a checkpoint that resumes exactly", resumed !== null && same(whole.lo, resumed.lo) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, saved ? `saved after ${saved.gpuEvaluated} particles` : "nothing saved");
+  // The checkpoint carries the work spent so far, so the continued frame
+  // reports the whole frame: every batch, and at least the first run's time.
+  check(
+    "a continued frame counts the batches and time of every run",
+    resumed !== null && saved.batches === 7 && resumed.batches === whole.batches && resumed.resumes === 1 && whole.resumes === 0 && resumed.seconds > saved.seconds && saved.seconds > 0,
+    resumed ? `${saved.batches} + ${resumed.batches - saved.batches} of ${whole.batches} batches` : "nothing saved",
+  );
+}
+
+// ---- the same through the session: stop, run again, read the frame's stats ------
+{
+  /** @type {Map<string, Uint8Array>} */
+  const files = new Map();
+  const store = {
+    read: async (/** @type {string} */ name) => files.get(name) ?? null,
+    write: async (/** @type {string} */ name, /** @type {Uint8Array} */ data) => void files.set(name, data),
+    remove: async (/** @type {string} */ name) => void files.delete(name),
+  };
+  const job = testJob({ frames: 1 });
+  const opts = { initialBatch: 60_000, maxBatch: 60_000 };
+  let batches = 0;
+  const first = await renderJob(device, /** @type {any} */ (job), store, nodeZlib, { ...opts, shouldStop: () => batches >= 5, onProgress: () => void batches++ });
+  const checkpointed = files.has("partial-000000.bin");
+  const second = await renderJob(device, /** @type {any} */ (job), store, nodeZlib, opts);
+  const file = files.get("frame-000000.json");
+  const stats = file ? JSON.parse(new TextDecoder().decode(file)) : {};
+  const whole = await renderOnce(job, opts, 0);
+  check(
+    "session: a stopped and continued frame reports its whole time and batches",
+    first.stopped && checkpointed && second.rendered === 1 && stats.resumes === 1 && stats.batches === whole.batches && stats.seconds > 0 && !files.has("partial-000000.bin"),
+    `${stats.batches} of ${whole.batches} batches over ${stats.resumes + 1} runs`,
+  );
 }
 
 // ---- batch invariance -------------------------------------------------------

@@ -35,7 +35,11 @@ default label burned into the video says so.
 
 Frames are independent. A render can be stopped (Ctrl+C) and continued by
 running the same command again, or split across machines with `--shard i/n`.
-A frame in progress is checkpointed every 5 minutes.
+A frame in progress is checkpointed every 5 minutes. A checkpoint carries the
+time and batches spent so far, so `seconds` and `batches` in a frame's stats
+cover the whole frame however often it was stopped, and `resumes` says how
+often. Particles per second from those stats is then right for a continued
+frame too.
 
 ## Running it (Node)
 
