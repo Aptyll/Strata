@@ -24,6 +24,7 @@ import { KEYS, createKeyRouter } from "./app/keys";
 import { createFpsMeter, createFrameLoop } from "./app/loop";
 import { readOptions, type AppOptions } from "./app/options";
 import { createSceneHost } from "./app/scene";
+import { mountSound } from "./audio";
 import { mountCapture } from "./capture/app";
 import type { AppContext, GpuContext } from "./core/contracts";
 import { createParallaxCamera } from "./depth";
@@ -141,6 +142,12 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
+
+  // ---- sound: off on every load; M or the Esc menu turns it on (src/audio, docs/audio.md) ----
+  const sound = mountSound({
+    app, hud: ui.hud, viewport: () => ({ width: graph.width, height: graph.height }), key: KEYS.sound,
+  });
+  loop.hooks.push({ afterFrame: (f) => sound.frame(f) });
 
   // ---- capture: P screenshot, V record, stills and offline video in the menu ----
   mountCapture({

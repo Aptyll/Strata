@@ -73,6 +73,7 @@ Two very different modes, and the wording must keep them apart:
 | `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
+| `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
 | `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
