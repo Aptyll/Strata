@@ -20,7 +20,7 @@ No WebGPU at all is a different case: that is the CPU plane in
 | --- | --- |
 | `index.ts` | `mountRecovery` (wraps `scenes.loadScene`, listens for device loss and uncaptured errors), `reportBootFailure` |
 | `policy.ts` | pure decisions: restart by itself or not, with how many particles; the restart log in sessionStorage |
-| `card.ts` | the card: title, a line or two, buttons, optional countdown |
+| `card.ts` | the card: title, a line or two, buttons, optional countdown. Styled from the design tokens (`src/ux/design`) |
 | `demo/` | every card on a stand-in device, no WebGPU needed: `/src/ux/recovery/demo/` |
 | `test/` | `npm test -- recovery` |
 

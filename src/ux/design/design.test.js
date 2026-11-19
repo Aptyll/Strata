@@ -1,7 +1,9 @@
 // The promises the design tokens make, checked by `npm test`.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { THEMES } from "../theme";
+import { staleFallbacks } from "./fallbacks.js";
 import { DESIGN, TOKENS_CSS, TYPE, accentOf, contrastOnVoid } from "./index";
 
 test("every token the stylesheet or a role refers to is defined", () => {
@@ -40,4 +42,13 @@ test("every color theme gives the accent marks at least 3:1 on the void", () => 
     if (theme.stops.length === 0) assert.equal(accent, null, "an empty ramp leaves the marks in the ink");
     else assert.ok(accent && contrastOnVoid(1, accent) >= 3, `theme "${theme.id}": the accent is too dark for a mark`);
   }
+});
+
+test("the title card in index.html repeats the tokens it cannot import", () => {
+  // The card starts before the script that installs the tokens, so it carries their values as fallbacks.
+  // `npm test` runs from the repository root, where index.html lives.
+  const css = /<style>([\s\S]*?)<\/style>/.exec(readFileSync("index.html", "utf8"))?.[1] ?? "";
+  const { checked, stale } = staleFallbacks(css);
+  assert.deepEqual(stale, []);
+  assert.ok(checked >= 10, "expected the title card to be styled from the tokens");
 });

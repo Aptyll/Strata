@@ -22,7 +22,7 @@ export const CSS = `
   --hud-edge: var(--st-edge, 20px);              /* distance from the viewport edge */
   --hud-panel-w: 264px;
   --hud-fade-in: var(--st-fast, 180ms);          /* answer an input */
-  --hud-fade-text: var(--st-medium, 480ms);      /* text that answers an input */
+  --hud-fade-text: var(--st-medium, 480ms);      /* words about what just happened */
   --hud-fade-out: var(--st-slow, 1200ms);        /* leave */
   --hud-ease: var(--st-ease, cubic-bezier(0.2, 0, 0, 1));
   --hud-ease-soft: var(--st-ease-soft, cubic-bezier(0.4, 0, 0.6, 1));

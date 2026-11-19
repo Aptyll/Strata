@@ -43,9 +43,9 @@ body { color: var(--st-dim); }
 /* ---- stages: the chrome over stand-in particles ---- */
 .stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--st-hair); background: var(--st-void); }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.stage .tag { position: absolute; left: var(--st-space-3); top: var(--st-space-2); }
+.stage .tag { position: absolute; left: var(--st-space-3); top: var(--st-space-2); z-index: 1; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--st-space-4); margin-top: var(--st-space-4); }
-@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } .stage.app { aspect-ratio: 3 / 4; } }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } .stage.app { aspect-ratio: 3 / 4; } .stage.stopped, .stage.nogpu { aspect-ratio: 1 / 1; } }
 .over { text-shadow: var(--st-halo); }
 
 .dot { position: absolute; right: var(--st-edge); top: var(--st-edge); width: 6px; height: 6px; border-radius: 50%; background: var(--st-lit); }
@@ -58,7 +58,7 @@ body { color: var(--st-dim); }
 .announce { position: absolute; left: 0; right: 0; bottom: 17%; text-align: center; }
 .announce div { text-indent: var(--st-track-wide); }
 .announce .name { color: var(--st-strong); letter-spacing: var(--st-track-title); text-indent: var(--st-track-title); }
-.hint { position: absolute; left: 0; right: 0; bottom: calc(var(--st-edge) + 44px); text-align: center; text-indent: var(--st-track-wide); }
+.hint { position: absolute; left: 0; right: 0; bottom: calc(var(--st-edge) + var(--st-space-12)); text-align: center; text-indent: var(--st-track-wide); }
 .card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .card .st-title { text-indent: var(--st-track-title); font-size: clamp(28px, 4.2vw, 48px); }
 .card .st-caption { margin-top: var(--st-space-4); text-indent: var(--st-track-wide); color: var(--st-dim); }
@@ -81,6 +81,20 @@ body { color: var(--st-dim); }
 .menu .switch.on { background: var(--st-mark); border-color: var(--st-mark); }
 .menu .foot { display: flex; justify-content: space-between; }
 
+/* A card that takes over the screen: the scrim dims the picture, the panel holds the words. */
+.scrim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--st-edge); background: var(--st-scrim); }
+.panel { max-width: 30em; text-align: center; padding: var(--st-space-8) var(--st-space-6); background: var(--st-surface); border: 1px solid var(--st-hair); }
+.panel .st-caption { margin: 0 0 var(--st-space-3); color: var(--st-strong); text-indent: var(--st-track-wide); }
+.panel p { margin: 0 auto var(--st-space-2); text-wrap: balance; }
+.panel .count { color: var(--st-strong); font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--st-space-3); margin-top: var(--st-space-4); }
+.panel .actions { justify-content: center; }
+/* A note over the picture, with nothing behind it but the halo. */
+.note { position: absolute; left: 0; right: 0; bottom: calc(var(--st-edge) + var(--st-space-6)); padding: 0 var(--st-edge); text-align: center; }
+.note p { margin: 0 auto; max-width: 34em; text-wrap: balance; }
+.note .st-caption { margin-bottom: var(--st-space-3); color: var(--st-dim); text-indent: var(--st-track-wide); }
+.note .st-button { margin-top: var(--st-space-4); }
+
 .challenge { position: absolute; left: var(--st-edge); bottom: var(--st-edge); }
 .challenge .st-figure { margin: var(--st-space-1) 0 var(--st-space-2); }
 .challenge .st-caption { text-indent: 0; }
@@ -99,6 +113,7 @@ body { color: var(--st-dim); }
 @media (max-width: 760px) { .ink { grid-template-columns: repeat(2, 1fr); } }
 .steps { display: flex; align-items: flex-end; gap: var(--st-space-4); flex-wrap: wrap; }
 .steps i { display: block; width: var(--w); height: var(--w); border: 1px solid var(--st-stroke); margin-bottom: var(--st-space-2); }
+.actions.above { margin: 0 0 var(--st-space-4); }
 .timing { display: grid; grid-template-columns: 9em 1fr; gap: var(--st-space-3) var(--st-space-4); align-items: center; }
 .timing .lane { height: 1px; background: var(--st-hair); position: relative; }
 .timing .lane i { position: absolute; left: 0; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--st-lit); opacity: var(--st-a-faint);
@@ -162,6 +177,13 @@ function die(): SVGSVGElement {
 const stat = (value: string, label = "") => h("span", h("b", value), label && ` ${label}`);
 const line = (role: Role, ...children: Child[]) => h(`div.st-${role}`, ...children);
 
+/** The one button (.st-button). `primary` marks the action Enter picks. */
+function button(label: string, primary = false): HTMLButtonElement {
+  const b = h(primary ? "button.st-button.is-primary" : "button.st-button", label) as HTMLButtonElement;
+  b.type = "button";
+  return b;
+}
+
 function slider(label: string, value: string, at: number): HTMLElement[] {
   const track = h("div.track");
   track.style.setProperty("--at", `${at}%`);
@@ -214,6 +236,30 @@ const challenge = stage(
     h("div.gap"),
     line("fine", "gpu 12.1 ms · 1129 MB state · 1920×1080 · 24 sheets"),
     h("div.st-fine.facts", stat("M", "mode"), stat("R", "restart"), stat("C", "copy result"), stat("I", "hide")),
+  ),
+);
+
+const stopped = stage(
+  "stopped", "a card: the picture stopped", 63, [0.42, 0.5],
+  h(
+    "div.scrim",
+    h(
+      "div.panel.st-body",
+      h("div.st-caption", "The graphics device stopped"),
+      h("p", "The picture is frozen. This often means the GPU ran out of memory."),
+      h("p.count", "restarting in 4 s"),
+      h("div.actions", button("restart now", true), button("stay here")),
+    ),
+  ),
+);
+
+const noGpu = stage(
+  "nogpu", "no WebGPU: one sheet on the CPU", 80, [0.5, 0.36],
+  h(
+    "div.note.over",
+    h("p.st-caption", "One sheet. 24,000 particles."),
+    h("p.st-body", "The full world is many sheets and millions of particles. This browser has no WebGPU yet. Chrome or Edge on a desktop computer runs it."),
+    button("copy link"),
   ),
 );
 
@@ -288,13 +334,12 @@ const steps = h(
 );
 
 const timing = h("div.timing");
-for (const [name, note] of [["fast", "answers an input"], ["medium", "text that answers an input"], ["slow", "arrives unasked, and leaves"]] as const) {
+for (const [name, note] of [["fast", "answers an input"], ["medium", "words about what just happened"], ["slow", "arrives unasked, and leaves"]] as const) {
   const lane = h("div.lane", h("i"));
   lane.style.setProperty("--ms", `var(--st-${name})`);
   timing.append(h("div", line("data", h("b", name), ` ${DESIGN.ms[name]}ms`), line("fine", note)), lane);
 }
-const play = h("button", "play") as HTMLButtonElement;
-play.type = "button";
+const play = button("play");
 play.addEventListener("click", () => timing.classList.toggle("go"));
 
 const MAP = [
@@ -313,12 +358,17 @@ document.body.append(
     section(
       "in use",
       "The chrome over stand-in particles. Switch the type option or the color theme: each switch overrides one token, and everything follows.",
-      typeChoice.el, themeChoice.el, app, h("div.pair", opening, challenge),
+      typeChoice.el, themeChoice.el, app, h("div.pair", opening, challenge, stopped, noGpu),
     ),
     section("type", "Two voices. Thin wide capitals speak to the person; monospace reports the machine. Large text is thin, so every stroke on screen stays about a pixel wide.", types),
     section("ink", "One color at five strengths, with its contrast on black. Text never drops below faint. A color theme never changes the ink.", ink),
     section("space", "A 4px unit and seven steps. Lines are one pixel, corners are square, and only points are round.", steps),
-    section("motion", "Answer fast, arrive slowly, leave slowly. Only opacity and small moves, so the chrome never costs a frame.", h("div.bar", play), timing),
+    section(
+      "button",
+      "One button for every card and note: a caption in a one pixel outline. The stronger outline marks the action that Enter picks. Controls inside the menu are instruments and stay in the menu's own voice.",
+      h("div.actions", button("restart now", true), button("stay here"), button("copy details")),
+    ),
+    section("motion", "Answer fast, arrive slowly, leave slowly. Only opacity and small moves, so the chrome never costs a frame.", h("div.actions.above", play), timing),
     section("stage", "Where chrome lives. One thing per region at a time, and the middle of the screen belongs to the particles.", map),
   ),
 );
