@@ -2,9 +2,12 @@
  * The Vite plugin behind the published site. vite.config.ts loads it.
  *
  * What it does, for `npm run dev` and `npm run build` alike:
+ *   - puts the privacy lock on every page: a Content-Security-Policy that
+ *     only lets the page load from, and talk to, its own address
  *   - writes each page's <title>, description, link preview tags and canonical
  *     address from its row in ./pages.ts (the tag builder is ./head.ts)
  * and for the build only:
+ *   - publishes the standalone pages in docs/explainers, locked like the rest
  *   - publishes the share card under a name that contains a hash of its bytes
  *   - writes sitemap.xml (and robots.txt when the site sits at a domain's root)
  *   - prints what index.html loads before the first frame, and warns when
@@ -14,12 +17,19 @@
  * typed parts are the two .ts files next to it.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, extname, relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
-import { applyHead, sitemapXml } from "./head.ts";
+import { applyHead, contentSecurityPolicy, lockPage, sitemapXml } from "./head.ts";
 import { LANDING_BUDGET_KB, PAGES, SITE } from "./pages.ts";
+
+/**
+ * Folders of standalone pages: single HTML files Vite does not build, copied
+ * to the same path on the site. The plugin publishes them so that they get
+ * the lock and their row's tags like every other page.
+ */
+const STANDALONE_DIRS = ["docs/explainers"];
 
 const slashed = (path) => path.split("\\").join("/");
 const kB = (bytes) => (bytes / 1024).toFixed(1);
@@ -62,11 +72,35 @@ export function strataSite() {
     cardUrl: (card) => (config.command === "serve" ? config.base + card.file : siteUrl + readCard(card.file).published),
   });
 
-  /** The HTML pages this build ships, relative to the repo root. */
+  /** The standalone pages, relative to the repo root. */
+  const standalonePages = () =>
+    STANDALONE_DIRS.filter((dir) => existsSync(resolve(config.root, dir))).flatMap((dir) =>
+      readdirSync(resolve(config.root, dir))
+        .filter((name) => name.endsWith(".html"))
+        .sort()
+        .map((name) => `${dir}/${name}`),
+    );
+
+  /** The HTML pages this build ships, relative to the repo root: Vite's inputs and the standalone pages. */
   const builtPages = () => {
     const input = config.build.rollupOptions.input;
     const files = typeof input === "string" ? [input] : Array.isArray(input) ? input : Object.values(input ?? {});
-    return new Set(files.map((file) => slashed(relative(config.root, resolve(config.root, file)))));
+    return new Set([...files.map((file) => slashed(relative(config.root, resolve(config.root, file)))), ...standalonePages()]);
+  };
+
+  /** The lock, then the page's tags from the table if it has a row. Every page of the site goes through here. */
+  const finish = (html, file) => {
+    const locked = lockPage(html, contentSecurityPolicy({ dev: config.command === "serve" }));
+    for (const host of new Set(locked.removed)) {
+      note(`${file}: its link to ${host} is left out. The site only talks to its own address (privacy lock, src/site).`);
+    }
+    const page = PAGES.find((row) => row.file === file);
+    if (!page) return locked.html; // dev-only demos keep whatever head they wrote
+    const out = applyHead(locked.html, page, context());
+    if (out.replaced.length > 0) {
+      note(`${file}: ${out.replaced.join(", ")} come from src/site/pages.ts. The copies in the HTML are ignored; delete them.`, "warn");
+    }
+    return out.html;
   };
 
   return {
@@ -82,14 +116,7 @@ export function strataSite() {
       // After Vite has added its own tags, so the head is final when the page's tags go in.
       order: "post",
       handler(html, ctx) {
-        const file = slashed(relative(config.root, ctx.filename));
-        const page = PAGES.find((row) => row.file === file);
-        if (!page) return html; // dev-only demos keep whatever head they wrote
-        const out = applyHead(html, page, context());
-        if (out.replaced.length > 0) {
-          note(`${file}: ${out.replaced.join(", ")} come from src/site/pages.ts. The copies in the HTML are ignored; delete them.`, "warn");
-        }
-        return out.html;
+        return finish(html, slashed(relative(config.root, ctx.filename)));
       },
     },
 
@@ -103,6 +130,11 @@ export function strataSite() {
       }
       for (const page of PAGES) {
         if (!built.has(page.file)) note(`src/site/pages.ts lists ${page.file}, which vite.config.ts does not build.`, "warn");
+      }
+
+      // Standalone pages are not Vite inputs, so they are written out here, at the path they have in the repo.
+      for (const file of standalonePages()) {
+        this.emitFile({ type: "asset", fileName: file, source: finish(readFileSync(resolve(config.root, file), "utf8"), file) });
       }
 
       const cardFiles = new Set(shipped.map((page) => (page.card ?? SITE.card).file));

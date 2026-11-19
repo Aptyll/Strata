@@ -85,7 +85,7 @@ Two very different modes, and the wording must keep them apart:
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
-| `site/` | the published site's wrapper, build-time only: page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
+| `site/` | the published site's wrapper, build-time only: the privacy lock, page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
 
 Frame stage order: `simulate`, `interplane`, `rasterize`, `depth`, `tonemap`,
 `ui`, `capture`. Exactly one rasterize pass is enabled at a time.
@@ -155,6 +155,10 @@ defaults are heavy. Offline Node CLI: `src/offline/README.md`.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
+- **The site only talks to its own address.** `src/site` puts a
+  Content-Security-Policy on every page, in dev too: no CDN scripts, no web
+  fonts from another server, no analytics, no `eval`. The browser refuses them
+  and says so in the console. Bundle what you need, or load it with `import()`.
 - **Re-fetch main right before merging.** Many threads merge per hour.
 - **CI is a safety net, not a gate.** `.github/workflows/ci.yml` runs
   `npm run build`, `npm test`, `npm run verify` and `npm run smoke` on every PR

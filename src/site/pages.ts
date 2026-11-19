@@ -23,7 +23,7 @@ export interface ShareCard {
 }
 
 export interface SitePage {
-  /** The HTML file, relative to the repo root, as vite.config.ts lists it. */
+  /** The HTML file, relative to the repo root: a page vite.config.ts lists, or a standalone page in docs/explainers. */
   file: string;
   /** <title> and the headline of a link preview. Search results cut it at about 60 characters. */
   title: string;
@@ -125,6 +125,13 @@ export const PAGES: SitePage[] = [
     title: "Strata design tokens",
     description: "Every design token of Strata's interface in use: type roles, ink levels, spacing, motion and the theme accent.",
     index: false,
+  },
+  {
+    file: "docs/explainers/rendering.html",
+    title: "How Strata draws a trillion particles: a field guide",
+    description:
+      "An interactive explainer: one particle's trip to a pixel, the memory wall, atomic counters, tone " +
+      "mapping and render time. Plain language, white on black.",
   },
   {
     file: "src/verify/index.html",
