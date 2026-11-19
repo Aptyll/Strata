@@ -8,7 +8,6 @@
  *
  *   code = round(LOG_SCALE * log2(1 + units))      units = weight units in the pixel
  */
-import { ONE } from "./job";
 import { accumulationSum } from "./renderer";
 
 /** Codes per stop (doubling of light). */
@@ -23,8 +22,11 @@ export interface FrameStats {
   evaluated: number;
   /** Exact sum of the grid in weight units, as a decimal string. */
   unitSum: string;
-  /** In count mode: exact particles in view. In flux mode: omitted. */
-  inView?: string;
+  /**
+   * Exact number of particles whose position fell inside the frame, as a
+   * decimal string. evaluated - landed were behind the camera or off frame.
+   */
+  landed: string;
   /** Output pixels that received any light. */
   litPixels: number;
   /** Largest code in the frame. */
@@ -73,17 +75,15 @@ export function develop(
 
 export function frameStats(
   frame: number,
-  lo: Uint32Array,
-  hi: Uint32Array,
+  acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint },
   developed: { litPixels: number; maxCode: number; hist: number[] },
-  run: { evaluated: number; seconds: number; batches: number; countMode: boolean },
+  run: { evaluated: number; seconds: number; batches: number },
 ): FrameStats {
-  const sum = accumulationSum(lo, hi);
   return {
     frame,
     evaluated: run.evaluated,
-    unitSum: sum.toString(),
-    inView: run.countMode ? (sum / BigInt(ONE)).toString() : undefined,
+    unitSum: accumulationSum(acc.lo, acc.hi).toString(),
+    landed: acc.landed.toString(),
     litPixels: developed.litPixels,
     maxCode: developed.maxCode,
     hist: developed.hist,

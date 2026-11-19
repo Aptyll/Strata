@@ -17,7 +17,7 @@ import { DEFAULT_LOOK, drawLabel, exposureTrack, gradeFrame, toneTable, withComm
 import { totalParticles, type OfflineJob } from "./job";
 import { pcg } from "./laws";
 import { decodeGrayPng16, encodeGrayPng, type Zlib } from "./png";
-import { StatelessRenderer, type FrameCursor, type RendererOptions } from "./renderer";
+import { StatelessRenderer, type Accumulation, type FrameCursor, type RendererOptions } from "./renderer";
 
 /** A directory of files. Implemented over node:fs and over the browser's File System Access API. */
 export interface FileStore {
@@ -43,12 +43,13 @@ export function jobFingerprint(job: OfflineJob): number {
   return h >>> 0;
 }
 
-const PARTIAL_MAGIC = 0x53545241; // "STRA"
+// Version 2 adds the landed tally in header words 6 and 7.
+const PARTIAL_MAGIC = 0x53545242;
 const PARTIAL_HEADER_WORDS = 8;
 
-function packPartial(job: OfflineJob, frame: number, cursor: FrameCursor, lo: Uint32Array, hi: Uint32Array): Uint8Array {
+function packPartial(job: OfflineJob, frame: number, cursor: FrameCursor, { lo, hi, landed }: Accumulation): Uint8Array {
   const out = new Uint32Array(PARTIAL_HEADER_WORDS + lo.length + hi.length);
-  out.set([PARTIAL_MAGIC, jobFingerprint(job), frame, cursor.plane, cursor.offset, lo.length, 0, 0]);
+  out.set([PARTIAL_MAGIC, jobFingerprint(job), frame, cursor.plane, cursor.offset, lo.length, Number(landed & 0xffffffffn), Number(landed >> 32n)]);
   out.set(lo, PARTIAL_HEADER_WORDS);
   out.set(hi, PARTIAL_HEADER_WORDS + lo.length);
   return new Uint8Array(out.buffer);
@@ -58,7 +59,7 @@ function unpackPartial(
   job: OfflineJob,
   frame: number,
   file: Uint8Array,
-): { cursor: FrameCursor; lo: Uint32Array; hi: Uint32Array } | null {
+): ({ cursor: FrameCursor } & Accumulation) | null {
   if (file.byteLength < PARTIAL_HEADER_WORDS * 4 || file.byteLength % 4) return null;
   const words = new Uint32Array(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
   const cells = job.width * job.height * job.ssaa * job.ssaa;
@@ -68,6 +69,7 @@ function unpackPartial(
     cursor: { plane: words[3], offset: words[4] },
     lo: words.slice(PARTIAL_HEADER_WORDS, PARTIAL_HEADER_WORDS + cells),
     hi: words.slice(PARTIAL_HEADER_WORDS + cells),
+    landed: BigInt(words[6]) + (BigInt(words[7]) << 32n),
   };
 }
 
@@ -82,6 +84,8 @@ export interface RenderOptions extends RendererOptions {
   checkpointSeconds?: number;
   /** Return true to stop cleanly after the current batch or frame. */
   shouldStop?(): boolean;
+  /** Aborting rejects with an AbortError after the current batch. Progress is kept as a checkpoint. */
+  signal?: AbortSignal;
   onProgress?(p: {
     frame: number;
     done: number;
@@ -147,11 +151,12 @@ export async function renderJob(
       let rate = 0;
       const result = await renderer.renderFrame(frame, {
         resume,
+        signal: opts.signal,
         checkpoint:
           (opts.checkpointSeconds ?? 300) > 0
             ? {
                 everyMs: (opts.checkpointSeconds ?? 300) * 1000,
-                save: (cursor, lo, hi) => store.write(partialName(frame), packPartial(job, frame, cursor, lo, hi)),
+                save: (cursor, acc) => store.write(partialName(frame), packPartial(job, frame, cursor, acc)),
               }
             : undefined,
         onProgress: (done, total, batchSize, batchMs) => {
@@ -162,13 +167,12 @@ export async function renderJob(
       });
 
       const developed = develop(result.lo, result.hi, job.width, job.height, job.ssaa);
-      const stats = frameStats(frame, result.lo, result.hi, developed, {
+      const stats = frameStats(frame, result, developed, {
         // The whole world is evaluated for every frame, whether or not this
         // call did all of it (part may have come from a checkpoint).
         evaluated: renderer.total,
         seconds: result.seconds,
         batches: result.batches,
-        countMode: job.weighting === "count",
       });
       await store.write(frameImageName(frame), await encodeGrayPng(developed.codes, job.width, job.height, zlib));
       await store.write(frameStatsName(frame), text.encode(JSON.stringify(stats)));
@@ -189,12 +193,11 @@ export interface GradeOptions {
 }
 
 export function defaultLabel(stats: FrameStats, job: OfflineJob): string[] {
-  const lines = [
+  const lines: string[] = [
     `${withCommas(totalParticles(job))} particles, every one evaluated every frame`,
     "Stateless: closed-form motion, nothing stored per particle",
   ];
-  if (stats.inView !== undefined) lines.push(`In view: ${withCommas(stats.inView)}`);
-  return lines;
+  return [...lines, `In frame: ${withCommas(stats.landed)}`];
 }
 
 /** Stats of every completed frame from frame 0 up to the first missing one. */

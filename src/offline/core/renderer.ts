@@ -29,20 +29,28 @@ export interface FrameCursor {
   offset: number;
 }
 
+/** The state of a frame: the light grid and the in-frame tally. */
+export interface Accumulation {
+  /** Accumulation grid, low and high words, gridWidth * gridHeight each. */
+  lo: Uint32Array;
+  hi: Uint32Array;
+  /** Exact number of evaluated particles whose position fell inside the frame. */
+  landed: bigint;
+}
+
 export interface FrameHooks {
   /** Called after every batch. */
   onProgress?(done: number, total: number, batchSize: number, batchMs: number): void;
   /** Start from a saved partial frame instead of from empty. */
-  resume?: { cursor: FrameCursor; lo: Uint32Array; hi: Uint32Array };
+  resume?: { cursor: FrameCursor } & Accumulation;
   /** Save a partial frame every `everyMs` so a crash loses little. */
-  checkpoint?: { everyMs: number; save(cursor: FrameCursor, lo: Uint32Array, hi: Uint32Array): Promise<void> };
+  checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation): Promise<void> };
+  /** Checked between batches. When aborted, renderFrame rejects with an AbortError. */
+  signal?: AbortSignal;
 }
 
-export interface FrameResult {
+export interface FrameResult extends Accumulation {
   frame: number;
-  /** Accumulation grid, low and high words, gridWidth * gridHeight each. */
-  lo: Uint32Array;
-  hi: Uint32Array;
   /** Particles evaluated in this call (excludes work restored by a resume). */
   evaluated: number;
   batches: number;
@@ -65,6 +73,8 @@ export class StatelessRenderer {
   private readonly accHi: GPUBuffer;
   private readonly readLo: GPUBuffer;
   private readonly readHi: GPUBuffer;
+  private readonly tally: GPUBuffer;
+  private readonly readTally: GPUBuffer;
   private readonly pipelines = new Map<LawId, GPUComputePipeline>();
   private readonly bindGroups = new Map<LawId, GPUBindGroup>();
   private readonly perInvocation: number;
@@ -100,6 +110,8 @@ export class StatelessRenderer {
     this.accHi = device.createBuffer({ label: "offline accHi", size: bytes, usage: acc });
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
+    this.tally = device.createBuffer({ label: "offline tally", size: 8, usage: acc });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: 8, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -132,6 +144,7 @@ export class StatelessRenderer {
               { binding: 0, resource: { buffer: r.uniform } },
               { binding: 1, resource: { buffer: r.accLo } },
               { binding: 2, resource: { buffer: r.accHi } },
+              { binding: 3, resource: { buffer: r.tally } },
             ],
           }),
         );
@@ -167,10 +180,13 @@ export class StatelessRenderer {
       cursor = { ...hooks.resume.cursor };
       device.queue.writeBuffer(this.accLo, 0, hooks.resume.lo.buffer as ArrayBuffer, hooks.resume.lo.byteOffset, hooks.resume.lo.byteLength);
       device.queue.writeBuffer(this.accHi, 0, hooks.resume.hi.buffer as ArrayBuffer, hooks.resume.hi.byteOffset, hooks.resume.hi.byteLength);
+      const landed = hooks.resume.landed;
+      device.queue.writeBuffer(this.tally, 0, new Uint32Array([Number(landed & 0xffffffffn), Number(landed >> 32n)]));
     } else {
       const enc = device.createCommandEncoder();
       enc.clearBuffer(this.accLo);
       enc.clearBuffer(this.accHi);
+      enc.clearBuffer(this.tally);
       device.queue.submit([enc.finish()]);
     }
 
@@ -186,6 +202,7 @@ export class StatelessRenderer {
     let lastCheckpoint = now();
 
     while (cursor.plane < job.planes.length) {
+      if (hooks.signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
       const plane = job.planes[cursor.plane];
       const left = plane.particleCount - cursor.offset;
       if (left <= 0) {
@@ -242,35 +259,42 @@ export class StatelessRenderer {
       }
 
       if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
-        const { lo, hi } = await this.readAccumulation();
-        await hooks.checkpoint.save(cursor, lo, hi);
+        await hooks.checkpoint.save(cursor, await this.readAccumulation());
         lastCheckpoint = now();
       }
     }
 
-    const { lo, hi } = await this.readAccumulation();
-    return { frame, lo, hi, evaluated: done - startDone, batches, seconds: (now() - t0) / 1000 };
+    const acc = await this.readAccumulation();
+    return { frame, ...acc, evaluated: done - startDone, batches, seconds: (now() - t0) / 1000 };
   }
 
-  /** Copy the accumulation grid back to the CPU. */
-  async readAccumulation(): Promise<{ lo: Uint32Array; hi: Uint32Array }> {
+  /** Copy the accumulation grid and tally back to the CPU. */
+  async readAccumulation(): Promise<Accumulation> {
     const { device } = this;
     const bytes = this.gridWidth * this.gridHeight * 4;
     const enc = device.createCommandEncoder();
     enc.copyBufferToBuffer(this.accLo, 0, this.readLo, 0, bytes);
     enc.copyBufferToBuffer(this.accHi, 0, this.readHi, 0, bytes);
+    enc.copyBufferToBuffer(this.tally, 0, this.readTally, 0, 8);
     device.queue.submit([enc.finish()]);
-    await Promise.all([this.readLo.mapAsync(GPUMapMode.READ), this.readHi.mapAsync(GPUMapMode.READ)]);
+    await Promise.all([
+      this.readLo.mapAsync(GPUMapMode.READ),
+      this.readHi.mapAsync(GPUMapMode.READ),
+      this.readTally.mapAsync(GPUMapMode.READ),
+    ]);
     if (this.lost) throw new Error(`GPU device lost: ${this.lost}`);
     const lo = new Uint32Array(this.readLo.getMappedRange().slice(0));
     const hi = new Uint32Array(this.readHi.getMappedRange().slice(0));
+    const t = new Uint32Array(this.readTally.getMappedRange());
+    const landed = BigInt(t[0]) + (BigInt(t[1]) << 32n);
     this.readLo.unmap();
     this.readHi.unmap();
-    return { lo, hi };
+    this.readTally.unmap();
+    return { lo, hi, landed };
   }
 
   dispose(): void {
-    for (const b of [this.uniform, this.accLo, this.accHi, this.readLo, this.readHi]) b.destroy();
+    for (const b of [this.uniform, this.accLo, this.accHi, this.readLo, this.readHi, this.tally, this.readTally]) b.destroy();
   }
 }
 

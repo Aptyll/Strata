@@ -213,7 +213,7 @@ async function render(args) {
         },
         onFrame: (s, resumed) => {
           const rate = s.evaluated / Math.max(s.seconds, 1e-9);
-          process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels${s.inView ? `, ${withCommas(s.inView)} in view` : ""}                    \n`);
+          process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
         },
       });
       console.log(`\nRendered ${r.rendered} frames, ${r.skipped} were already done.${r.stopped ? " Stopped early: run the same command to continue." : ""}`);

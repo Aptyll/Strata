@@ -79,9 +79,18 @@ npx tsx node/test.mjs
 ```
 
 Quick self-checks on whatever adapter is available: every particle is counted
-exactly once, results do not depend on batch size, 64-bit carries are exact,
-the shader agrees with a double-precision CPU reference, and a checkpointed
-frame resumes to the identical result.
+exactly once, the in-frame tally matches the grid, results do not depend on
+batch size, 64-bit carries are exact, the shader agrees with a
+double-precision CPU reference, cancel works, and a checkpointed frame resumes
+to the identical result.
+
+## The tally
+
+Every frame's stats JSON holds `evaluated` (always the whole world) and
+`landed`, the exact number of particles whose position fell inside the frame,
+counted on the GPU with one atomic per workgroup. `evaluated - landed` were
+behind the camera or off frame. In `count` weighting with `point` splat, the
+grid sum divided by 65536 equals `landed` exactly, which the checks verify.
 
 ## Layout
 
