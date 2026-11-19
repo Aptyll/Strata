@@ -168,14 +168,23 @@ function effectiveParams(behavior: Behavior, desc: PlaneDesc): Record<string, nu
  *
  * Starting a new roll while one is in flight is fine: drop the old transition
  * and start another, it picks up from whatever the planes hold at that moment.
+ *
+ * `target.planes[i]` is matched to `app.planes[i]`, the live planes, so a
+ * streamed world whose scene lists none of its planes can roll too. If the
+ * plane list changes while a roll is in flight (a rebuild, a plane streaming
+ * in or out), the planes that are gone are skipped and new ones are left alone.
  */
 export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOptions = {}): RollTransition {
   const duration = Math.max(0.001, opts.duration ?? 2.4);
   const stagger = Math.max(0, opts.stagger ?? 0.1);
-  const current = app.getScene();
-  const comparable = current.planes.length === target.planes.length && app.planes.length === target.planes.length;
-  const changes = (i: number) => current.planes[i].behaviorId !== target.planes[i].behaviorId;
-  const from = comparable ? app.planes.map((p) => effectiveParams(p.behavior, p.desc)) : [];
+  /** The plane instances this roll steers, captured now. */
+  let planes = app.planes.slice();
+  const comparable = planes.length === target.planes.length;
+  // Decided once, up front. A swap rewrites plane.desc.behaviorId (and the engine's
+  // scene shares those descs), so asking again mid-flight would mistake a swapped
+  // plane for a kept one and glide it with the old behavior's param names.
+  const changed = comparable ? planes.map((p, i) => p.behavior.id !== target.planes[i].behaviorId) : [];
+  const from = comparable ? planes.map((p) => effectiveParams(p.behavior, p.desc)) : [];
   const swap =
     opts.swapBehavior === false
       ? null
@@ -187,9 +196,10 @@ export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOp
 
   if (!comparable) {
     app.loadScene(target);
-  } else if (!swap && target.planes.some((_, i) => changes(i))) {
+  } else if (!swap && changed.some(Boolean)) {
     // Changed planes cut over now; kept planes are loaded at their current values and glide from there.
-    app.loadScene({ ...target, planes: target.planes.map((p, i) => (changes(i) ? p : { ...p, params: from[i] })) });
+    app.loadScene({ ...target, planes: target.planes.map((p, i) => (changed[i] ? p : { ...p, params: from[i] })) });
+    planes = app.planes.slice(); // the load made new instances, in target order
   }
 
   const swapped = new Set<number>();
@@ -203,10 +213,15 @@ export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOp
       if (done) return true;
       time += dt;
       let landed = 0;
-      app.planes.forEach((plane, i) => {
+      planes.forEach((plane, i) => {
+        // Gone since the roll started (rebuilt, or streamed out): nothing left to steer.
+        if (app.planes[i] !== plane && !app.planes.includes(plane)) {
+          landed++;
+          return;
+        }
         const goal = target.planes[i];
         const u = clamp((time - i * stagger) / duration, 0, 1);
-        if (changes(i)) {
+        if (changed[i]) {
           if (swap && u > 0 && !swapped.has(i)) {
             swapped.add(i);
             swap(plane, goal);
@@ -216,16 +231,15 @@ export function startRoll(app: AppContext, target: Scene, opts: RollTransitionOp
         }
         const k = ease(u);
         const params: Record<string, number> = {};
-        for (const name of Object.keys(plane.behavior.params)) {
-          const a = from[i][name];
-          const b = goal.params?.[name] ?? plane.behavior.params[name].default;
+        for (const [name, a] of Object.entries(from[i])) {
+          const b = goal.params?.[name] ?? plane.behavior.params[name]?.default ?? a;
           params[name] = u >= 1 ? b : a + (b - a) * k;
         }
         plane.desc.params = params;
         app.updatePlane(plane);
         if (u >= 1) landed++;
       });
-      done = landed === app.planes.length;
+      done = landed === planes.length;
       return done;
     },
   };

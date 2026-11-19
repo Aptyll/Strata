@@ -147,7 +147,10 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
   // ---- dice ---------------------------------------------------------------------
   hud.onRandomize(({ seed }) => {
     const current = app.getScene();
-    const source = { ...current, planes: current.planes.map((p, i) => (opening[i] ? { ...p, ...opening[i] } : p)) };
+    // A streamed world (?world=) adds its planes after the scene loads, so its scene lists none
+    // of them. Roll the live planes then; loading a rolled copy would wipe the streamed world.
+    const planes = current.planes.length === app.planes.length ? current.planes : app.planes.map((p) => p.desc);
+    const source = { ...current, planes: planes.map((p, i) => (opening[i] ? { ...p, ...opening[i] } : p)) };
     const target = rollScene(source, app.behaviors, seed, opts.roll);
     if (share) history.replaceState(history.state, "", `#r=${seed.toString(36)}`);
     // Starting a new roll mid-flight is safe: the old transition is simply dropped.
