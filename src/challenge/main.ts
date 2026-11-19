@@ -28,6 +28,7 @@ import { BYTES_PER_PARTICLE, ChallengeEngine } from "./engine";
 import type { ChallengeMode } from "./engine";
 import { Ramp } from "./ramp";
 import { ROW } from "./shaders";
+import { adapterOptions } from "../gpu/adapter-options";
 
 /** The shared challenge target for realtime: simulated particles, 1080p, 30 fps. */
 export const TIER1 = { particles: 100_000_000, fps: 30, width: 1920, height: 1080 } as const;
@@ -148,7 +149,7 @@ export async function startChallenge(
     say("Challenge mode needs WebGPU (recent Chrome, Edge or Safari).");
     return;
   }
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  const adapter = await navigator.gpu.requestAdapter(adapterOptions());
   if (!adapter) {
     say("No WebGPU adapter found.");
     return;
