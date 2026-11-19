@@ -10,6 +10,7 @@
  *
  *   npm run build && npm run smoke     every page
  *   npm run smoke -- challenge         only pages whose URL contains "challenge"
+ *   npm run smoke -- --base=/Strata/   a site built with `--base /Strata/` (the deploy)
  *
  * Pages come from two places. PAGES below lists the known ones with a URL
  * that keeps them light (a software GPU hangs at about a million particles)
@@ -152,7 +153,9 @@ function instrument() {
   };
 }
 
-const server = await preview({ root, logLevel: "error", preview: { host: "127.0.0.1", port: 5198 } });
+// The deploy builds the site under a path (/Strata/ on aptyll.github.io): serve it under the same one.
+const siteBase = process.argv.find((a) => a.startsWith("--base="))?.slice("--base=".length) || "/";
+const server = await preview({ root, base: siteBase, logLevel: "error", preview: { host: "127.0.0.1", port: 5198 } });
 const base = (server.resolvedUrls?.local[0] ?? "http://127.0.0.1:5198/").replace(/\/$/, "");
 const args = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=swiftshader", "--use-webgpu-adapter=swiftshader"];
 
