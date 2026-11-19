@@ -527,7 +527,7 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
   endless seeded world through `AppContext.addPlane` and `removePlane` around
   the camera, ticked by an `afterCamera` hook. Loading any other scene clears
   the streamed planes, and streaming carries on around the camera. Tests:
-  `node src/world/test/run.mjs`.
+  `npm test -- world`.
 - **Interplane** (`docs/interplane.md`): `createInterplane()` returns a compute
   pass and a draw pass; `src/app/graph.ts` registers them after the
   rasterizers. Off with `?interplane=0` or the "plane crossings" setting.
