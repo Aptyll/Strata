@@ -64,13 +64,31 @@ export interface Accumulation {
   gpuEvaluated: bigint;
 }
 
+/**
+ * The work a frame has cost so far. It travels with a checkpoint, so a frame
+ * that was stopped and continued still reports its whole cost, not only the
+ * last run's share.
+ */
+export interface FrameProgress {
+  /** Wall seconds of rendering, summed over every run of this frame. */
+  seconds: number;
+  /** Dispatches, summed over every run of this frame. */
+  batches: number;
+  /** How many times the frame was continued from a checkpoint. */
+  resumes: number;
+}
+
 export interface FrameHooks {
   /** Called after every batch. */
   onProgress?(done: number, total: number, batchSize: number, batchMs: number): void;
-  /** Start from a saved partial frame instead of from empty. */
-  resume?: { cursor: FrameCursor } & Accumulation;
+  /**
+   * Start from a saved partial frame instead of from empty. Pass the progress
+   * that was saved with it, or the frame's time and batch count start again
+   * from zero and understate the frame.
+   */
+  resume?: { cursor: FrameCursor } & Accumulation & Partial<FrameProgress>;
   /** Save a partial frame every `everyMs` so a crash loses little. */
-  checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation): Promise<void> };
+  checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation, progress: FrameProgress): Promise<void> };
   /**
    * Checked between batches. When aborted, renderFrame saves a checkpoint (if
    * checkpoint is set) and rejects with an AbortError.
@@ -80,13 +98,10 @@ export interface FrameHooks {
   onPartial?: { everyMs: number; show(acc: Accumulation, done: number, total: number): void | Promise<void> };
 }
 
-export interface FrameResult extends Accumulation {
+export interface FrameResult extends Accumulation, FrameProgress {
   frame: number;
   /** Particles evaluated in this call (excludes work restored by a resume). */
   evaluated: number;
-  batches: number;
-  /** Wall seconds spent in this call. */
-  seconds: number;
 }
 
 const now = (): number => performance.now();
@@ -274,11 +289,18 @@ export class StatelessRenderer {
     let batches = 0;
     let lastCheckpoint = now();
     let lastPartial = now();
+    // The frame's whole cost: what a checkpoint brought along plus this call.
+    const before = hooks.resume;
+    const progress = (): FrameProgress => ({
+      seconds: (before?.seconds ?? 0) + (now() - t0) / 1000,
+      batches: (before?.batches ?? 0) + batches,
+      resumes: before ? (before.resumes ?? 0) + 1 : 0,
+    });
 
     while (cursor.plane < job.planes.length) {
       if (hooks.signal?.aborted) {
         // Keep the work done so far: a cancelled frame resumes where it stopped.
-        if (hooks.checkpoint && done > startDone) await hooks.checkpoint.save(cursor, await this.readAccumulation());
+        if (hooks.checkpoint && done > startDone) await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
         throw new DOMException("Render cancelled", "AbortError");
       }
       const plane = job.planes[cursor.plane];
@@ -315,7 +337,7 @@ export class StatelessRenderer {
           lastPartial = now();
         }
         if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
-          await hooks.checkpoint.save(cursor, await this.readAccumulation());
+          await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
           lastCheckpoint = now();
         }
         continue;
@@ -366,13 +388,13 @@ export class StatelessRenderer {
         lastPartial = now();
       }
       if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
-        await hooks.checkpoint.save(cursor, await this.readAccumulation());
+        await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
         lastCheckpoint = now();
       }
     }
 
     const acc = await this.readAccumulation();
-    return { frame, ...acc, evaluated: done - startDone, batches, seconds: (now() - t0) / 1000 };
+    return { frame, ...acc, evaluated: done - startDone, ...progress() };
   }
 
   /** Steer the batch size toward the time target, at most 2x per step. */

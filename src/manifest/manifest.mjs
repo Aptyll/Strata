@@ -105,6 +105,8 @@ export async function buildManifest(input) {
       lightParticles: (Number(BigInt(s.unitSum) / (ONE / 256n)) / 256).toString(),
       seconds: s.seconds,
       batches: s.batches,
+      // Stats written before `resumes` existed timed only a continued frame's last run.
+      resumes: s.resumes ?? null,
       particlesPerSecond: Number(evaluated) / Math.max(s.seconds, 1e-9),
       gridHash: await gridHash(s),
       imageSha256: input.imageSha256?.[s.frame] ?? null,
