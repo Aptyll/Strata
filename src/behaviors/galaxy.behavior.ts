@@ -1,4 +1,4 @@
-import { defineBehavior } from "./define";
+import { defineBehavior } from "./core";
 
 /**
  * Three wandering gravity wells. Particles fall in, slingshot and smear into
