@@ -122,7 +122,7 @@ dd { color: var(--dim); }
 <p class="lede">The picture above is a tiny version of the whole plan, running in your browser. No particle is saved anywhere. Each frame, every particle's position is worked out from its id number and the clock, pushed through a camera, and counted into a pixel. Then the counts are turned into brightness.</p>
 <p>This guide walks through that chain one idea at a time, with the math, the computer science and the bit of physics behind each step. Most figures are live: drag the sliders.</p>
 </div>
-<p class="note">Where the code stands today: <code>main</code> has the shared contracts, the camera and the behaviour building blocks. The renderer itself (<code>src/render</code>, <code>src/challenge</code>, <code>src/offline</code>, <code>src/perf</code>) is still being built in other threads. So the numbers here come from arithmetic, and the speed figures are estimates until the project measures them. Where a figure quotes project code, the file is named.</p>
+<p class="note">How this maps to the code on <code>main</code>: the counting step lives in <code>src/render/splat.ts</code> and <code>src/perf/atomicRasterPass.ts</code>, the brightness curve in <code>src/render/tonemap.ts</code>, the camera in <code>src/ux/camera</code>, and the motion building blocks in <code>src/behaviors/core</code>. The figures here are simplified teaching versions, and the code is moving fast, so details may differ. Sizes and counts come from arithmetic. Speed figures are estimates, not measurements.</p>
 
 <nav class="toc" aria-label="Contents">
   <a href="#journey">One particle's trip</a><a href="#perspective">Perspective</a><a href="#stateless">Motion without memory</a><a href="#memory">The memory wall</a><a href="#pipelines">Two ways to draw a dot</a><a href="#atomics">Counting safely</a><a href="#density">Pixels as counters</a><a href="#tonemap">Tone mapping</a><a href="#time">Render time</a><a href="#words">Words</a>
@@ -146,7 +146,7 @@ dd { color: var(--dim); }
   <li><span class="space">Count</span><span class="val">atomicAdd(counts[5516390], 1)</span><span class="how">Add one. The particle's whole contribution to the film is this single +1. Then it is forgotten.</span></li>
 </ol>
 <div class="prose">
-<p style="margin-top:18px">In shader code the whole trip is about ten lines. This is a sketch of the idea, not the project's final shader:</p>
+<p style="margin-top:18px">In shader code the whole trip is about ten lines. This is a simplified sketch. The real versions are in <code>src/render/splat.ts</code> and <code>src/perf/atomicRasterPass.ts</code>:</p>
 </div>
 <pre><span class="c">// one invocation of this runs per particle, millions at a time</span>
 @compute @workgroup_size(256)
@@ -279,7 +279,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
 </div>
 <figure>
   <div class="scroll"><svg id="memChart" viewBox="0 0 760 290" role="img" aria-label="Dot plot on a logarithmic scale of memory needed for 4 million, 100 million, 1 billion and 1 trillion stored particles, compared with graphics card memory"></svg></div>
-  <figcaption><b>Each step to the right is ten times more memory.</b> A billion stored particles need 16 GB, which fits only on the largest consumer cards. A trillion need 16 TB, about 670 of those cards. The stateless version stores no particles at all. Its only big buffer is one counter per pixel: 33 MB at 4K.</figcaption>
+  <figcaption><b>Each step to the right is ten times more memory.</b> A billion stored particles need 16 GB, which fits only on the largest consumer cards. A trillion need 16 TB, about 670 of those cards. The project also has a packed 8-byte format (<code>src/perf/packing.ts</code>) that halves every stored row, which helps the billion and does not rescue the trillion. The stateless version stores no particles at all. Its only big buffer is one counter per pixel: 33 MB at 4K.</figcaption>
 </figure>
 
 <div class="prose">
@@ -369,7 +369,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
   <text x="20" y="320">solid box: code you write · dashed box: fixed hardware you configure</text>
 </svg>
 </div>
-<figcaption><b>The compute path removes two fixed-hardware stages and the stored buffer.</b> For dots that are exactly one pixel, there is nothing for a rasterizer to work out, so skipping it saves work. Published point-cloud research (Schütz, Kerbl and Wimmer, 2021) measured compute-shader point rendering at up to about ten times the speed of the built-in point path. Strata's own numbers will come from <code>src/perf</code>.</figcaption>
+<figcaption><b>The compute path removes two fixed-hardware stages and the stored buffer.</b> For dots that are exactly one pixel, there is nothing for a rasterizer to work out, so skipping it saves work. Published point-cloud research (Schütz, Kerbl and Wimmer, 2021) measured compute-shader point rendering at up to about ten times the speed of the built-in point path. Strata's own numbers come from the benchmark in <code>src/perf/bench</code>.</figcaption>
 </figure>
 <div class="prose">
 <p>The built-in path stays the right tool for the realtime view. The frame graph in <code>src/core/contracts.ts</code> runs the stages <span class="mono">simulate → interplane → rasterize → depth → tonemap → ui → capture</span>, and "rasterize" there means additive points into a floating-point texture. The compute rasterizer is the special tool for the giant offline counts.</p>
@@ -419,7 +419,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
 </div>
 <figure>
   <div class="scroll"><svg id="capChart" viewBox="0 0 760 250" role="img" aria-label="Dot plot on a logarithmic scale of how many overlapping particles a pixel can count in three storage formats, compared with the average particles per pixel for one billion and one trillion particles at 4K"></svg></div>
-  <figcaption><b>The 16-bit float target is fine for the realtime view and too small for the trillion.</b> At 1T and 4K the <i>average</i> pixel holds 120,563 particles, and bright pixels hold far more. This is the second reason the big render uses integer counters. The counts are "HDR" (high dynamic range) simply because they are real totals with no ceiling at white.</figcaption>
+  <figcaption><b>The 16-bit float target is fine for the realtime view and too small for the trillion.</b> At 1T and 4K the <i>average</i> pixel holds 120,563 particles, and bright pixels hold far more. This is the second reason the big render uses integer counters. The project's counters are fixed point: one full-brightness particle adds 256, which leaves room for dim particles and still lets a pixel hold about 16.7 million full hits. The counts are "HDR" (high dynamic range) simply because they are real totals with no ceiling at white.</figcaption>
 </figure>
 </section>
 
@@ -453,7 +453,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
 <dl>
   <dt>linear</dt><dd>Brightness is the count divided by a chosen "white" count. Honest, but it can only show a range of about 256 to 1. Either the bright core clips to flat white or the faint parts vanish into black.</dd>
   <dt>log</dt><dd>Brightness follows the logarithm of the count, so every ten-fold increase adds the same step of brightness. A range of a million to one fits on screen. This is close to how eyes judge brightness.</dd>
-  <dt>filmic</dt><dd>Nearly linear in the darks, then a smooth "shoulder" that eases toward white instead of clipping. The version here is extended Reinhard, the simplest curve of this family. It keeps contrast in the mid-tones and still holds detail in highlights.</dd>
+  <dt>filmic</dt><dd>Nearly linear in the darks, then a smooth "shoulder" that eases toward white instead of clipping. The version here is extended Reinhard, the simplest curve of this family. The project's <code>filmic</code> is a fit of the ACES film curve, which also darkens the faintest dust. It keeps contrast in the mid-tones and still holds detail in highlights.</dd>
 </dl>
 <figure>
 <div class="controls">
@@ -477,7 +477,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
 </div>
 <figcaption><b>Top right: the curve. Bottom right: how many pixels hold each count, with every bar painted the brightness the curve gives it.</b> Try linear with the white point at 100%: almost every bar is black, because nearly all pixels are far below the brightest one. Slide the white point down and the picture appears, but bars to the right of the white line all clip to the same white. Then switch to log and see the whole histogram spread across the greys.</figcaption>
 </figure>
-<p class="note">A real pipeline has one more step after this curve: encoding for the display (sRGB gamma) and writing 8-bit video. That is left out here so the curves stay easy to compare. The project's <code>RenderSettings.brightness</code> plays the role of the white point: it scales counts before the curve.</p>
+<p class="note">The project's version is <code>src/render/tonemap.ts</code>. Its default curve is log with a white point of 64, and after the curve it adds three steps left out here: a soft shoulder, sRGB encoding for the display, and a tiny random dither so dark gradients do not show stripes in 8-bit video.</p>
 </section>
 
 <!-- =============================================================== time -->
@@ -502,7 +502,7 @@ fn splat(@builtin(global_invocation_id) gid: vec3u) {
   <div><div class="k">whole video takes</div><div class="v" id="tTotal"></div></div>
 </div>
 <div class="readout" id="tNote" style="margin-top:10px"></div>
-<figcaption><b>Plug in the measured speed when <code>src/perf</code> has one.</b> The default of 10 billion particles per second is my rough guess for a strong GPU doing simple motion and one counter write per particle. I have not measured it, and the true figure could be several times higher or lower. It depends heavily on how expensive the motion formula is.</figcaption>
+<figcaption><b>Plug in a measured speed from <code>src/perf/bench</code> when you have one.</b> The default of 10 billion particles per second is my rough guess for a strong GPU doing simple motion and one counter write per particle. I have not measured it, and the true figure could be several times higher or lower. It depends heavily on how expensive the motion formula is.</figcaption>
 </figure>
 <div class="tablewrap">
 <table>
