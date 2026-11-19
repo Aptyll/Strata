@@ -1,5 +1,6 @@
 import type { GpuContext } from "../core/contracts";
-import { GLOBALS_SIZE } from "./shaderLib";
+import { BRUSH_FLOATS, MAX_BRUSHES } from "../core/contracts";
+import { GLOBALS_BRUSHES_OFFSET, GLOBALS_SIZE } from "./shaderLib";
 
 export const HDR_FORMAT: GPUTextureFormat = "rgba16float";
 
@@ -62,6 +63,11 @@ export interface FrameGlobals {
   dt: number;
   frame: number;
   brightness: number;
+  /**
+   * Packed pointer brushes: MAX_BRUSHES x BRUSH_FLOATS floats, laid out as
+   * Brush in src/core/contracts.ts. Omit for no pointer forces.
+   */
+  brushes?: Float32Array;
 }
 
 const scratch = new ArrayBuffer(GLOBALS_SIZE);
@@ -74,5 +80,12 @@ export function writeGlobals(gpu: GpuContext, g: FrameGlobals): void {
   scratchF32[17] = g.dt;
   scratchU32[18] = g.frame;
   scratchF32[19] = g.brightness;
+  const base = GLOBALS_BRUSHES_OFFSET / 4;
+  if (g.brushes) {
+    scratchF32.set(g.brushes.subarray(0, MAX_BRUSHES * BRUSH_FLOATS), base);
+  } else {
+    scratchF32.fill(0, base, base + MAX_BRUSHES * BRUSH_FLOATS);
+    for (let k = 0; k < MAX_BRUSHES; k++) scratchF32[base + k * BRUSH_FLOATS + 6] = -1;
+  }
   gpu.device.queue.writeBuffer(gpu.globalsBuffer, 0, scratch);
 }

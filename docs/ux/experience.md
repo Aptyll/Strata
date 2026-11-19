@@ -227,6 +227,16 @@ function tick(now: number) {
 }
 ```
 
+**Using the parts without `createExperience()`.** The app has its own camera,
+HUD and key map, so each part also mounts alone:
+
+| Part | Call | Needs |
+| --- | --- | --- |
+| Pointer forces | `attachBrushes(canvas, camera, () => planes)` then `writeGlobals({ brushes: b.update(dt, now) })` | any `CameraController`. Wired into `src/main.ts`. |
+| Opening | `createIntroRunner({ planes, aspect })`, then `step(dt)` each frame | nothing. Returns exposure, per-plane gain for `PlaneDesc.brightness`, and a camera pose with a weight. |
+| Hints | `new HintScheduler()` and `createHintView(root)` | call `learn(id)` when a gesture happens |
+| No-WebGPU screen | `mountFallback(root, await detectCapability())` | a positioned element |
+
 What already fits the shared contracts in `src/core/contracts.ts`:
 
 - `CameraRig` implements `CameraController`, and its `state` is a `CameraState`.
@@ -238,14 +248,11 @@ What already fits the shared contracts in `src/core/contracts.ts`:
   and use their own letter-spacing; they should be moved onto `TOKENS` when
   the UI threads settle the look.
 
-What the contracts are missing, sent as a separate small PR:
-
-- **Pointer forces.** Behaviors run in WGSL and currently have no way to see
-  the pointer. Proposed: up to four brushes in the frame globals, 8 floats
-  each (`pos: vec2f, radius: f32, strength: f32, vel: vec2f, plane: f32,
-  charge: f32`, plane `-1` when unused), plus a shared helper
-  `brushAccel(p.pos) -> vec2f` that any behavior may add to its velocity.
-  `brushForce()` in `force-brush.ts` is the reference implementation.
+Pointer forces on the GPU (added in the follow-up PR): `Globals` ends with
+four `Brush` slots, and the engine adds `brushAccel(p.pos)` to every particle
+after the behavior's `update()`, so all behaviors respond without changes. A
+brush names its plane by `PlaneDesc.seed`. `brushForce()` in `force-brush.ts`
+is the CPU reference for the same curve.
 
 Two things the experience wants that are not contract changes, only requests
 to the renderer: a slight brightness lift on `f.hoverPlane` (25% in the demo),

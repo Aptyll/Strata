@@ -32,6 +32,8 @@ export * from './force-brush';
 export * from './gestures';
 export * from './hints';
 export * from './intro';
+export * from './intro-runner';
+export * from './engine-brushes';
 export * from './pointer-ray';
 
 export interface ExperienceOptions {

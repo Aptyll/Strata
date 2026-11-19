@@ -1,4 +1,4 @@
-import { MAX_BEHAVIOR_PARAMS, type Behavior } from "../core/contracts";
+import { MAX_BEHAVIOR_PARAMS, MAX_BRUSHES, type Behavior } from "../core/contracts";
 
 /** Bytes per particle: pos.xy + vel.xy as f32. */
 export const PARTICLE_STRIDE = 16;
@@ -16,8 +16,14 @@ export function dispatchSize(count: number): [number, number] {
   return [Math.min(groups, DISPATCH_ROW_GROUPS), Math.ceil(groups / DISPATCH_ROW_GROUPS)];
 }
 
-/** Globals uniform: viewProj (64) + time, dt, frame, brightness (16). */
-export const GLOBALS_SIZE = 80;
+/** Globals uniform: viewProj (64) + time, dt, frame, brightness (16) + 4 brushes (128). */
+export const GLOBALS_SIZE = 208;
+/** Byte offset of the first brush in the Globals uniform. */
+export const GLOBALS_BRUSHES_OFFSET = 80;
+/** Acceleration, in sheet units per second squared, of a full-strength brush. */
+export const BRUSH_GAIN = 2.0;
+/** Fraction of the brush push applied straight to position, so behaviors that ignore velocity still respond. */
+export const BRUSH_DISPLACE = 0.25;
 /** Plane uniform: model (64) + 8 params (32) + count, seed, brightness, pad (16). */
 export const PLANE_UNIFORM_SIZE = 112;
 export const PLANE_PARAMS_OFFSET = 64;
@@ -26,12 +32,22 @@ export const PLANE_SEED_OFFSET = 100;
 export const PLANE_BRIGHTNESS_OFFSET = 104;
 
 export const GLOBALS_WGSL = /* wgsl */ `
+// The pointer as a force on one sheet. See Brush in src/core/contracts.ts.
+struct Brush {
+  pos: vec2f,     // sheet-local, [-1, 1]
+  radius: f32,    // sheet-local units, 0 when unused
+  strength: f32,  // positive pulls particles in, negative pushes them away
+  vel: vec2f,     // sheet-local units per second
+  plane: f32,     // seed of the plane it touches, -1 when unused
+  charge: f32,    // 0..1, how long it has been held
+}
 struct Globals {
   viewProj: mat4x4f,
   time: f32,       // seconds since start
   dt: f32,         // seconds simulated this frame (clamped)
   frame: u32,
   brightness: f32, // light added per particle per pixel, before tonemapping
+  brushes: array<Brush, ${MAX_BRUSHES}>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
 `;
@@ -110,6 +126,26 @@ fn respawn(i: u32) -> Particle {
   return Particle(vec2f(rand(i, 101u), rand(i, 102u)) * 2.0 - 1.0, vec2f(0.0));
 }
 
+// Acceleration from the pointer brushes touching this plane. Applied to every
+// behavior after update(); a behavior may also call it to react in its own way.
+// Smooth and finite: zero at the edge of the radius and soft at the centre,
+// so an attract well gathers a ring instead of collapsing to a point.
+fn brushAccel(pos: vec2f) -> vec2f {
+  var a = vec2f(0.0);
+  for (var k = 0u; k < ${MAX_BRUSHES}u; k++) {
+    let b = globals.brushes[k];
+    if (b.plane != plane.seed || b.radius <= 0.0) { continue; }
+    let d = b.pos - pos;
+    let r = length(d) + 1e-6;
+    if (r >= b.radius) { continue; }
+    let q = r / b.radius;
+    let falloff = (1.0 - q) * (1.0 - q);
+    let core = q / (q + 0.12);
+    a += d * (b.strength * falloff * core / r);
+  }
+  return a * ${BRUSH_GAIN.toFixed(3)};
+}
+
 // ---- behavior: ${behavior.id} ----
 ${behavior.wgsl}
 // ---- end behavior ----
@@ -118,7 +154,11 @@ ${behavior.wgsl}
 fn main(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x + id.y * ${DISPATCH_ROW_GROUPS * WORKGROUP_SIZE}u;
   if (i >= plane.count) { return; }
-  particles[i] = update(particles[i], i);
+  var p = update(particles[i], i);
+  let push = brushAccel(p.pos) * globals.dt;
+  p.vel += push;
+  p.pos += push * ${BRUSH_DISPLACE.toFixed(3)};
+  particles[i] = p;
 }
 `;
 }
