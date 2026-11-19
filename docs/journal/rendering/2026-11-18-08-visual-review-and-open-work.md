@@ -144,8 +144,9 @@ first.
    speedup the hold was waiting for
    ([page 05](2026-11-18-05-trillion-kernel.md)).
 2. **What the record stills can claim.** Weighting most likely flux, not
-   confirmed. The first still almost certainly used the old 32-bit keys. No
-   manifest and no stats files in the repo
+   confirmed. The first still almost certainly used the old 32-bit keys, and
+   the first three stills most likely have no GPU count of evaluated
+   particles. No manifest and no stats files in the repo
    ([page 04](2026-11-18-04-particle-keys-and-honest-counting.md),
    [page 07](2026-11-18-07-first-trillion-frames.md)). A re-render of the hero
    still on current main with a manifest would settle all three at once.
