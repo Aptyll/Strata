@@ -49,7 +49,10 @@ export const MAX_BEHAVIOR_PARAMS = 8;
 export interface Behavior {
   /** Unique, stable, kebab-case. Scenes refer to behaviors by this id. */
   id: string;
+  /** The name people see. No two behaviors may share one: menus and labels tell behaviors apart by it. */
   label?: string;
+  /** One plain sentence saying what a viewer sees on a sheet running this rule. Shown next to the label. */
+  description?: string;
   /** Up to MAX_BEHAVIOR_PARAMS params, exposed in WGSL as `plane.params.<name>`. */
   params: Record<string, ParamSpec>;
   /** WGSL defining `fn update(p: Particle, i: u32) -> Particle` (plus any helpers). */
