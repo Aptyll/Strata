@@ -41,10 +41,11 @@ export const MENU_CSS = `
 }
 .sm-fact { min-width: 0; }
 .sm-fact[hidden] { display: none; }
+/* A fact's value keeps its case, like every other value: 1.05M must not become 1.05m. */
 .sm-fact dd {
   margin: 0; color: rgba(var(--hud-fg), var(--hud-a-strong));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; text-transform: none;
 }
 .sm-fact dt { font: var(--hud-font-fine); color: rgba(var(--hud-fg), var(--hud-a-ghost)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

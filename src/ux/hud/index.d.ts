@@ -117,6 +117,30 @@ export interface ParamHandle {
   remove(): void;
 }
 
+/** A block of your own DOM in a menu section, for read-outs that are not controls. */
+export interface ViewSpec {
+  id: string;
+  /** Section it sits in, like a param's group. */
+  group?: string;
+  /** Menu page, like a param's page. Defaults from group (see PAGES in menu.js). */
+  page?: string;
+  /** The element to show. The HUD places it and leaves its content, styles and updates to you. */
+  node: HTMLElement;
+}
+export interface ViewHandle {
+  id: string;
+  remove(): void;
+}
+
+export interface FactOptions {
+  /** The word under the value. Defaults to the key for a new fact. */
+  label?: string;
+  /** Hover text. */
+  title?: string;
+  /** For a new fact: the key of the fact it follows. Left out, it goes last. */
+  after?: string;
+}
+
 export interface ShortcutSpec {
   /** e.g. 'g', '?', 'space', 'arrowleft', '['. Case-insensitive. */
   key: string;
@@ -199,6 +223,19 @@ export interface Hud {
   registerParam(spec: ParamSpec): ParamHandle;
   registerParams(specs: ParamSpec[]): ParamHandle[];
   removeParam(id: string): void;
+  /**
+   * Put a block of your own DOM in a menu section, where a param with the same group and
+   * page would sit. Registering an id again replaces the block. An emptied section goes away.
+   */
+  registerView(spec: ViewSpec): ViewHandle;
+  removeView(id: string): void;
+  /**
+   * Write a fact in the menu's summary header (the grid under the frame rate). A new key adds
+   * a fact. One of the menu's own keys ('particles', 'total', 'planes', 'resolution', 'theme',
+   * 'behavior') takes that fact over: the menu stops writing it until it is given back.
+   * `null` or '' hides the fact and keeps it yours; `undefined` gives it back (an added fact is removed).
+   */
+  setFact(key: string, text: string | null | undefined, options?: FactOptions): void;
   getParam(id: string): ParamValue | undefined;
   setParam(id: string, value: ParamValue, options?: SetOptions): ParamValue | undefined;
   getParams(): Record<string, ParamValue>;

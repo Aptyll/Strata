@@ -120,7 +120,8 @@ Layout (structure in `menu.js`, styles in `menu-styles.js`):
    time in ms (derived from the measured fps), and a 30 second fps graph with
    the target fps as a dashed line. Below it: particles simulated last frame,
    particles stored (when the governor draws fewer), planes, drawing buffer
-   size, theme and lead behavior. Facts with no value are hidden.
+   size, theme and lead behavior. Facts with no value are hidden. Other
+   modules add facts, or take one of these over, with `hud.setFact`.
 2. **Page tabs** (first navbar): scene, behaviors, look, themes, perf,
    capture, more. A page with no controls hides its tab.
 3. **Section tabs** (second navbar): when a page holds two or more groups,
@@ -264,6 +265,8 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `message(text \| null)` | Centred message for loading or an unsupported browser. Stays until cleared. |
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. A silent set is ignored while the person is dragging that slider, so an engine echo never yanks it. |
+| `registerView({ id, group, page, node })`, `removeView(id)` | Put a block of your own DOM in a menu section, where a param with the same group and page would sit: a read-out that is not a control (a table of timings, a chart). The HUD only places it; content, styles and updates are yours. |
+| `setFact(key, text, { label, title, after })` | Write a fact in the summary header. A new key adds one (after the fact named by `after`); one of the menu's own keys (`particles`, `total`, `planes`, `resolution`, `theme`, `behavior`) takes that fact over until it is given back. `null` hides it, `undefined` gives it back. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
 | `hintDice(on?)`, `rolled` | Start or stop the die's breathing hint by hand, for an app that schedules its own hints (create the HUD with `diceHintMs: 0`); `rolled` is true once the die has been rolled on this device. |
 | `registerJob({ id, label, group, run })`, `status(text, holdMs?)`, `busy` | Long jobs and the status line. See above. |

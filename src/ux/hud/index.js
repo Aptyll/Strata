@@ -540,13 +540,47 @@ export function createHud(options = {}) {
   /** Register several params at once: registerParams([{...}, {...}]). */
   const registerParams = (specs) => specs.map(registerParam);
 
+  /** Drop a group, and its section of the menu, once its last row or view is gone. */
+  const dropIfEmpty = (g, name) => {
+    if (g && !g.querySelector('.sh-row, .sh-view')) { g.remove(); groups.delete(name); menu.unplace(name); }
+  };
   const removeParam = (id) => {
     const p = params.get(id);
     if (!p) return;
     const g = p.row.parentNode;
     p.row.remove();
     params.delete(id);
-    if (g && !g.querySelector('.sh-row')) { g.remove(); groups.delete(p.group || ''); menu.unplace(p.group || ''); }
+    dropIfEmpty(g, p.group || '');
+  };
+
+  // ---- views: a block of the caller's own DOM in a menu section -----------
+  /** @type {Map<string, { wrap: HTMLElement, group: string }>} */
+  const views = new Map();
+  /**
+   * Put a block of your own DOM in a menu section, for read-outs that are not
+   * controls (a table of timings, a chart). It sits where a param with the
+   * same group and page would, in registration order. The HUD only places it:
+   * the content, its styles and its updates are the caller's.
+   * @param {ViewSpec} spec
+   */
+  const registerView = (spec) => {
+    if (!spec || !spec.id || !spec.node) throw new Error('registerView: id and node are required');
+    if (views.has(spec.id)) removeView(spec.id);
+    const group = spec.group || '';
+    const wrap = el('div', 'sh-view');
+    wrap.dataset.view = spec.id;
+    wrap.append(spec.node);
+    groupEl(group, spec.page).append(wrap);
+    views.set(spec.id, { wrap, group });
+    return { id: spec.id, remove: () => removeView(spec.id) };
+  };
+  const removeView = (id) => {
+    const v = views.get(id);
+    if (!v) return;
+    const g = v.wrap.parentNode;
+    v.wrap.remove();
+    views.delete(id);
+    dropIfEmpty(g, v.group);
   };
   const getParam = (id) => params.get(id)?.value;
   /**
@@ -811,6 +845,13 @@ export function createHud(options = {}) {
     registerParam,
     registerParams,
     removeParam,
+    registerView,
+    removeView,
+    /**
+     * Write a fact in the menu's summary header: setFact('gpu', '59%', { label: 'gpu load', after: 'particles' }).
+     * A new key adds a fact; one of the menu's own keys takes that fact over. null hides it, undefined gives it back.
+     */
+    setFact: menu.setFact,
     getParam,
     setParam,
     getParams,
