@@ -136,3 +136,15 @@ test('parallax camera keeps the focus point still and moves the eye sideways', (
   cam.update(0.016);
   assert.deepEqual([...cam.viewProjection(1)], [...vp]);
 });
+
+test('rim samples of the lens cover every angle, not a few wedges', () => {
+  const p = new DepthParams({ focusDist: 20, focusRange: 0, aperture: 10, maxCocPx: 50, bokehEdge: 1 });
+  const bins = new Array(360).fill(0);
+  const w = 1 / 4;
+  for (let i = 0; i < 3600; i++) {
+    const u2 = ((i + 0.5) / 3600) * w; // rim branch only
+    const [x, y] = p.lensJitterPx(60, 0.9, u2);
+    bins[Math.floor(((Math.atan2(y, x) / (2 * Math.PI)) + 1) % 1 * 360)]++;
+  }
+  assert.ok(bins.every((n) => n > 0));
+});
