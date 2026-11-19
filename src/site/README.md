@@ -176,16 +176,30 @@ sitemap is found by submitting `sitemap.xml` in Google Search Console.
 Every build prints one line:
 
 ```
-[site] landing page: 16 requests, 112.9 kB gzipped before the first frame (budget 200 kB)
+[site] landing page: 18 requests, 123.9 kB gzipped before the first frame (budget 200 kB). Most of the script: src/ux/hud 19%, src/ux/experience 9%, src/ux/camera 9%, src/render 6%, src/audio 6%.
 ```
 
-That is `index.html` plus every script and stylesheet it references, which is
-what a browser fetches before the app can start. Above `LANDING_BUDGET_KB` the
-line becomes a warning that names the three largest files. The usual cause is
-a library imported at the top of a file the app boots from; load it with
-`import()` where it is used, the way `src/capture/recorder.ts` loads its MP4
-muxer (that one change took 56 kB off the page). The budget is a tripwire,
-not a target: raise it on purpose when the app itself has grown.
+The first half is `index.html` plus every script and stylesheet it references,
+which is what a browser fetches before the app can start. The second half says
+which folders that script comes from, as shares of the code before minifying,
+so a thread that adds a feature sees what it cost the front page.
+
+Above `LANDING_BUDGET_KB` the line becomes a warning that names the three
+largest files and the ten largest folders. There are two usual causes, with
+the same cure:
+
+- A library imported at the top of a file the app boots from.
+  `src/capture/recorder.ts` loads its MP4 muxer with `import()` when the first
+  recording starts; that one change took 56 kB off the page.
+- A feature that waits behind a key or a URL option but loads with the page.
+  On 2026-11-19 that was about a fifth of the script: sound (`src/audio`, 6%,
+  off until M), stills and video (`src/capture`, 6%, P and V), depth cues
+  (`src/depth`, 5%, off without `?depth=1`) and the camera tour
+  (`src/ux/autocam`, 4%, C). Nobody has moved them yet. Each would need its
+  key or option to `import()` the feature on first use.
+
+The budget is a tripwire, not a target: raise it on purpose when the app
+itself has grown.
 
 ## By hand on GitHub
 

@@ -10,8 +10,8 @@
  *   - publishes the standalone pages in docs/explainers, locked like the rest
  *   - publishes the share card under a name that contains a hash of its bytes
  *   - writes sitemap.xml (and robots.txt when the site sits at a domain's root)
- *   - prints what index.html loads before the first frame, and warns when
- *     that goes over LANDING_BUDGET_KB
+ *   - prints what index.html loads before the first frame and which folders
+ *     that script comes from, and warns when it goes over LANDING_BUDGET_KB
  *
  * It runs in Node, so it is plain .mjs like the repo's other Node code; the
  * typed parts are the two .ts files next to it.
@@ -31,8 +31,22 @@ import { LANDING_BUDGET_KB, PAGES, SITE } from "./pages.ts";
  */
 const STANDALONE_DIRS = ["docs/explainers"];
 
+/** Folders of src/ that only group other modules. The load report counts their children one by one. */
+const GROUP_DIRS = ["src/ux"];
+
 const slashed = (path) => path.split("\\").join("/");
 const kB = (bytes) => (bytes / 1024).toFixed(1);
+
+/** The folder a module's code is counted under in the load report: "src/ux/hud", "src/app", or a package's name. */
+function folderOf(id, root) {
+  const path = slashed(relative(root, id.split("?")[0]));
+  const dependency = /(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)/.exec(path);
+  if (dependency) return dependency[1];
+  if (id.startsWith("\0") || path.startsWith("..")) return "build helpers";
+  const parts = path.split("/");
+  if (parts.length <= 2) return path; // a file at the top of src/, such as src/main.ts
+  return parts.slice(0, GROUP_DIRS.includes(`${parts[0]}/${parts[1]}`) && parts.length > 3 ? 3 : 2).join("/");
+}
 
 /** @returns {import("vite").Plugin} */
 export function strataSite() {
@@ -163,12 +177,30 @@ export function strataSite() {
         if (item) files.push({ name, bytes: gzipSync(item.type === "chunk" ? item.code : item.source).length });
       }
       const total = files.reduce((sum, file) => sum + file.bytes, 0);
+
+      // Where the script comes from, as shares of the code in those files before minifying.
+      // It is what tells a thread which folder to look at when the page has grown.
+      const shares = new Map();
+      for (const file of files) {
+        const item = bundle[file.name];
+        if (item?.type !== "chunk") continue;
+        for (const [id, module] of Object.entries(item.modules)) {
+          const folder = folderOf(id, config.root);
+          shares.set(folder, (shares.get(folder) ?? 0) + module.renderedLength);
+        }
+      }
+      const code = [...shares.values()].reduce((sum, length) => sum + length, 0);
+      const ranked = [...shares].sort((a, b) => b[1] - a[1]);
+      const share = ([folder, length]) => `${folder} ${Math.round((100 * length) / code)}%`;
+      const most = (n) => (code > 0 ? ranked.slice(0, n).map(share).join(", ") : "nothing");
+
       const line = `landing page: ${files.length} requests, ${kB(total)} kB gzipped before the first frame (budget ${LANDING_BUDGET_KB} kB)`;
-      if (total <= LANDING_BUDGET_KB * 1024) return note(line);
-      const largest = files.sort((a, b) => b.bytes - a.bytes).slice(0, 3);
+      if (total <= LANDING_BUDGET_KB * 1024) return note(`${line}. Most of the script: ${most(5)}.`);
+      const largest = [...files].sort((a, b) => b.bytes - a.bytes).slice(0, 3);
       note(
-        `${line}. Largest: ${largest.map((file) => `${file.name} ${kB(file.bytes)} kB`).join(", ")}. ` +
-          `If a library is imported at the top of a file the app boots from, import() it where it is used.`,
+        `${line}. Largest files: ${largest.map((file) => `${file.name} ${kB(file.bytes)} kB`).join(", ")}. ` +
+          `Script by folder: ${most(10)}. ` +
+          `Whatever the first frame does not need (a library, a feature behind a key) can load with import() where it is used.`,
         "warn",
       );
     },
