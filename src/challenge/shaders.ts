@@ -42,7 +42,46 @@ export const DISPATCH_STRIDE = 256;
  */
 export const COUNT_SLOTS = 256;
 
-const common = (wg: number) => /* wgsl */ `
+
+/** One atomic add per hit. */
+const PLAIN_DEPOSIT = /* wgsl */ `
+fn deposit(k: vec2u) {
+  if (k.x != NO_HIT) { atomicAdd(&fb[k.x], k.y); }
+}
+`;
+
+/**
+ * Optional (?agg=1, needs the 'subgroups' feature): before the atomic, the
+ * lanes of a subgroup that hit the same pixel as the subgroup's first active
+ * lane add their weights together, and that lane does one atomic for all of
+ * them. Every other lane adds its own hit directly, as in the plain path. The
+ * sum in the buffer is identical; only the number of atomics changes. It pays
+ * off when many particles in a subgroup crowd onto one pixel (collapsed
+ * wells, edge-on sheets) and costs three subgroup operations otherwise.
+ *
+ * The subgroup operations run after an early return for out-of-range ids, so
+ * they are in non-uniform control flow. That is fine here: each operation
+ * covers the lanes active at that point, the same set for all three.
+ */
+const AGG_HEADER = /* wgsl */ `enable subgroups;
+diagnostic(off, subgroup_uniformity);
+`;
+const AGG_DEPOSIT = /* wgsl */ `
+fn deposit(k: vec2u) {
+  let first = subgroupElect();
+  let lead = subgroupBroadcastFirst(k.x);
+  let mine = k.x == lead;
+  let total = subgroupAdd(select(0u, k.y, mine));
+  if (mine) {
+    // 'first' is the lane lead came from, so exactly one lane adds the total.
+    if (first && lead != NO_HIT && total != 0u) { atomicAdd(&fb[lead], total); }
+  } else if (k.x != NO_HIT) {
+    atomicAdd(&fb[k.x], k.y);
+  }
+}
+`;
+
+const common = (wg: number, agg = false) => /* wgsl */ `${agg ? AGG_HEADER : ""}
 const WG: u32 = ${wg}u;
 const ROW: u32 = ${ROW}u;
 const V_MAX: f32 = ${V_MAX}.0;
@@ -117,23 +156,31 @@ fn halves(h: u32) -> vec2f {
   return vec2f(f32(h & 0xffffu), f32(h >> 16u)) * (1.0 / 65536.0);
 }
 
-// Add one particle's light to the pixel it lands on. 'rnd' in [0, 1) dithers
-// the fixed point weight, so weights below one unit still add up correctly.
-fn splat(pi: u32, pos: vec2f, rnd: f32) {
+// Where one particle's light lands: (pixel index, weight), or NO_HIT in x when
+// it misses the screen or rounds to no light. 'rnd' in [0, 1) dithers the
+// fixed point weight, so weights below one unit still add up correctly.
+const NO_HIT: u32 = 0xffffffffu;
+fn hitOf(pi: u32, pos: vec2f, rnd: f32) -> vec2u {
   let h = G.planes[pi].h0.xyz * pos.x + G.planes[pi].h1.xyz * pos.y + G.planes[pi].h2.xyz;
-  if (!(h.z > NEAR_W)) { return; }
+  if (!(h.z > NEAR_W)) { return vec2u(NO_HIT, 0u); }
   let inv = 1.0 / h.z;
   let px = h.xy * inv;
   let size = vec2f(G.fbSize);
   // Written so that NaN fails the test.
-  if (!(px.x >= 0.0 && px.y >= 0.0 && px.x < size.x && px.y < size.y)) { return; }
+  if (!(px.x >= 0.0 && px.y >= 0.0 && px.x < size.x && px.y < size.y)) { return vec2u(NO_HIT, 0u); }
   let a = G.planes[pi].a;
   let w = u32(min(a.x * inv * inv, a.y) + rnd);
-  if (w == 0u) { return; }
+  if (w == 0u) { return vec2u(NO_HIT, 0u); }
   // min() guards the one-ulp case where px rounds up to exactly size.
   let ix = min(u32(px.x), G.fbSize.x - 1u);
   let iy = min(u32(px.y), G.fbSize.y - 1u);
-  atomicAdd(&fb[iy * G.fbSize.x + ix], w);
+  return vec2u(iy * G.fbSize.x + ix, w);
+}
+${agg ? AGG_DEPOSIT : PLAIN_DEPOSIT}
+
+// Add one particle's light to the pixel it lands on.
+fn splat(pi: u32, pos: vec2f, rnd: f32) {
+  deposit(hitOf(pi, pos, rnd));
 }
 `;
 
@@ -163,8 +210,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * they do not follow the flow exactly: they are flung out of vortices and
  * collect along strain lines, which is where the filaments come from.
  */
-export const simWgsl = (wg: number) => /* wgsl */ `
-${common(wg)}
+export const simWgsl = (wg: number, agg = false) => /* wgsl */ `
+${common(wg, agg)}
 @group(1) @binding(0) var<uniform> D: Dispatch;
 @group(1) @binding(1) var<storage, read_write> P: array<vec2u>;
 
@@ -245,8 +292,8 @@ fn main(
  * a fixed dispatch, and h2 is a permutation of h1 keyed by the dispatch, so
  * the pair (h1, h2) is unique for every particle. No two particles are copies.
  */
-export const procWgsl = (wg: number) => /* wgsl */ `
-${common(wg)}
+export const procWgsl = (wg: number, agg = false) => /* wgsl */ `
+${common(wg, agg)}
 @group(1) @binding(0) var<uniform> D: Dispatch;
 
 const TAU: f32 = 6.283185307179586;

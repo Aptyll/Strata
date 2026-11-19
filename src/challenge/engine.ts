@@ -52,6 +52,12 @@ export interface EngineOptions {
   attenuate?: boolean;
   /** Fixed accumulation units per particle. Default: chosen from the count. */
   units?: number;
+  /**
+   * Merge same-pixel hits within a subgroup before the atomic add (see
+   * AGG_DEPOSIT in shaders.ts). Used only when the device was created with
+   * the 'subgroups' feature. Default false.
+   */
+  aggregate?: boolean;
 }
 
 export interface FrameInput {
@@ -246,10 +252,14 @@ export class ChallengeEngine {
   readonly workgroupSize: number;
   readonly slabParticles: number;
   readonly procChunk: number;
+  /** True when the kernels merge same-pixel hits per subgroup before the atomic. */
+  readonly aggregate: boolean;
 
   mode: ChallengeMode = "sim";
   /** Exposure of the canvas resolve: light of a face-on sheet with evenly spread particles. */
-  exposure = 0.02;
+  // 0.012 clips about 0.4% of pixels to flat white at every count (0.02 clipped
+  // about 2%), at an 11% lower mean level. Measured by the visual QA, figure 06.
+  exposure = 0.012;
   /** Shoulder of the log tonemap. Higher shows fainter structure. */
   curve = 400;
   /** Set when a slab allocation failed. The simulated count cannot grow past `capacity`. */
@@ -384,8 +394,9 @@ export class ChallengeEngine {
         compute: { module: device.createShaderModule({ label, code }), entryPoint: "main" },
       });
     this.initPipeline = compute("challenge init", simLayout, initWgsl(wg));
-    this.simPipeline = compute("challenge sim", simLayout, simWgsl(wg));
-    this.procPipeline = compute("challenge proc", procLayout, procWgsl(wg));
+    this.aggregate = (options.aggregate ?? false) && device.features.has("subgroups");
+    this.simPipeline = compute("challenge sim", simLayout, simWgsl(wg, this.aggregate));
+    this.procPipeline = compute("challenge proc", procLayout, procWgsl(wg, this.aggregate));
     this.resolveModule = device.createShaderModule({ label: "challenge resolve", code: resolveWgsl });
 
     this.globalsBuffer = device.createBuffer({
