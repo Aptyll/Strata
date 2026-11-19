@@ -10,24 +10,26 @@ what lets the offline renderer (`src/offline`) draw a trillion particles.
 a particle comes from its key, so the key is the particle.
 
 ```
-identity = (seed, index)          seed unique per sheet, index 0..count-1
-key      = Feistel3(seed, index)  vec2u, 64 bits, fully mixed
+identity = (seed, index)                    seed unique per sheet, index 0..count-1
+key      = Feistel3(pcg(seed ^ c), index)   vec2u, 64 bits, fully mixed
 ```
 
-A Feistel network is invertible whatever its round function, so two particles
-share a key only if they share both seed and index. With unique sheet seeds
-and at most 2^32 particles per sheet, every particle in the world has its own
-key. The old 32-bit key, `pcg(pcg(index) + seed)`, could not promise that: two
-sheets drew from the same 2^32 keys, so a 4-billion-particle sheet was a
-reshuffle of every other one.
+A Feistel network is invertible whatever its round function, and `pcg` is a
+bijection, so two particles share a key only if they share both seed and
+index. With unique sheet seeds and at most 2^32 particles per sheet, every
+particle in the world has its own key. The old 32-bit key,
+`pcg(pcg(index) + seed)`, could not promise that: two sheets drew from the
+same 2^32 keys, so a 4-billion-particle sheet was a reshuffle of every other
+one. Hashing the seed first gives every seed bit two `pcg` rounds before it
+reaches `key.x`; with one, `key.x` inherited `pcg`'s own weak bits.
 
 | WGSL | meaning |
 | --- | --- |
 | `alias Key = vec2u` | a particle key |
-| `particleKey(index, seed) -> Key` | the bijection above, about 27 integer ops |
+| `particleKey(index, seed) -> Key` | the bijection above: four `pcg` calls, about 40 integer ops, and the seed's one can be hoisted out of a loop over one sheet |
 | `draw(key, k) -> u32` | k-th random word. `k = 0, 1` are the key words (free, and together all 64 bits). `k >= 2` mix both words, one `pcg` each |
 | `u01(h) -> f32` | uniform in [0, 1) from the top 24 bits, never 1 |
-| `tri(h) -> f32` | triangular on (-1, 1) |
+| `tri(h) -> f32` | triangular on (-1, 1), variance 1/6: `u01`-style 24-bit uniforms from `h` and `pcg(h)`, subtracted. Exact in f32, 2^25 - 1 values |
 | `pcg(v) -> u32` | 32-bit bijective hash |
 | `TAU` | 2 pi |
 
