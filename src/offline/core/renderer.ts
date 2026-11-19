@@ -168,7 +168,7 @@ export class StatelessRenderer {
     };
   }
 
-  /** Simulated seconds at the middle of a frame's shutter. */
+  /** Law time (seconds) at the middle of a frame's shutter. */
   frameTime(frame: number): number {
     return this.job.timeOffset + (frame / this.job.fps) * this.job.timeScale;
   }
