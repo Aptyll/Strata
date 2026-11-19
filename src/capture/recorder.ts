@@ -4,6 +4,7 @@
  */
 import type { AudioBufferSource, BufferTarget, StreamTarget, StreamTargetChunk, VideoCodec, VideoSample } from 'mediabunny';
 import { type AnyCanvas, FilterStage, Resampler, cssFilterOf, downloadBlob, timestampName } from './util';
+import { I420Converter } from './yuv';
 
 export type CaptureCodec = 'avc' | 'hevc' | 'vp9' | 'av1';
 
@@ -87,6 +88,13 @@ export interface RecordingOptions {
    * change shows up in the video. Null records the raw canvas pixels.
    */
   filter?: string | null;
+  /**
+   * 'limited' (default): the recorder converts frames to BT.709 limited
+   * range YUV itself, which every player, editor and converter reads the
+   * same way. 'full': hand the encoder RGB and let the browser convert, which
+   * gives full-range YUV that some editors misread (faint pixels turn black).
+   */
+  range?: 'limited' | 'full';
   /**
    * A soundtrack to mux in, as an AAC track (Opus where the browser cannot
    * encode AAC). Needs fixed timing. The recorder pulls audio after every
@@ -283,6 +291,7 @@ async function openRecording(canvas: AnyCanvas, opts: RecordingOptions): Promise
   // baked in last, after the downsample.
   let resampler: Resampler | null = null;
   let filterStage: FilterStage | null = null;
+  const yuv = opts.range === 'full' ? null : new I420Converter();
   const source = new VideoSampleSource({
     codec,
     bitrate,
@@ -389,7 +398,12 @@ async function openRecording(canvas: AnyCanvas, opts: RecordingOptions): Promise
         }
         const filter = opts.filter === undefined ? cssFilterOf(canvas) : opts.filter;
         if (filter) frame = (filterStage ??= new FilterStage()).draw(frame, width, height, filter);
-        sample = new VideoSample(frame, { timestamp, duration: frameDuration });
+        sample = yuv
+          ? new VideoSample(yuv.convert(frame, width, height, timestamp, frameDuration), {
+              timestamp,
+              duration: frameDuration,
+            })
+          : new VideoSample(frame, { timestamp, duration: frameDuration });
       } catch (err) {
         closeInput();
         return Promise.reject(err);
