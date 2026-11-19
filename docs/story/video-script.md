@@ -10,8 +10,9 @@ against the real results before recording.
 
 - Blur personal details in every screen recording: machine names, local
   folder paths, email addresses.
-- Fill in `[RESULT]` lines only with numbers measured on the RTX 2070. If the
-  trillion still did not finish, keep the honest version of that segment.
+- Fill in bracketed lines only with numbers measured on the RTX 2070. The
+  first trillion still is confirmed: 28.9 seconds, exactly 10^12 particles
+  evaluated (real frames took 26 to 52 seconds depending on framing).
 - Say "rendered", never "simulated", for the trillion. The simulated tiers are
   the 100 million and 1 billion runs.
 
@@ -182,10 +183,10 @@ separate.
 > frames per second. Eight hundred million at fifteen. My old record was four
 > million.
 >
-> Three minutes later, my card finished its first trillion-particle 4K frame,
-> in `[CONFIRM from the frame's stats file: 28.9 seconds, with all 10^12
-> particles evaluated]`. At 4K, that's about a hundred and twenty thousand
-> particles per pixel, on average. This is it.
+> Three minutes later, my card finished its first trillion-particle 4K frame.
+> Twenty-nine seconds. And the counter on the GPU says it evaluated exactly one
+> trillion particles, not one fewer. At 4K, that's about a hundred and twenty
+> thousand particles per pixel, on average. This is it.
 >
 > `[If the trillion clip finished: "And here it is, moving." If not: "The moving
 > version is still rendering. I'll pin it in the comments."]`
