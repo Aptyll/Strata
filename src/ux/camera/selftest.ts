@@ -1,11 +1,11 @@
 /**
- * Dependency-free checks for the camera rig. Run with:
+ * Dependency-free checks for the camera rig. `npm test` runs them through
+ * ./camera.test.ts; to run them alone:
  *
  *   npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module
  *
- * Deliberately not named *.test.ts so it stays out of whatever test runner
- * the engine picks, and it imports nothing from Node so it type checks under
- * a browser-only tsconfig.
+ * The file imports nothing from Node, so it type checks under a browser-only
+ * tsconfig, and it throws when a check fails.
  */
 
 import { createCamera, orientationFromYawPitch, planeTargetFromDesc } from "./engine";
@@ -14,13 +14,15 @@ import type { PlaneTarget } from "./rig";
 import {
   mat4TransformPoint,
   quatAngle,
+  quatFromAxisAngle,
   quatRotate,
+  v3addScaled,
   v3dist,
   v3dot,
   v3len,
   v3sub,
 } from "./math";
-import type { Vec3 } from "./math";
+import type { Quat, Vec3 } from "./math";
 
 let failures = 0;
 let checks = 0;
@@ -354,6 +356,162 @@ const still = { idle: { enabled: false } };
   run(cam, 5);
   const pose = cam.getPose();
   check("pivot is pulled back inside the bounds", v3len(pose.target) <= 50.5, `${v3len(pose.target)}`);
+}
+
+// --- pan, zoom and fly are scaled to the sheets -------------------------------------------
+{
+  // The eye sits at z = 30 looking down -Z, with the pivot at the origin. Two sheets face it
+  // well beyond the pivot: A at depth 90 and B another 40 behind.
+  const level: Quat = [0, 0, 0, 1];
+  const A: PlaneTarget = { id: "A", center: [0, 0, -60], normal: [0, 0, 1], width: 60, height: 60 };
+  const B: PlaneTarget = { id: "B", center: [0, 0, -100], normal: [0, 0, 1], width: 60, height: 60 };
+  const make = (planes: PlaneTarget[] = [A, B], distance = 30, target: Vec3 = [0, 0, 0]): CameraRig => {
+    const cam = new CameraRig({ ...still, initial: { target, orientation: level, distance } });
+    cam.setViewport(1000, 1000);
+    cam.setPlanes(planes);
+    cam.update(1 / 60);
+    return cam;
+  };
+  /** Where the eye is heading, read back from the goal pose. */
+  const goalEye = (cam: CameraRig): Vec3 => {
+    const g = cam.getGoalPose();
+    return v3addScaled(g.target, quatRotate(g.orientation, [0, 0, 1]), g.distance);
+  };
+  /** The point of the plane z = `z` under a screen position. */
+  const under = (cam: CameraRig, ndcX: number, ndcY: number, z: number): Vec3 => {
+    const ray = cam.screenRay(ndcX, ndcY);
+    return v3addScaled(ray.origin, ray.direction, (z - ray.origin[2]) / ray.direction[2]);
+  };
+  const min = make().options.minDistance;
+
+  // Grab: the pivot goes to the sheet under the pointer and nothing moves on screen.
+  {
+    const cam = make();
+    const eye = cam.eye;
+    const q = cam.getPose().orientation;
+    check("grab reports the sheet under the pointer", cam.grab(0.3, 0.2));
+    cam.update(1 / 60);
+    check("grab moves nothing on screen", v3dist(eye, cam.eye) < 1e-9 && quatAngle(q, cam.getPose().orientation) < 1e-9);
+    check("grab puts the pivot at the depth of the sheet", near(cam.getGoalPose().distance, 90, 1e-6), `${cam.getGoalPose().distance}`);
+    check("grab misses over open space", !make([{ ...A, center: [100, 0, -60] }]).grab(0, 0));
+  }
+
+  // Pan: the sheet the drag started on stays under the pointer, however far the pivot was from it.
+  {
+    const cam = make();
+    const grabbed = under(cam, 0.5, 0.25, -60);
+    cam.grab(0.5, 0.25);
+    cam.pan(-0.5, -0.25);
+    run(cam, 2);
+    const ndc = mat4TransformPoint(cam.viewProjection, grabbed);
+    check("pan keeps the grabbed sheet under the pointer", near(ndc[0], 0, 1e-3) && near(ndc[1], 0, 1e-3), `${ndc}`);
+  }
+
+  // Zoom: closes in on the sheet under the pointer, which stays under the pointer.
+  {
+    const cam = make();
+    const anchor = under(cam, 0.3, 0.2, -60);
+    cam.zoom(-0.5, 0.3, 0.2);
+    run(cam, 2);
+    const ndc = mat4TransformPoint(cam.viewProjection, anchor);
+    check("zoom keeps the sheet point under the pointer", near(ndc[0], 0.3, 1e-3) && near(ndc[1], 0.2, 1e-3), `${ndc}`);
+    check("zoom closes in on the sheet, not on the pivot", near(cam.eye[2] + 60, 90 * Math.exp(-0.5), 1e-2), `${cam.eye[2] + 60}`);
+  }
+
+  // Scrolling in never stalls: it reaches the closest look at A, goes through it, does the same
+  // at B, and keeps going over the open space behind.
+  {
+    const cam = make();
+    let closestA = Infinity;
+    let closestB = Infinity;
+    let smallestShare = Infinity;
+    let z = goalEye(cam)[2];
+    for (let notch = 0; notch < 120; notch++) {
+      cam.zoom(-0.15, 0.3, 0.2);
+      cam.update(1 / 60);
+      const next = goalEye(cam)[2];
+      // What a notch has to make progress against: the sheet ahead, or the open-space floor.
+      const ahead = z > -60 ? z + 60 : z > -100 ? z + 100 : Infinity;
+      smallestShare = Math.min(smallestShare, (z - next) / Math.min(ahead, 0.25 * 60));
+      z = next;
+      if (z > -60) closestA = Math.min(closestA, z + 60);
+      else if (z > -100) closestB = Math.min(closestB, z + 100);
+    }
+    check("zoom stops for a closest look at the sheet", closestA >= min * 0.999 && closestA <= min * 1.2, `${closestA}`);
+    check("the next notch goes through the sheet", closestB < Infinity);
+    check("zoom stops for a closest look at the sheet behind", closestB >= min * 0.999 && closestB <= min * 1.2, `${closestB}`);
+    check("zoom carries on over open space", z < -100 - 10, `${z}`);
+    check("every notch makes progress", smallestShare > 0.08, `${smallestShare}`);
+  }
+
+  // One huge step lands on the closest look instead of going through, and backing out from
+  // there is as fine as getting in.
+  {
+    const cam = make();
+    cam.zoom(-100);
+    check("a huge zoom step stops at the sheet", near(goalEye(cam)[2] + 60, min, 1e-9), `${goalEye(cam)[2] + 60}`);
+    cam.zoom(0.15);
+    check("zooming out from the closest look is just as fine", near(goalEye(cam)[2] + 60, min * Math.exp(0.15), 1e-9), `${goalEye(cam)[2] + 60}`);
+    cam.zoom(-100);
+    cam.zoom(-100);
+    check("pushing on from the closest look goes through", near(goalEye(cam)[2] + 100, min, 1e-9), `${goalEye(cam)[2] + 100}`);
+  }
+
+  // A pivot left right in front of the eye, over open space: grab puts it back out at the
+  // nearest sheet ahead, so pan and zoom are not scaled to almost nothing.
+  {
+    const aside: PlaneTarget = { ...A, center: [100, 0, -60] };
+    const cam = make([aside], 0.05, [0, 0, 29.95]);
+    const eye = cam.eye;
+    cam.grab(0, 0);
+    cam.update(1 / 60);
+    check("grab over open space moves nothing on screen", v3dist(eye, cam.eye) < 1e-9);
+    check("grab over open space reaches for the nearest sheet ahead", near(cam.getGoalPose().distance, Math.hypot(70, 90), 1e-6), `${cam.getGoalPose().distance}`);
+  }
+
+  // Fly: fast in the open, slower toward a sheet, and through it rather than toward it forever.
+  {
+    const cam = make();
+    cam.setMove(0, 0, 1);
+    run(cam, 1);
+    const first = 30 - cam.eye[2];
+    check("fly speed follows the clearance to the nearest sheet", first > 30 && first < 60, `${first}`);
+    run(cam, 11);
+    check("fly goes through a sheet", cam.eye[2] < -60, `${cam.eye[2]}`);
+
+    // Looking at a sheet from 0.2 away: sideways goes at that depth, forward goes through.
+    const close = make([A], 0.2, [0, 0, -60]);
+    close.setMove(1, 0, 0);
+    run(close, 1);
+    check("sliding across a sheet seen up close is slow", close.eye[0] > 0.1 && close.eye[0] < 0.25, `${close.eye[0]}`);
+    close.setMove(0, 0, 1);
+    run(close, 1);
+    check("flying forward from up close goes through", close.eye[2] < -63, `${close.eye[2]}`);
+
+    // The eye in the plane of a sheet, looking along it: nothing is in front to slow down for.
+    const inPlane = new CameraRig({
+      ...still,
+      initial: { target: [-5, 0, -60], orientation: quatFromAxisAngle([0, 1, 0], Math.PI / 2), distance: 5 },
+    });
+    inPlane.setPlanes([A]);
+    inPlane.update(1 / 60);
+    const start = inPlane.eye;
+    inPlane.setMove(1, 0, 0);
+    run(inPlane, 1);
+    check("the camera is never stuck in the plane of a sheet", v3dist(start, inPlane.eye) > 3, `${v3dist(start, inPlane.eye)}`);
+  }
+
+  // Limits: the world can be zoomed out to a small cluster, not out of sight.
+  {
+    const cam = make();
+    cam.limitTo([A, B]);
+    const radius = 20 + 0.5 * Math.hypot(60, 60);
+    check("limitTo bounds the pivot around the sheets", cam.options.bounds !== null && v3dist(cam.options.bounds.center, [0, 0, -80]) < 1e-9 && near(cam.options.bounds.radius, 4 * radius, 1e-9));
+    cam.zoom(100);
+    check("zooming out stops with the sheets still in sight", near(cam.getGoalPose().distance, 8 * radius, 1e-6), `${cam.getGoalPose().distance}`);
+    cam.limitTo([]);
+    check("limitTo with no sheets restores the original limits", cam.options.bounds === null && cam.options.maxDistance === 2000);
+  }
 }
 
 // --- robustness ----------------------------------------------------------------------
