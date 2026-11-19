@@ -142,20 +142,59 @@ export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number,
 
 // --------------------------------------------------------------- loupe ----
 
-/** Deterministic dice roll over the lit pixels of a count grid. */
-export function rollPixel(lo: Uint32Array, hi: Uint32Array, width: number, height: number, dice: number): { x: number; y: number; count: bigint } {
+/** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
+export const LOUPE_MIN = 10_000;
+export const LOUPE_MAX = 50_000;
+
+/** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
+export const LOUPE_SIZE = 2160;
+
+/**
+ * Deterministic dice roll over a count grid for a pixel holding between `min`
+ * and `max` particles. Opened up at LOUPE_SIZE squared, 50,000 dots are about
+ * 10 pixels apart, so every one reads as a separate dot (a 3,000,000 pixel is
+ * grey static). Tries random pixels in the central 60% first, then the whole
+ * frame, then falls back to the lit pixel whose count is closest to the range.
+ */
+export function rollPixel(
+  lo: Uint32Array,
+  hi: Uint32Array,
+  width: number,
+  height: number,
+  dice: number,
+  min = LOUPE_MIN,
+  max = LOUPE_MAX,
+): { x: number; y: number; count: bigint } {
+  const countAt = (i: number): bigint => (BigInt(lo[i]) + (BigInt(hi[i]) << 32n)) / 65536n;
+  const lo64 = BigInt(min);
+  const hi64 = BigInt(max);
   let h = pcg(dice >>> 0);
-  for (let tries = 0; tries < 100000; tries++) {
-    h = pcg(h);
-    // Keep away from the edges so the loupe pixel is a typical one.
-    const x = Math.floor(width * 0.2 + ((h >>> 8) / 16777216) * width * 0.6);
-    h = pcg(h);
-    const y = Math.floor(height * 0.2 + ((h >>> 8) / 16777216) * height * 0.6);
-    const i = y * width + x;
-    const units = BigInt(lo[i]) + (BigInt(hi[i]) << 32n);
-    if (units > 0n) return { x, y, count: units / 65536n };
+  for (const span of [0.6, 1]) {
+    for (let tries = 0; tries < 200000; tries++) {
+      h = pcg(h);
+      const x = Math.floor(width * (0.5 - span / 2) + ((h >>> 8) / 16777216) * width * span);
+      h = pcg(h);
+      const y = Math.floor(height * (0.5 - span / 2) + ((h >>> 8) / 16777216) * height * span);
+      const count = countAt(y * width + x);
+      if (count >= lo64 && count <= hi64) return { x, y, count };
+    }
   }
-  throw new Error("No lit pixel found for the loupe");
+  // Full scan: the lit pixel nearest the range, ties broken by grid order.
+  let best = -1;
+  let bestGap = -1;
+  for (let i = 0; i < lo.length; i++) {
+    if (lo[i] === 0 && hi[i] === 0) continue;
+    const c = Number(countAt(i));
+    if (c === 0) continue;
+    const gap = c < min ? min / c : c > max ? c / max : 1;
+    if (best < 0 || gap < bestGap) {
+      best = i;
+      bestGap = gap;
+      if (gap === 1) break;
+    }
+  }
+  if (best < 0) throw new Error("No lit pixel found for the loupe");
+  return { x: best % width, y: Math.floor(best / width), count: countAt(best) };
 }
 
 /**
