@@ -11,7 +11,7 @@
  * `?autocam=1` in the URL. Any camera input (click or drag on the canvas,
  * the wheel, a camera key) hands control straight back, with the camera left
  * exactly where the tour had it. Keys that do not move the camera (Esc, H,
- * F, ?, P screenshot, V record, T theme, R dice, [ ] - =) leave the tour
+ * F, ?, I about, P screenshot, V record, T theme, R dice, [ ] - =) leave the tour
  * running, so you can record it or change the look while it plays.
  *
  * The director itself is DOM-free (./director.ts, ./shots.ts). Design notes:
@@ -55,7 +55,7 @@ const PARAM = "autocam";
 
 /** Keys that never stop the tour: they open menus, capture, or change the look, not the view. */
 const PASSTHROUGH = new Set([
-  "KeyC", "Escape", "KeyH", "KeyF", "Slash", "KeyP", "KeyV", "KeyT", "KeyR",
+  "KeyC", "Escape", "KeyH", "KeyF", "Slash", "KeyP", "KeyV", "KeyT", "KeyR", "KeyI",
   "BracketLeft", "BracketRight", "Minus", "Equal", "Tab",
   "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight",
 ]);

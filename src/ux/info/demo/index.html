@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Strata information layer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+<canvas id="c"></canvas>
+<!-- The information layer (src/ux/info) exactly as the app mounts it, over a CPU stand-in
+     for the engine, so it runs without WebGPU. Run `npm run dev` and open /src/ux/info/demo/
+       H         stats line with labelled counts (then point at a sheet)
+       double-click a sheet   the sheet label, as when the camera faces a sheet
+       ?         every control      I   the about card      R   roll new behaviors
+     #about, #keys and #stats in the address open that view on load. -->
+<script type="module" src="./main.ts"></script>

@@ -7,8 +7,12 @@
  *   menu      planes, rasterizer, look (bloom, trails, white point, pointer
  *             parallax, plane crossings), performance (hold frame rate,
  *             target fps, challenge)
- *   stats     "total": particle capacity across every plane
- *   keys      ] [ particles, = - brightness, G nearest plane (rows in ./keys.ts)
+ *   stats     "total": particle capacity across every plane (shown as "stored")
+ *   keys      ] [ particles, = - brightness, G nearest sheet (rows in ./keys.ts)
+ *
+ * Last, the information layer (src/ux/info) gives the stats their words
+ * (simulated, stored, sheets) and adds the sheet label, the full controls
+ * list and the about card behind I.
  *
  * Capture adds its own "capture" section and keys (src/capture/app.ts).
  * Registration order is menu order, so keep new entries at the end of their group.
@@ -17,8 +21,9 @@ import type { AppContext } from "../core/contracts";
 import type { ParallaxCamera } from "../depth";
 import type { DensitySettings } from "../render";
 import type { EngineCamera } from "../ux/camera";
-import { formatCount, type Hud } from "../ux/hud/index.js";
+import type { Hud } from "../ux/hud/index.js";
 import { mountHud } from "../ux/hud/wire";
+import { mountInfo } from "../ux/info";
 import { mountThemes } from "../ux/theme";
 import type { BudgetChoice } from "./budget";
 import type { RenderGraph } from "./graph";
@@ -57,11 +62,12 @@ export function mountAppHud({ app, canvas, scenes, render, budget, camera, view 
     // Particles stay where they are and start obeying the new rule, instead of a hard cut.
     transition: { swapBehavior: (plane, target) => render.sim.setBehavior(plane, target) },
   });
-  hud.defineStat("total", { label: "total", format: formatCount });
   mountThemes(hud, canvas); // color themes: Esc menu, T to cycle, ?theme=red
 
   registerMenu(hud, { scenes, render, budget, view });
   registerKeys(hud, { scenes, camera });
+  // What the words on screen say: labelled counts, the sheet label, every control behind ?, about behind I.
+  mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
 
   return {
     hud,
