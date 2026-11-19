@@ -49,6 +49,10 @@ export interface ChallengeResult {
   sustained: boolean;
   /** Why the ramp stopped: frame rate, a memory or mode ceiling, or the floor. */
   stoppedBy: string | null;
+  /** Failed windows the ramp measured again instead of believing at once (noise it ignored). */
+  remeasuredWindows: number;
+  /** Times a confirming count's headroom reopened the ramp's search. */
+  rampReopens: number;
   width: number;
   height: number;
   planes: number;
@@ -303,6 +307,8 @@ export async function startChallenge(
       targetFps,
       sustained,
       stoppedBy: ramp?.stop ?? null,
+      remeasuredWindows: ramp?.remeasured ?? 0,
+      rampReopens: ramp?.reopens ?? 0,
       width: canvas.width,
       height: canvas.height,
       planes: engine.planeCount,

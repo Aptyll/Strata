@@ -37,8 +37,8 @@ export const INFO_CSS = `
   max-width: min(calc(var(--st-u) * 84), calc(100% - var(--st-edge-left) - var(--st-edge-right)));
   text-align: right;
   /* A focused sheet fills the view, so this text usually sits on particles, not on the void:
-     the halo three times over, and nothing fainter than dim. */
-  text-shadow: var(--st-halo), var(--st-halo), var(--st-halo);
+     the halo, and nothing fainter than dim. */
+  text-shadow: var(--st-halo);
   opacity: 0;
   transition: opacity var(--st-slow) var(--st-ease-soft);
 }

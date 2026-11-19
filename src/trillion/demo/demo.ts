@@ -2,8 +2,9 @@
 // and shows the exact tally. URL: ?n=1e12&planes=256&w=1920&h=1080&offscreen
 // Laws: default stand-ins, ?offline (src/offline laws), ?strat (the same
 // laws on the stratified fast path). &shot=close for the close-up camera.
-// ?bench&w=3840&h=2160&n=1e10: four-mode bench, wide and close-up.
+// ?bench&w=3840&h=2160&n=1e10: bench of the paths and their math alone, wide and close-up.
 // __trillion.compare(): strata vs plain path, per pixel counts within noise.
+// __trillion.blurTest(): camera blur smears by the expected amount, keeps the count.
 //
 // window.__trillion.selftest() checks that the counter sum equals the landed
 // tally and that two different batch sizes give bit-identical counts.
@@ -15,7 +16,7 @@ const q = new URLSearchParams(location.search);
 const N = Number(q.get('n') ?? 1e10);
 const PLANES = Math.max(1, Number(q.get('planes') ?? Math.max(1, Math.ceil(N / 2 ** 32))));
 const offscreen = q.has('offscreen');
-/** Shared memory counters per workgroup, e.g. ?tile=4096 (16 KB, more workgroups per SM) vs the default 8160 (32 KB). */
+/** Shared memory counters per workgroup, e.g. ?tile=8160 (32 KB) vs the default 4096 (16 KB, more workgroups per SM). */
 const TILE = q.has('tile') ? Number(q.get('tile')) : undefined;
 const info = document.getElementById('info')!;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -166,7 +167,30 @@ async function main(): Promise<void> {
     strat.destroy();
     return out;
   };
-  (window as unknown as Record<string, unknown>).__trillion = { kernel, tally, selftest, compare, device };
+  // Camera blur: a homography delta that slides the sheet `px` pixels along x
+  // during the shutter. Same particles, so the count is kept, the centroid
+  // stays (the shutter is centred on the frame time) and the x variance grows
+  // by px^2 / 12 (a uniform smear).
+  const blurTest = async (px = 24, n = 4e6): Promise<Record<string, number | boolean>> => {
+    const one = scene(width, height, n, 1, [LAWS[0].id]);
+    const plane = one[0];
+    const h = plane.homography;
+    const moments = (c: Float64Array): number[] => {
+      let s0 = 0, sx = 0, sxx = 0;
+      for (let i = 0; i < c.length; i++) { const x = i % width; s0 += c[i]; sx += c[i] * x; sxx += c[i] * x * x; }
+      return [s0, sx / s0, sxx / s0 - (sx / s0) ** 2];
+    };
+    const a = await renderFrame(kernel, [plane], { targetMs: 1e9 });
+    const [sa, ma, va] = moments(await kernel.readCounts());
+    const blurred = { ...plane, homographyDelta: [px * h[6], px * h[7], px * h[8], 0, 0, 0, 0, 0, 0] };
+    const b = await renderFrame(kernel, [blurred], { targetMs: 1e9 });
+    const [sb, mb, vb] = moments(await kernel.readCounts());
+    const growth = vb - va;
+    const ok = sa === a.landed && sb === b.landed && Math.abs(b.inView - a.inView) / a.inView < 0.05
+      && Math.abs(mb - ma) < 0.5 && Math.abs(growth / (px * px / 12) - 1) < 0.15;
+    return { ok, landedSharp: a.landed, landedBlurred: b.landed, centroidShift: mb - ma, varianceGrowth: growth, expected: px * px / 12 };
+  };
+  (window as unknown as Record<string, unknown>).__trillion = { kernel, tally, selftest, compare, blurTest, device };
 }
 
 interface BenchRow { shot: string; mode: string; particles: number; seconds: number; billionPerSecond: number; secondsPer1T: number; tiled: string }
@@ -179,11 +203,15 @@ interface BenchRow { shot: string; mode: string; particles: number; seconds: num
 async function bench(device: GPUDevice, width: number, height: number, n: number, planesCount: number): Promise<BenchRow[]> {
   const plain = await TrillionKernel.create(device, { width, height, laws: OFFLINE_LAWS, tileBins: TILE });
   const strat = await TrillionKernel.create(device, { width, height, laws: STRATIFIED_OFFLINE_LAWS, tileBins: TILE });
+  // Math rows write no counters: the floor for their path. The plain math row
+  // runs first and last, so clock drift between a cool and a hot GPU shows.
   const modes: { mode: string; k: TrillionKernel; m: 'full' | 'math' | 'noTile' }[] = [
     { mode: 'math only', k: plain, m: 'math' },
     { mode: 'random global atomics', k: plain, m: 'full' },
+    { mode: 'strata math only', k: strat, m: 'math' },
     { mode: 'run merge', k: strat, m: 'noTile' },
     { mode: 'run merge + tile', k: strat, m: 'full' },
+    { mode: 'math only, again', k: plain, m: 'math' },
   ];
   const rows: BenchRow[] = [];
   const ids = OFFLINE_LAWS.map((l) => l.id);

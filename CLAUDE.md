@@ -73,19 +73,30 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
+<<<<<<< HEAD
 | `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
+=======
+| `hue/` | one color per sheet: a points rasterizer plus a tint pass (`?raster=hue`, off by default) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
+>>>>>>> origin/main
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
+| `color-life/` | particle life with color species, simulated on the GPU; standalone page `/src/color-life/demo/` |
 | `stateless/` | 64-bit particle keys and RNG (`rng.ts`), stateless motion laws (`laws/`: veil, galaxy, web, ribbons) and their demo |
-| `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
+| `trillion/` | faster trillion splat kernel and laws, with its own demo; the offline renderer can run it (`kernel: "trillion"`), the default is still the offline kernel |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
 | `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
-| `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
+| `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find, ladder, collapse) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
 | `site/` | the published site's wrapper, build-time only: the privacy lock, page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
+
+A new folder under `src/` gets a `README.md` and a row in three maps: this
+table, `src/README.md` and `docs/CODEMAP.md`. `npm run build` ends with a
+warning when a map falls behind or a doc names a path that is gone
+(`npm run check:docs` lists every gap).
 
 Frame stage order: `simulate`, `interplane`, `rasterize`, `depth`, `tonemap`,
 `ui`, `capture`. Exactly one rasterize pass is enabled at a time.
@@ -99,6 +110,7 @@ npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
 npm test             # every *.test.* file under src/: a few seconds, no GPU
 npm run smoke        # after a build: opens every built page headless, fails on errors
+npm run check:docs   # do the maps and the paths named in the docs still match the code
 npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
@@ -108,7 +120,7 @@ npm run record       # render manifests: make, check, reproduce (src/manifest)
 | `/?challenge` | Challenge mode (`C` copies the result JSON) |
 | `/?record` | 1T 4K still from the app; `?record=1e12&size=4k&frames=1` (see `src/record/index.ts`) |
 | `/src/offline/web/` | offline renderer: preset, choose folder, render, export mp4 |
-| `/src/proof/web/` | proof shots (dev only, not in the production build) |
+| `/src/proof/web/` | proof shots (ships in the production build) |
 | `/src/perf/bench/?bench=1` | benchmark sweep 1M to 800M |
 | `/src/verify/` | shader checks in a real browser |
 
