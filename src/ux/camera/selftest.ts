@@ -394,6 +394,11 @@ const still = { idle: { enabled: false } };
   cam.state = { target: [0, 0, 0], yaw: Math.PI / 2, pitch: 0, distance: 5, fovY: 1 };
   cam.update(1 / 60);
   check("assigning state moves the camera", v3dist(cam.eye(), [5, 0, 0]) < 1e-4, `${cam.eye()}`);
+  cam.state = { target: [0, 0, 0], yaw: 0.6, pitch: 0.35, distance: 14, fovY: 1 };
+  cam.update(1 / 60);
+  // Same numbers as src/camera.ts: eye = target + distance * (cp*sy, sp, cp*cy).
+  const want: Vec3 = [14 * Math.cos(0.35) * Math.sin(0.6), 14 * Math.sin(0.35), 14 * Math.cos(0.35) * Math.cos(0.6)];
+  check("yaw and pitch match the engine's scene convention", v3dist(cam.eye(), want) < 1e-4, `${cam.eye()}`);
 
   const target = planeTargetFromDesc({
     position: [0, 0, 0],

@@ -1,5 +1,5 @@
 import { behaviors, getBehavior } from "./behaviors";
-import { OrbitCamera } from "./camera";
+import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
 import type { AppContext, ParticleBudget, Scene } from "./core/contracts";
 import { FrameGraph } from "./core/frameGraph";
@@ -46,7 +46,9 @@ async function start(): Promise<void> {
   const sim = new Simulation(gpu);
   const graph = new FrameGraph(gpu);
   graph.add(sim, ...createPasses(gpu));
-  const camera = new OrbitCamera(canvas);
+  // Camera feel lives in src/ux/camera (see docs/ux/camera.md).
+  const camera = createCamera(undefined, { near: 0.01, far: 2000 });
+  attachCameraInput(canvas, camera.rig);
   const budget: ParticleBudget = new VisibleOnlyBudget();
 
   let total = 0;
@@ -56,6 +58,9 @@ async function start(): Promise<void> {
     sim.setPlanes(scene.planes);
     total = sim.planes.reduce((n, p) => n + p.capacity, 0);
     camera.state = structuredClone(scene.camera);
+    // Sheets the camera can double-click, step through and tour; H flies back here.
+    camera.rig.setPlanes(scene.planes.map(planeTargetFromDesc));
+    camera.rig.setHome(poseFromState(scene.camera));
   };
   loadScene(scene);
 
