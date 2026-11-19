@@ -6,6 +6,7 @@
  * MAX_BEHAVIOR_PARAMS floats in the plane uniform.
  */
 import { MAX_BEHAVIOR_PARAMS, type Behavior, type ParamSpec } from "../../core/contracts";
+import { seededRandom } from "../../math";
 
 /**
  * ParamSpec with optional extras for UI and preset tools. It is structurally a
@@ -56,7 +57,11 @@ export function diffParams(behavior: Behavior, values: ParamValues): ParamValues
   return out;
 }
 
-/** Fill the uniform block: MAX_BEHAVIOR_PARAMS floats in declaration order, unused slots 0. */
+/**
+ * The 8-float param block in declaration order, unused slots 0, values clamped
+ * to min..max. A preset tool: the engine uploads planeParamValues
+ * (src/gpu/shaderLib.ts), which does not clamp.
+ */
 export function packParams(
   behavior: Behavior,
   overrides?: ParamValues,
@@ -90,17 +95,8 @@ export function fromUnit(spec: RichParamSpec, t: number): number {
   return clampParam(spec, v);
 }
 
-/** Small seeded generator (mulberry32) so random presets are reproducible from a seed. */
-export function seededRandom(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// The seeded generator behind randomizeParams (mulberry32, from src/math.ts), re-exported for preset tools.
+export { seededRandom };
 
 export interface RandomizeOptions {
   /** Same seed, same result. Default 1. */

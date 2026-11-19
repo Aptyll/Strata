@@ -124,16 +124,25 @@ async function setup(
   lod: boolean,
 ): Promise<Setup> {
   device.pushErrorScope('out-of-memory');
-  const engine = new PerfEngine(device, {
-    format,
-    lod: { culling: cull, lod, pixelDensity: cfg.density, simulateHidden: cfg.hidden },
-  });
-  // A plane must fit in one page; use more planes when the request needs it.
-  const needed = Math.max(planes, Math.ceil(n / engine.pool.maxRange));
-  const ids = q.get('behaviors')?.split(',') ?? behaviors.map((b) => b.id);
-  const descs = scatterLayout({ planes: needed, totalParticles: n, behaviorIds: ids, seed: count(q.get('seed'), 1) });
-  engine.setPlanes(descs, getBehavior);
-  const world: BenchWorld = { radius: scatterRadius(needed), planes: needed, particles: engine.particleCount };
+  let engine: PerfEngine | null = null;
+  let world: BenchWorld;
+  try {
+    engine = new PerfEngine(device, {
+      format,
+      lod: { culling: cull, lod, pixelDensity: cfg.density, simulateHidden: cfg.hidden },
+    });
+    // A plane must fit in one page; use more planes when the request needs it.
+    const needed = Math.max(planes, Math.ceil(n / engine.pool.maxRange));
+    const ids = q.get('behaviors')?.split(',') ?? behaviors.map((b) => b.id);
+    const descs = scatterLayout({ planes: needed, totalParticles: n, behaviorIds: ids, seed: count(q.get('seed'), 1) });
+    engine.setPlanes(descs, getBehavior);
+    world = { radius: scatterRadius(needed), planes: needed, particles: engine.particleCount };
+  } catch (e) {
+    // Pop the scope even on a throw, or it would swallow every later error.
+    await device.popErrorScope();
+    engine?.destroy();
+    throw e;
+  }
   const oom = await device.popErrorScope();
   if (oom) {
     engine.destroy();

@@ -1,90 +1,33 @@
 /**
- * Single-sheet stand-in for the engine, used only by the behavior preview page.
+ * Single-sheet host for the behavior preview page.
  *
- * It provides the WGSL scope that docs/architecture.md promises a behavior
- * (Particle, globals, plane, rand, noise2, outside, wrap, respawn) so a
- * behavior file can be seen and tuned on its own. The engine in src/core owns
- * the real implementation; if the two ever disagree, the engine is right.
+ * It runs the engine's own compute shader (buildSimShader in
+ * src/gpu/shaderLib.ts) with the engine's uniform layouts (packGlobals,
+ * packPlane), so a behavior moves here exactly as it does in the app. Only
+ * the drawing is simpler: one additive point per particle into a float
+ * target, then the basic tone curve.
  */
-import { MAX_BEHAVIOR_PARAMS, type Behavior } from "../../core/contracts";
+import type { Behavior } from "../../core/contracts";
+import { requestGpuDevice } from "../../gpu/context";
+import {
+  buildSimShader,
+  dispatchSize,
+  GLOBALS_SIZE,
+  GLOBALS_WGSL,
+  packGlobals,
+  packPlane,
+  PARTICLE_STRIDE,
+  PLANE_UNIFORM_SIZE,
+  planeParamValues,
+} from "../../gpu/shaderLib";
+import { BASIC_TONE_WGSL, FULLSCREEN_VS_WGSL } from "../../gpu/wgsl";
+import { mat4Identity } from "../../math";
 
-const PARTICLE_BYTES = 16;
-const ROW = 65536;
+/** The preview's sheet is the world: its model matrix is the identity. */
+const IDENTITY = mat4Identity();
 
-function scopeWGSL(behavior: Behavior): string {
-  const names = Object.keys(behavior.params);
-  const fields: string[] = [];
-  for (let k = 0; k < MAX_BEHAVIOR_PARAMS; k++) fields.push(`  ${names[k] ?? `_unused${k}`}: f32,`);
-  return /* wgsl */ `
-struct Particle { pos: vec2f, vel: vec2f }
-struct Globals { viewProj: mat4x4f, time: f32, dt: f32, frame: u32, brightness: f32 }
-struct Params {
-${fields.join("\n")}
-}
-struct Plane { model: mat4x4f, params: Params, count: u32, seed: f32 }
-
-@group(0) @binding(0) var<uniform> globals: Globals;
-@group(1) @binding(0) var<uniform> plane: Plane;
-@group(1) @binding(1) var<storage, read_write> particles: array<Particle>;
-
-fn strata_pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-
-fn rand(i: u32, salt: u32) -> f32 {
-  let h = strata_pcg(strata_pcg(i + strata_pcg(globals.frame + bitcast<u32>(plane.seed))) + salt * 0x9E3779B9u);
-  return f32(h >> 8u) * (1.0 / 16777216.0);
-}
-
-fn strata_grad(c: vec2i) -> vec2f {
-  let h = strata_pcg(bitcast<u32>(c.x) + strata_pcg(bitcast<u32>(c.y)));
-  let a = f32(h >> 8u) * (6.2831853 / 16777216.0);
-  return vec2f(cos(a), sin(a));
-}
-
-fn noise2(p: vec2f) -> f32 {
-  let i = vec2i(floor(p));
-  let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-  let a = dot(strata_grad(i), f);
-  let b = dot(strata_grad(i + vec2i(1, 0)), f - vec2f(1.0, 0.0));
-  let c = dot(strata_grad(i + vec2i(0, 1)), f - vec2f(0.0, 1.0));
-  let d = dot(strata_grad(i + vec2i(1, 1)), f - vec2f(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-fn outside(pos: vec2f) -> bool {
-  return any(abs(pos) > vec2f(1.0));
-}
-
-fn wrap(pos: vec2f) -> vec2f {
-  return pos - 2.0 * floor(pos * 0.5 + 0.5);
-}
-
-fn respawn(i: u32) -> Particle {
-  var p: Particle;
-  p.pos = vec2f(rand(i, 7001u), rand(i, 7002u)) * 2.0 - 1.0;
-  p.vel = vec2f(0.0);
-  return p;
-}
-
-${behavior.wgsl}
-
-@compute @workgroup_size(64)
-fn simulate(@builtin(global_invocation_id) gid: vec3u) {
-  let i = gid.x + gid.y * ${ROW}u;
-  if (i >= plane.count) { return; }
-  particles[i] = update(particles[i], i);
-}
-`;
-}
-
-const POINTS_WGSL = /* wgsl */ `
-struct Globals { viewProj: mat4x4f, time: f32, dt: f32, frame: u32, brightness: f32 }
-@group(0) @binding(0) var<uniform> globals: Globals;
-
+/** One additive point per particle; brightness from the Globals uniform. */
+export const POINTS_WGSL = /* wgsl */ `${GLOBALS_WGSL}
 @vertex
 fn vs(@location(0) pos: vec2f) -> @builtin(position) vec4f {
   return globals.viewProj * vec4f(pos, 0.0, 1.0);
@@ -96,19 +39,13 @@ fn fs() -> @location(0) vec4f {
 }
 `;
 
-const TONEMAP_WGSL = /* wgsl */ `
+/** Float target to the canvas through the basic tone curve. */
+export const TONEMAP_WGSL = /* wgsl */ `${FULLSCREEN_VS_WGSL}${BASIC_TONE_WGSL}
 @group(0) @binding(0) var hdr: texture_2d<f32>;
 
-@vertex
-fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
-  let p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
-  return vec4f(p[i], 0.0, 1.0);
-}
-
 @fragment
-fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
-  let a = textureLoad(hdr, vec2i(frag.xy), 0).r;
-  let v = pow(1.0 - exp(-a), 1.0 / 2.2);
+fn fs(i: VSOut) -> @location(0) vec4f {
+  let v = basicTone(textureLoad(hdr, vec2i(i.pos.xy), 0).r);
   return vec4f(v, v, v, 1.0);
 }
 `;
@@ -144,18 +81,12 @@ export class PreviewHarness {
   private frame = 0;
   private seed = 0.5;
   private generation = 0;
+  /** CPU copies of the two uniforms. writeBuffer copies at call time, so they are reused. */
+  private readonly globalsBlock = new DataView(new ArrayBuffer(GLOBALS_SIZE));
+  private readonly planeBlock = new DataView(new ArrayBuffer(PLANE_UNIFORM_SIZE));
 
   static async create(canvas: HTMLCanvasElement): Promise<PreviewHarness> {
-    if (!navigator.gpu) throw new Error("WebGPU is not available in this browser.");
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) throw new Error("No WebGPU adapter found.");
-    const device = await adapter.requestDevice({
-      requiredLimits: {
-        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
-        maxBufferSize: adapter.limits.maxBufferSize,
-      },
-    });
-    return new PreviewHarness(canvas, device);
+    return new PreviewHarness(canvas, await requestGpuDevice());
   }
 
   private constructor(
@@ -170,10 +101,10 @@ export class PreviewHarness {
     device.addEventListener("uncapturederror", (e) => console.error(e.error.message));
     void device.lost.then((info) => console.error(`GPU device lost: ${info.message}`));
     this.maxParticles = Math.floor(
-      Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize) / PARTICLE_BYTES,
+      Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize) / PARTICLE_STRIDE,
     );
 
-    this.globals = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.globals = device.createBuffer({ size: GLOBALS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.globalsLayout = device.createBindGroupLayout({
       entries: [
         {
@@ -201,7 +132,7 @@ export class PreviewHarness {
         module: points,
         entryPoint: "vs",
         buffers: [
-          { arrayStride: PARTICLE_BYTES, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }] },
+          { arrayStride: PARTICLE_STRIDE, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }] },
         ],
       },
       fragment: {
@@ -233,11 +164,11 @@ export class PreviewHarness {
     const generation = ++this.generation;
 
     device.pushErrorScope("validation");
-    const module = device.createShaderModule({ code: scopeWGSL(behavior), label: behavior.id });
+    const module = device.createShaderModule({ code: buildSimShader(behavior), label: behavior.id });
     const pipeline = await device
       .createComputePipelineAsync({
         layout: device.createPipelineLayout({ bindGroupLayouts: [this.globalsLayout, this.planeLayout] }),
-        compute: { module, entryPoint: "simulate" },
+        compute: { module, entryPoint: "main" },
       })
       .catch(() => null);
     const validation = await device.popErrorScope();
@@ -259,10 +190,10 @@ export class PreviewHarness {
     this.particles?.destroy();
     this.planeUniform?.destroy();
     this.particles = device.createBuffer({
-      size: this.count * PARTICLE_BYTES,
+      size: this.count * PARTICLE_STRIDE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
-    this.planeUniform = device.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.planeUniform = device.createBuffer({ size: PLANE_UNIFORM_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.planeGroup = device.createBindGroup({
       layout: this.planeLayout,
       entries: [
@@ -294,7 +225,7 @@ export class PreviewHarness {
           data[k * 4 + 1] = Math.random() * 2 - 1;
         }
       }
-      this.device.queue.writeBuffer(particles, start * PARTICLE_BYTES, data);
+      this.device.queue.writeBuffer(particles, start * PARTICLE_STRIDE, data);
     }
   }
 
@@ -310,25 +241,23 @@ export class PreviewHarness {
     const sy = (this.zoom * m) / canvas.height;
     const sheetPixels = (this.zoom * m) ** 2;
 
-    const g = new ArrayBuffer(80);
-    const gf = new Float32Array(g);
-    // Orthographic view of the sheet, column-major.
-    gf.set([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -this.center[0] * sx, -this.center[1] * sy, 0, 1]);
-    gf[16] = this.time;
-    gf[17] = dt;
-    new Uint32Array(g)[18] = this.frame;
-    gf[19] = Math.min(64, (this.exposure * sheetPixels) / this.count);
-    this.device.queue.writeBuffer(this.globals, 0, g);
-
-    const p = new ArrayBuffer(112);
-    const pf = new Float32Array(p);
-    pf.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-    Object.keys(behavior.params).forEach((name, k) => {
-      pf[16 + k] = this.values[name] ?? 0;
+    packGlobals(this.globalsBlock, 0, {
+      // Orthographic view of the sheet, column-major.
+      viewProj: [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -this.center[0] * sx, -this.center[1] * sy, 0, 1],
+      time: this.time,
+      dt,
+      frame: this.frame,
+      brightness: Math.min(64, (this.exposure * sheetPixels) / this.count),
     });
-    new Uint32Array(p)[24] = this.count;
-    pf[25] = this.seed;
-    this.device.queue.writeBuffer(planeUniform, 0, p);
+    this.device.queue.writeBuffer(this.globals, 0, this.globalsBlock.buffer);
+    packPlane(this.planeBlock, 0, {
+      model: IDENTITY,
+      params: planeParamValues(behavior, this.values),
+      count: this.count,
+      seed: this.seed,
+      brightness: 1,
+    });
+    this.device.queue.writeBuffer(planeUniform, 0, this.planeBlock.buffer);
   }
 
   private ensureTarget(): void {
@@ -362,8 +291,7 @@ export class PreviewHarness {
       pass.setPipeline(simPipeline);
       pass.setBindGroup(0, this.globalsGroup);
       pass.setBindGroup(1, planeGroup);
-      const rows = Math.ceil(this.count / ROW);
-      pass.dispatchWorkgroups(rows > 1 ? ROW / 64 : Math.ceil(this.count / 64), rows);
+      pass.dispatchWorkgroups(...dispatchSize(this.count));
       pass.end();
     }
 
