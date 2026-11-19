@@ -28,7 +28,7 @@ export interface ClusterOptions {
 }
 
 /** Small deterministic generator for world layout (not used per particle). */
-function rng(seed: number): () => number {
+export function rng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x9e3779b9) >>> 0;
@@ -36,7 +36,7 @@ function rng(seed: number): () => number {
   };
 }
 
-function randomRotation(r: () => number): Quat {
+export function randomRotation(r: () => number): Quat {
   // Uniform random rotation (Shoemake).
   const u1 = r();
   const u2 = r() * Math.PI * 2;
@@ -48,7 +48,7 @@ function randomRotation(r: () => number): Quat {
 
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-function lawParams(law: LawId, r: () => number): number[] {
+export function lawParams(law: LawId, r: () => number): number[] {
   switch (law) {
     case "kepler":
       // [ecc, twist, innerRadius, concentration, rate, orientScatter, eccScatter, _]

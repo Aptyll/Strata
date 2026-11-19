@@ -33,7 +33,7 @@ export interface Look {
 export const DEFAULT_LOOK: Look = {
   whitePercentile: 0.995,
   headroomStops: 1,
-  contrast: 4096,
+  contrast: 256,
   gamma: 1,
   smoothFrames: 20,
 };
@@ -179,6 +179,18 @@ export function drawLabel(
   const margin = 12 * scale;
   const value = Math.round(255 * opacity);
   const lineHeight = 10 * scale;
+  // Darken a box behind each line first, so the text reads on bright sheets.
+  const pad = 2 * scale;
+  lines.forEach((line, row) => {
+    const y0 = height - margin - (lines.length - row) * lineHeight + 3 * scale;
+    const x1 = Math.min(width, margin + line.length * 6 * scale + pad);
+    for (let y = Math.max(0, y0 - pad); y < Math.min(height, y0 + 7 * scale + pad); y++) {
+      for (let x = Math.max(0, margin - pad); x < x1; x++) {
+        const i = y * width + x;
+        frame[i] = Math.round(frame[i] * 0.2);
+      }
+    }
+  });
   lines.forEach((line, row) => {
     const y0 = height - margin - (lines.length - row) * lineHeight + 3 * scale;
     let x0 = margin;
@@ -194,8 +206,7 @@ export function drawLabel(
               for (let sx = 0; sx < scale; sx++) {
                 const x = x0 + gx * scale + sx;
                 if (x < 0 || x >= width) continue;
-                const i = y * width + x;
-                if (frame[i] < value) frame[i] = value;
+                frame[y * width + x] = value;
               }
             }
           }

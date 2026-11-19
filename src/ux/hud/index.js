@@ -8,6 +8,7 @@
 //                       onChange: v => engine.bloom = v });
 
 import { CSS } from './styles.js';
+import { attachMenuA11y } from './a11y.js';
 import { formatCount, formatExact, formatValue, formatTime, decimalsFor } from './format.js';
 
 export { formatCount, formatExact, formatValue, formatTime };
@@ -769,6 +770,7 @@ export function createHud(options = {}) {
   }
   if (statsOn) setStats(true);
   if (opt.panelOpen) setPanel(true);
+  disposers.push(attachMenuA11y(root)); // dialog roles, focus, keyboard, readable sizes (a11y.js)
   wake();
 
   return {

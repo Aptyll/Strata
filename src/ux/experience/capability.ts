@@ -7,6 +7,8 @@
 // The engine should treat the budget as a starting point and adapt from
 // measured frame time. This only keeps the first seconds from stuttering.
 
+import { adapterOptions } from '../../gpu/adapter-options';
+
 export type GpuStatus = 'ok' | 'insecure-context' | 'no-api' | 'no-adapter' | 'device-failed';
 export type Tier = 'low' | 'mid' | 'high';
 export type Browser = 'chrome' | 'edge' | 'firefox' | 'safari' | 'other';
@@ -113,7 +115,7 @@ export async function detectCapability(env: CapabilityEnv = {}): Promise<Capabil
     status = secure ? 'no-api' : 'insecure-context';
   } else {
     try {
-      adapter = (await nav.gpu.requestAdapter({ powerPreference: 'high-performance' })) as GPUAdapter | null;
+      adapter = (await nav.gpu.requestAdapter(adapterOptions())) as GPUAdapter | null;
     } catch {
       adapter = null;
     }

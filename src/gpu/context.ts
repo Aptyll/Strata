@@ -10,6 +10,7 @@
 import type { GpuContext } from "../core/contracts";
 import { BRUSH_FLOATS, MAX_BRUSHES } from "../core/contracts";
 import { GLOBALS_BRUSHES_OFFSET, GLOBALS_SIZE } from "./shaderLib";
+import { adapterOptions } from "./adapter-options";
 
 export const HDR_FORMAT: GPUTextureFormat = "rgba16float";
 
@@ -26,7 +27,7 @@ export interface GpuDeviceOptions {
  */
 export async function requestGpuDevice(opts: GpuDeviceOptions = {}): Promise<GPUDevice> {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser.");
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  const adapter = await navigator.gpu.requestAdapter(adapterOptions());
   if (!adapter) throw new Error("No WebGPU adapter found.");
   const requiredFeatures: GPUFeatureName[] = [];
   if (opts.timestamps && adapter.features.has("timestamp-query")) requiredFeatures.push("timestamp-query");
