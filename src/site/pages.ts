@@ -20,6 +20,12 @@ export interface ShareCard {
   height: number;
   /** Read out by screen readers where the preview is shown. Say what the picture shows. */
   alt: string;
+  /**
+   * The render manifest of the frame on the card, relative to the repo root.
+   * With it, a test checks that the particle counts in `alt` are the ones the
+   * GPU counted for that frame, so the card cannot drift from its frame.
+   */
+  manifest?: string;
 }
 
 export interface SitePage {
@@ -49,14 +55,18 @@ export const SITE = {
   author: { name: "Aptyll", url: "https://github.com/Aptyll" },
   license: "https://opensource.org/license/mit",
   locale: "en_US",
-  /** Made by share/make-card.py from docs/record/trillion-key2-f0.png; the numbers on it are the ones on that frame's own label (./README.md, "The share card"). */
+  /**
+   * Made by share/make-card.py from docs/record/trillion64-A.png. The two numbers on it are GPU
+   * counts read from that frame's render manifest (./README.md, "The share card").
+   */
   card: {
     file: "src/site/share/strata-1t.jpg",
     width: 1200,
     height: 630,
     alt:
-      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: one large glowing disc " +
-      "in front of hundreds of small spiral and ring sheets. 107,787,615,440 of the particles are in the frame.",
+      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: a spiral disc, " +
+      "a tower of looping ribbons and a sheet of fine rings. 985,878,422,357 of the particles are in the frame.",
+    manifest: "docs/record/trillion64-A.manifest.json",
   } satisfies ShareCard,
 };
 
