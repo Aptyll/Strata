@@ -10,8 +10,9 @@ The shared types live in `src/core/contracts.ts`. Build against those.
 ## Working in parallel
 
 - Add files, do not edit shared ones. A behavior, a pass or a panel is one new
-  file that implements a contract. Behaviors (`src/behaviors/*.behavior.ts`)
-  and panels (`src/ui/*.panel.ts`) are picked up automatically by filename.
+  file that implements a contract. Behaviors (`src/behaviors/*.behavior.ts`),
+  passes (`src/passes/*.pass.ts`, default export `(gpu) => Pass`) and panels
+  (`src/ui/*.panel.ts`) are picked up automatically by filename.
 - If a contract must change, send that as its own small PR first.
 - Visuals: white on black only. Use `TOKENS` for every font, opacity and easing.
 

@@ -1,0 +1,187 @@
+import { getBehavior } from "../behaviors";
+import type { Behavior, FrameContext, GpuContext, Pass, PlaneDesc, PlaneInstance } from "../core/contracts";
+import {
+  buildSimShader,
+  dispatchSize,
+  paramNames,
+  PARTICLE_STRIDE,
+  PLANE_COUNT_OFFSET,
+  PLANE_PARAMS_OFFSET,
+  PLANE_SEED_OFFSET,
+  PLANE_UNIFORM_SIZE,
+} from "../gpu/shaderLib";
+import { fromTRS, seededRandom } from "../math";
+
+interface PlaneGpu extends PlaneInstance {
+  pipeline: GPUComputePipeline;
+  /** The count currently stored in the plane uniform. */
+  uploadedCount: number;
+}
+
+/**
+ * Owns every plane's particle buffer and steps them on the GPU. One compute
+ * pipeline per behavior (compiled lazily, cached), one dispatch per plane.
+ * It is also the `simulate` pass of the frame graph.
+ */
+export class Simulation implements Pass {
+  readonly name = "simulate";
+  readonly stage = "simulate" as const;
+  enabled = true;
+
+  private list: PlaneGpu[] = [];
+  private pipelines = new Map<string, GPUComputePipeline>();
+  private pipelineLayout: GPUPipelineLayout;
+  private countScratch = new Uint32Array(1);
+
+  constructor(private gpu: GpuContext) {
+    this.pipelineLayout = gpu.device.createPipelineLayout({
+      bindGroupLayouts: [gpu.layouts.globals, gpu.layouts.planeSim],
+    });
+  }
+
+  get planes(): readonly PlaneInstance[] {
+    return this.list;
+  }
+
+  /** Replace the whole world. */
+  setPlanes(descs: readonly PlaneDesc[]): void {
+    this.clear();
+    for (const d of descs) this.addPlane(d);
+  }
+
+  addPlane(desc: PlaneDesc): PlaneInstance {
+    const { device, layouts } = this.gpu;
+    const behavior = getBehavior(desc.behaviorId);
+    // A plane's particles live in one buffer, so the device's buffer limits cap its size.
+    const limit = Math.floor(
+      Math.min(device.limits.maxBufferSize, device.limits.maxStorageBufferBindingSize) / PARTICLE_STRIDE,
+    );
+    const capacity = Math.min(Math.max(1, Math.floor(desc.particleCount)), limit);
+    if (capacity < desc.particleCount) {
+      console.warn(`Plane capped at ${capacity} particles by this GPU's buffer limits (asked for ${desc.particleCount}).`);
+    }
+
+    const particles = device.createBuffer({
+      label: `particles:${behavior.id}`,
+      size: capacity * PARTICLE_STRIDE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      mappedAtCreation: true,
+    });
+    const data = new Float32Array(particles.getMappedRange());
+    const random = seededRandom(Math.floor(desc.seed * 0xffffffff));
+    if (behavior.init) {
+      behavior.init(data, capacity, random);
+    } else {
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = random() * 2 - 1;
+        data[i + 1] = random() * 2 - 1;
+      }
+    }
+    particles.unmap();
+
+    const uniform = device.createBuffer({
+      label: "plane-uniform",
+      size: PLANE_UNIFORM_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const plane: PlaneGpu = {
+      desc,
+      behavior,
+      capacity,
+      activeCount: capacity,
+      uploadedCount: -1,
+      particles,
+      uniform,
+      pipeline: this.pipelineFor(behavior),
+      simBindGroup: device.createBindGroup({
+        layout: layouts.planeSim,
+        entries: [
+          { binding: 0, resource: { buffer: uniform } },
+          { binding: 1, resource: { buffer: particles } },
+        ],
+      }),
+      renderBindGroup: device.createBindGroup({
+        layout: layouts.planeRender,
+        entries: [{ binding: 0, resource: { buffer: uniform } }],
+      }),
+    };
+    this.updatePlane(plane);
+    this.list.push(plane);
+    return plane;
+  }
+
+  /** Call after mutating a plane's desc (transform or params) to push it to the GPU. */
+  updatePlane(instance: PlaneInstance): void {
+    const plane = instance as PlaneGpu;
+    const { desc, behavior } = plane;
+    const buf = new ArrayBuffer(PLANE_UNIFORM_SIZE);
+    const f32 = new Float32Array(buf);
+    f32.set(fromTRS(desc.position, desc.rotation, [desc.halfSize[0], desc.halfSize[1], 1]), 0);
+    paramNames(behavior).forEach((name, i) => {
+      f32[PLANE_PARAMS_OFFSET / 4 + i] = desc.params?.[name] ?? behavior.params[name]?.default ?? 0;
+    });
+    new Uint32Array(buf)[PLANE_COUNT_OFFSET / 4] = plane.activeCount;
+    f32[PLANE_SEED_OFFSET / 4] = desc.seed;
+    this.gpu.device.queue.writeBuffer(plane.uniform, 0, buf);
+    plane.uploadedCount = plane.activeCount;
+  }
+
+  /** Encode one simulation step for every plane's active particles. */
+  execute(frame: FrameContext): void {
+    const pass = frame.encoder.beginComputePass({ label: "simulate" });
+    pass.setBindGroup(0, this.gpu.globalsBindGroup);
+    let current: GPUComputePipeline | null = null;
+    for (const plane of this.list) {
+      const count = Math.min(Math.max(0, Math.floor(plane.activeCount)), plane.capacity);
+      plane.activeCount = count;
+      if (count !== plane.uploadedCount) {
+        this.countScratch[0] = count;
+        this.gpu.device.queue.writeBuffer(plane.uniform, PLANE_COUNT_OFFSET, this.countScratch);
+        plane.uploadedCount = count;
+      }
+      if (count === 0) continue;
+      if (plane.pipeline !== current) {
+        current = plane.pipeline;
+        pass.setPipeline(current);
+      }
+      pass.setBindGroup(1, plane.simBindGroup);
+      pass.dispatchWorkgroups(...dispatchSize(count));
+    }
+    pass.end();
+  }
+
+  clear(): void {
+    for (const p of this.list) {
+      p.particles.destroy();
+      p.uniform.destroy();
+    }
+    this.list.length = 0;
+  }
+
+  dispose(): void {
+    this.clear();
+  }
+
+  private pipelineFor(behavior: Behavior): GPUComputePipeline {
+    let pipeline = this.pipelines.get(behavior.id);
+    if (!pipeline) {
+      const module = this.gpu.device.createShaderModule({
+        label: `sim:${behavior.id}`,
+        code: buildSimShader(behavior),
+      });
+      module.getCompilationInfo().then((info) => {
+        for (const m of info.messages) {
+          if (m.type === "error") console.error(`[behavior ${behavior.id}] line ${m.lineNum}: ${m.message}`);
+        }
+      });
+      pipeline = this.gpu.device.createComputePipeline({
+        label: `sim:${behavior.id}`,
+        layout: this.pipelineLayout,
+        compute: { module, entryPoint: "main" },
+      });
+      this.pipelines.set(behavior.id, pipeline);
+    }
+    return pipeline;
+  }
+}
