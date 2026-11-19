@@ -248,6 +248,12 @@ export interface AppContext {
   updatePlane(plane: PlaneInstance): void;
   /** Smoothed frames per second and particles active this frame. */
   stats(): { fps: number; particles: number; planes: number };
+  /**
+   * Change render settings on the running world without rebuilding it.
+   * Optional so UI can ship before an engine implements it: UI shows the
+   * matching controls only when this exists.
+   */
+  setRender?(patch: Partial<RenderSettings>): void;
 }
 
 /** A DOM panel. One per file: src/ui/<id>.panel.ts, default export, auto-registered. */
