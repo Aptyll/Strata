@@ -12,7 +12,8 @@ against the real results before recording.
   folder paths, email addresses.
 - Fill in bracketed lines only with numbers measured on the RTX 2070. The
   first trillion still is confirmed: 28.9 seconds, exactly 10^12 particles
-  evaluated (real frames took 26 to 52 seconds depending on framing).
+  evaluated (real frames took 26 to 52 seconds depending on framing, with flux
+  weighting; count-weighted frames take about 160 to 193 seconds).
 - Say "rendered", never "simulated", for the trillion. The simulated tiers are
   the 100 million and 1 billion runs.
 
@@ -162,7 +163,7 @@ add. A terminal on the desktop with the RTX 2070 running
 **VO:**
 > At 7:27, thirty-three minutes after my first message, the trillion-particle
 > renderer merged. It solves real equations of motion: orbits, shear flows,
-> oscillators. In the record frames every particle in view adds exactly one unit of light to a 64-bit counter,
+> oscillators. In the proof shots every particle in view adds exactly one unit of light to a 64-bit counter,
 > so the frame itself proves the count: add up every pixel and you get exactly
 > how many particles are in view.
 >

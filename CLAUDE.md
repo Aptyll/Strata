@@ -25,8 +25,9 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  26 to 52 seconds per 4K frame on the 2070, depending on how spread out the
-  hits are.
+  26 to 52 seconds per 4K frame on the 2070 with flux weighting (the record
+  stills: far particles drawn on average), about 160 to 193 s with count
+  weighting (exactly one unit per particle in view, the proof shots).
 
 ## Rules (Noah's, non-negotiable)
 
