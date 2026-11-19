@@ -8,6 +8,11 @@ export class FrameGraph {
   readonly passes: Pass[] = [];
   width = 0;
   height = 0;
+  /**
+   * When set, the drawing buffer has exactly this size instead of following
+   * the canvas' CSS size. Used for offline video and high-resolution stills.
+   */
+  fixedSize: { width: number; height: number } | null = null;
   private hdrTexture: GPUTexture | null = null;
   private hdrView: GPUTextureView | null = null;
 
@@ -28,9 +33,9 @@ export class FrameGraph {
     const { canvas, device } = this.gpu;
     const dpr = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
     const max = device.limits.maxTextureDimension2D;
-    const w = Math.max(1, Math.min(max, Math.round(canvas.clientWidth * dpr)));
-    const h = Math.max(1, Math.min(max, Math.round(canvas.clientHeight * dpr)));
-    if (w === this.width && h === this.height && this.hdrTexture) return;
+    const w = Math.max(1, Math.min(max, Math.round(this.fixedSize?.width ?? canvas.clientWidth * dpr)));
+    const h = Math.max(1, Math.min(max, Math.round(this.fixedSize?.height ?? canvas.clientHeight * dpr)));
+    if (w === this.width && h === this.height && this.hdrTexture && canvas.width === w && canvas.height === h) return;
     canvas.width = this.width = w;
     canvas.height = this.height = h;
     this.hdrTexture?.destroy();

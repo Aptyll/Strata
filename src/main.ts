@@ -1,4 +1,5 @@
 import { createKeyRouter } from "./app/keys";
+import { mountCapture } from "./capture/app";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
 import { TOKENS, type AppContext, type ParticleBudget, type Scene } from "./core/contracts";
@@ -210,26 +211,20 @@ async function start(): Promise<void> {
   let time = 0;
   let frame = 0;
 
-  const tick = (now: number) => {
-    // Clamp dt so a background tab or a hitch does not explode the simulation.
-    const dt = Math.min((now - last) / 1000, 1 / 30);
-    last = now;
+  /** True while an offline render owns the loop: the realtime tick stops drawing. */
+  let offline = false;
+
+  /** Simulate and draw one frame, `dt` seconds after the previous one. */
+  const renderFrame = (dt: number) => {
     time += dt;
-
-    fpsFrames++;
-    if (now - fpsSince >= 250) {
-      fps = (fpsFrames * 1000) / (now - fpsSince);
-      fpsFrames = 0;
-      fpsSince = now;
-    }
-
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
     camera.update(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
     writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness });
 
-    const counts = budget.allocate({
+    // Offline renders are not in a hurry, so they always draw every particle.
+    const counts = (offline ? fullBudget : budget).allocate({
       planes: measurePlanes(sim.planes, camera, viewProj),
       fps: fps || targetFps,
       targetFps,
@@ -241,6 +236,33 @@ async function start(): Promise<void> {
 
     updateHud(dt);
     hud.setStat("total", total);
+  };
+
+  // ---- capture: P screenshot, V record, stills and offline video in the menu ----
+  mountCapture({
+    canvas,
+    hud,
+    maxTextureSize: gpu.device.limits.maxTextureDimension2D,
+    addPass: (pass) => graph.add(pass),
+    frame: renderFrame,
+    flush: () => gpu.device.queue.onSubmittedWorkDone(),
+    setOffline: (on) => (offline = on),
+    setResolution: (size) => (graph.fixedSize = size),
+  });
+
+  const tick = (now: number) => {
+    // Clamp dt so a background tab or a hitch does not explode the simulation.
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+
+    fpsFrames++;
+    if (now - fpsSince >= 250) {
+      fps = (fpsFrames * 1000) / (now - fpsSince);
+      fpsFrames = 0;
+      fpsSince = now;
+    }
+
+    if (!offline) renderFrame(dt);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
