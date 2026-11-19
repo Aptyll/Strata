@@ -8,6 +8,9 @@
 //                       onChange: v => engine.bloom = v });
 
 import { CSS } from './styles.js';
+import { MENU_CSS } from './menu-styles.js';
+import { createMenu } from './menu.js';
+import { attachMenuA11y } from './a11y.js';
 import { formatCount, formatExact, formatValue, formatTime, decimalsFor } from './format.js';
 
 export { formatCount, formatExact, formatValue, formatTime };
@@ -100,7 +103,7 @@ export function createHud(options = {}) {
   if (!document.getElementById(STYLE_ID)) {
     const style = el('style');
     style.id = STYLE_ID;
-    style.textContent = CSS;
+    style.textContent = CSS + MENU_CSS;
     document.head.appendChild(style);
   }
 
@@ -131,10 +134,9 @@ export function createHud(options = {}) {
   const aSub = el('div', 'sh-a-sub');
   announceEl.append(aTitle, aSub);
   announceEl.setAttribute('aria-live', 'polite');
-  const panel = el('div', 'sh-panel');
+  const panel = el('div', 'sh-panel sm-menu');
   panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', 'Settings');
-  const groupsEl = el('div');
   const foot = el('div', 'sh-foot');
   const resetBtn = el('button', null, 'reset');
   resetBtn.type = 'button';
@@ -144,7 +146,17 @@ export function createHud(options = {}) {
   const hint = el('button', null, '? keys');
   hint.type = 'button';
   foot.append(resetBtn, statsBtn, hint);
-  panel.append(groupsEl, foot);
+  // Summary header, page tabs and pages come from menu.js; groups are placed onto pages below.
+  const menu = createMenu({
+    stat: (key) => stats.get(key)?.value,
+    param: (id) => params.get(id)?.value,
+    resolution: () => {
+      const c = parent.querySelector('canvas');
+      return c && c.width ? [c.width, c.height] : null;
+    },
+    persist: opt.persist,
+  });
+  panel.append(...menu.nodes, foot);
   const dot = el('button', 'sh-dot');
   dot.type = 'button';
   dot.setAttribute('aria-label', 'Settings');
@@ -326,7 +338,7 @@ export function createHud(options = {}) {
           },
         );
     };
-    registerParam({ id: spec.id, label, group: spec.group, type: 'action', run: start });
+    registerParam({ id: spec.id, label, group: spec.group, page: spec.page, type: 'action', run: start });
     return { id: spec.id, start, cancel: () => { if (activeJob?.id === spec.id) activeJob.abort.abort(); }, remove: () => removeParam(spec.id) };
   };
 
@@ -366,14 +378,14 @@ export function createHud(options = {}) {
   /** @type {Map<string, any>} */
   const params = new Map();
   const groups = new Map();
-  const groupEl = (name = '') => {
+  const groupEl = (name = '', page) => {
     let g = groups.get(name);
     if (!g) {
       g = el('div', 'sh-group');
       if (name) g.append(el('div', 'sh-group-title', name));
       groups.set(name, g);
-      // Ungrouped params always sit at the top.
-      if (name === '') groupsEl.prepend(g); else groupsEl.append(g);
+      // menu.js puts the group on its page (by `page`, else by group name) as a section.
+      menu.place(g, name, page);
     }
     return g;
   };
@@ -510,7 +522,7 @@ export function createHud(options = {}) {
       row.firstChild.addEventListener('dblclick', (e) => { e.preventDefault(); commit(p, p.initial); });
     }
 
-    groupEl(p.group).append(row);
+    groupEl(p.group, p.page).append(row);
     params.set(p.id, p);
     paint(p);
     if (p.persist !== false && type !== 'action' && Object.prototype.hasOwnProperty.call(saved, p.id)) {
@@ -534,7 +546,7 @@ export function createHud(options = {}) {
     const g = p.row.parentNode;
     p.row.remove();
     params.delete(id);
-    if (g && !g.querySelector('.sh-row')) { g.remove(); groups.delete(p.group || ''); }
+    if (g && !g.querySelector('.sh-row')) { g.remove(); groups.delete(p.group || ''); menu.unplace(p.group || ''); }
   };
   const getParam = (id) => params.get(id)?.value;
   /**
@@ -568,6 +580,7 @@ export function createHud(options = {}) {
     if (open === state.panel) return;
     state.panel = open;
     root.classList.toggle('panel-open', open);
+    menu.setOpen(open);
     if (!open && panel.contains(document.activeElement)) document.activeElement.blur();
     emit('panel', open);
   };
@@ -741,6 +754,7 @@ export function createHud(options = {}) {
   let fpsSince = 0;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
+    menu.update(now);
     if (opt.autoFps && !fpsManual) {
       fpsFrames++;
       if (!fpsSince) { fpsSince = now; fpsFrames = 0; } else if (now - fpsSince >= 500) {
@@ -768,7 +782,13 @@ export function createHud(options = {}) {
     try { statsOn = localStorage.getItem(opt.persist + '.stats') === '1'; } catch { /* private mode */ }
   }
   if (statsOn) setStats(true);
+  // A small always-on fps readout, off by default; the summary header and the H line show fps too.
+  registerParam({
+    id: 'hud.fpsCorner', label: 'fps in corner', group: 'performance', page: 'perf', value: false,
+    onChange: (on) => menu.setCorner(root, on),
+  });
   if (opt.panelOpen) setPanel(true);
+  disposers.push(attachMenuA11y(root)); // dialog roles, focus, keyboard, readable sizes (a11y.js)
   wake();
 
   return {

@@ -16,6 +16,7 @@
  */
 
 import { BRUSH_FLOATS, MAX_BRUSHES, type Behavior, type PlaneDesc } from '../core/contracts';
+import { compileComputePipeline } from '../gpu/context';
 import {
   dispatchSize,
   GLOBALS_BRUSHES_OFFSET,
@@ -25,10 +26,9 @@ import {
   PLANE_PARAMS_OFFSET,
   PLANE_SEED_OFFSET,
 } from '../gpu/shaderLib';
-import { fromTRS, seededRandom } from '../math';
+import { mat4Multiply, planeModelMatrix, seededRandom } from '../math';
 import { classifyPlane, DEFAULT_LOD, type LodSettings, type PlaneClass } from './culling';
 import { GpuTimer } from './gpuTimer';
-import { mat4Multiply } from './math';
 import { BYTES_PER_PARTICLE, packPosition, packVelocity } from './packing';
 import { ParticlePool, type ParticleRange } from './particlePool';
 import {
@@ -108,24 +108,10 @@ const MAX_STEP_DT = 0.1;
 const UPLOAD_CHUNK_PARTICLES = 1 << 20;
 
 /**
- * Requests a device with the limits and features the perf path can use.
- * Everything here is optional: the engine also works on a default device.
+ * Works on any GPUDevice. When the device has 'timestamp-query' (for example
+ * from `requestGpuDevice({ timestamps: true })` in src/gpu/context.ts), it
+ * also reports GPU pass times in `stats`.
  */
-export async function requestPerfDevice(opts: { timestamps?: boolean } = {}): Promise<GPUDevice> {
-  if (!('gpu' in navigator)) throw new Error('WebGPU is not available in this browser.');
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-  if (!adapter) throw new Error('No WebGPU adapter found.');
-  const requiredFeatures: GPUFeatureName[] = [];
-  if (opts.timestamps !== false && adapter.features.has('timestamp-query')) requiredFeatures.push('timestamp-query');
-  return adapter.requestDevice({
-    requiredFeatures,
-    requiredLimits: {
-      maxBufferSize: adapter.limits.maxBufferSize,
-      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
-    },
-  });
-}
-
 export class PerfEngine {
   readonly pool: ParticlePool;
   readonly lod: LodSettings;
@@ -209,11 +195,7 @@ export class PerfEngine {
       ],
     });
     this.pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout] });
-    this.initPipeline = device.createComputePipeline({
-      label: 'strata-perf init',
-      layout: this.pipelineLayout,
-      compute: { module: device.createShaderModule({ code: INIT_WGSL }), entryPoint: 'main' },
-    });
+    this.initPipeline = compileComputePipeline(device, 'strata-perf init', INIT_WGSL, this.pipelineLayout);
 
     const hdr = options.output === 'hdr';
     const resolveModule = device.createShaderModule({ code: RESOLVE_WGSL });
@@ -488,7 +470,7 @@ export class PerfEngine {
 
   private applyDesc(plane: PlaneRec): void {
     const d = plane.desc;
-    plane.model.set(fromTRS(d.position, d.rotation, [d.halfSize[0], d.halfSize[1], 1]));
+    planeModelMatrix(d, plane.model);
     paramSlotNames(plane.behavior).forEach((name, i) => {
       plane.params[i] = d.params?.[name] ?? plane.behavior.params[name]?.default ?? 0;
     });
@@ -497,17 +479,7 @@ export class PerfEngine {
   private pipelineFor(behavior: Behavior): GPUComputePipeline {
     let pipeline = this.pipelines.get(behavior.id);
     if (!pipeline) {
-      const module = this.device.createShaderModule({ label: `perf:${behavior.id}`, code: buildSimRasterWGSL(behavior) });
-      module.getCompilationInfo().then((info) => {
-        for (const m of info.messages) {
-          if (m.type === 'error') console.error(`[perf behavior ${behavior.id}] line ${m.lineNum}: ${m.message}`);
-        }
-      });
-      pipeline = this.device.createComputePipeline({
-        label: `perf:${behavior.id}`,
-        layout: this.pipelineLayout,
-        compute: { module, entryPoint: 'main' },
-      });
+      pipeline = compileComputePipeline(this.device, `perf:${behavior.id}`, buildSimRasterWGSL(behavior), this.pipelineLayout);
       this.pipelines.set(behavior.id, pipeline);
     }
     return pipeline;

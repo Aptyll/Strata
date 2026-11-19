@@ -69,13 +69,14 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
-| `ux/` | `camera/`, `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
 | `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
+| `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
@@ -90,6 +91,7 @@ npm install
 npm run dev          # every page, including dev-only demos
 npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
+npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
 | URL (under `npm run dev`) | what |
@@ -129,9 +131,13 @@ a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
-  owner (HUD, app, capture, theme, panels) and label; the camera gets every key not
+  owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
 - **Re-fetch main right before merging.** Many threads merge per hour.
+- **CI is a safety net, not a gate.** `.github/workflows/ci.yml` builds and runs
+  the light tests on every PR and on every push to main. It never blocks a
+  merge. A red X on a `main` commit means that merge broke the build: fix it
+  first with a small `fix/` PR.
