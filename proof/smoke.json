@@ -1,0 +1,16 @@
+{
+  "format": "strata-record/1",
+  "title": "Smoke test: 4 million particles, 640x360, 12 frames",
+  "description": "A tiny record for trying the whole pipeline in seconds on any GPU (a minute or two on a software adapter). Same generator as the trillion record, with the generated camera shot.",
+  "world": {
+    "particles": 4000000,
+    "width": 640,
+    "height": 360,
+    "fps": 30,
+    "frames": 12,
+    "planes": 24,
+    "seed": 1,
+    "weighting": "count",
+    "splat": "point"
+  }
+}

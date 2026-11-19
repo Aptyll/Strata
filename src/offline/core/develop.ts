@@ -25,7 +25,7 @@ export interface FrameStats {
    * complete frame.
    */
   evaluated: string;
-  /** "gpu": counted by the shader. "host": summed from dispatch sizes (trillion kernel). */
+  /** "gpu": counted by the shader (both kernels now). "host": summed from dispatch sizes, in stats from the trillion kernel before it had its own tally. */
   evaluatedBy?: "gpu" | "host";
   /** Exact sum of the grid in weight units, as a decimal string. */
   unitSum: string;
@@ -52,6 +52,16 @@ export interface FrameStats {
    * where `seconds` and `batches` of a continued frame cover only its last run.
    */
   resumes?: number;
+  /**
+   * SHA-256 commitment to the exact accumulation grid (fingerprint.ts).
+   * Missing in stats from before it existed, or where WebCrypto is not
+   * available (a page served over plain http from another machine).
+   */
+  gridSha256?: string;
+  /** 16 x 9 log-coded tile brightness of the grid (fingerprint.ts), for comparing renders across GPU models. */
+  signature?: number[];
+  /** The kernel that rendered the frame (renderer.ts KernelChoice), so a re-render can use the same one. */
+  kernel?: "offline" | "trillion";
 }
 
 export const encodeLog = (units: number): number => Math.min(65535, Math.round(LOG_SCALE * Math.log2(1 + units)));

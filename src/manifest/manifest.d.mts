@@ -11,6 +11,14 @@ export interface FrameStatsLike {
   seconds: number;
   batches: number;
   resumes?: number;
+  /** Who counted evaluated: "gpu", or "host" in old trillion-kernel stats that summed dispatch sizes. */
+  evaluatedBy?: "gpu" | "host";
+  /** The kernel that rendered the frame. */
+  kernel?: "offline" | "trillion";
+  /** SHA-256 commitment to the exact grid (src/offline/core/fingerprint.ts). */
+  gridSha256?: string;
+  /** 16 x 9 log-coded tile brightness (src/offline/core/fingerprint.ts). */
+  signature?: number[];
 }
 
 export interface JobLike {
@@ -33,6 +41,8 @@ export interface GpuInfo {
   description?: string;
   /** Free text, for example the Dawn adapter name. */
   name?: string;
+  /** The browser's user agent, for renders made in the browser. */
+  browser?: string;
 }
 
 export interface ManifestInput {
@@ -55,6 +65,15 @@ export interface ManifestInput {
   imageSha256?: Record<number, string>;
   /** Default true: embed the whole job so the manifest alone can reproduce the render. */
   includeJob?: boolean;
+  /** The published video file, so a download can be checked against the manifest. */
+  video?: VideoInfo | null;
+}
+
+export interface VideoInfo {
+  /** File name, without folders. */
+  file: string;
+  bytes: number;
+  sha256: string;
 }
 
 export interface ManifestFrame {
@@ -81,6 +100,14 @@ export interface ManifestFrame {
   resumes: number | null;
   particlesPerSecond: number;
   gridHash: string;
+  /** SHA-256 commitment to the exact 64-bit grid. null in stats written before it existed, or without WebCrypto. */
+  gridSha256: string | null;
+  /** 16 x 9 tile brightness, round(256 log2(1 + particles in tile)), for comparing renders across GPU models. */
+  signature: number[] | null;
+  /** Who counted evaluated. null in stats written before the field existed (the GPU-counting kernel). */
+  evaluatedBy: "gpu" | "host" | null;
+  /** The kernel that rendered the frame; null in stats written before the field existed. `verify` re-renders with it. */
+  kernel: "offline" | "trillion" | null;
   imageSha256: string | null;
 }
 
@@ -113,9 +140,49 @@ export interface RenderManifest {
   particlesPerFrame: number;
   drawing: { weighting: string; splat: string; exact: boolean; meaning: string };
   grade: Record<string, unknown> | null;
-  totals: { framesComplete: number; allEvaluated: boolean; evaluated: string; eachLandedAddedOnce: boolean | null; gpuSeconds: number; particlesPerSecond: number };
+  totals: {
+    framesComplete: number;
+    allEvaluated: boolean;
+    evaluated: string;
+    eachLandedAddedOnce: boolean | null;
+    /** true: the GPU counted every frame; false: the host counted some frame (old trillion-kernel stats); null: not recorded. */
+    countedOnGpu: boolean | null;
+    gpuSeconds: number;
+    particlesPerSecond: number;
+  };
   frames: ManifestFrame[];
+  video: VideoInfo | null;
   fullJob: JobLike | null;
+}
+
+export interface FrameVerdict {
+  frame: number;
+  /** identical: same exact grid. same picture: what another GPU model gives. different: fails. */
+  verdict: "identical" | "same picture" | "different";
+  reasons: string[];
+  /** Relative L1 distance of the tile signatures; null when either frame lacks one. */
+  signatureDistance: number | null;
+  /** |landed - landed'| / max of the two. */
+  landedDifference: number;
+}
+
+export interface ManifestComparison {
+  ok: boolean;
+  checked: number;
+  /** Frames of the candidate the reference does not have. */
+  missing: number[];
+  problems: string[];
+  frames: FrameVerdict[];
+  identical: number;
+  samePicture: number;
+  different: number;
+}
+
+export interface ManifestCheck {
+  id: string;
+  /** true passes, false fails, null is a note. */
+  ok: boolean | null;
+  detail: string;
 }
 
 export const MANIFEST_KIND: "strata-render-manifest";
@@ -126,7 +193,9 @@ export function gridFields(s: FrameStatsLike): Pick<FrameStatsLike, "evaluated" 
 export function gridHash(s: FrameStatsLike): Promise<string>;
 export function totalParticles(job: JobLike): number;
 export function buildManifest(input: ManifestInput): Promise<RenderManifest>;
-export function compareManifests(
-  reference: RenderManifest,
-  candidate: RenderManifest,
-): { ok: boolean; checked: number; missing: number[]; problems: string[] };
+export const SAME_PICTURE: Readonly<{ signature: number; landed: number }>;
+export function signatureDistance(a: readonly number[], b: readonly number[]): number;
+export function gpuName(g: GpuInfo): string;
+export function compareFrame(reference: ManifestFrame, candidate: ManifestFrame): FrameVerdict;
+export function compareManifests(reference: RenderManifest, candidate: RenderManifest): ManifestComparison;
+export function checkManifest(m: RenderManifest): Promise<ManifestCheck[]>;
