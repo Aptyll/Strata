@@ -158,9 +158,10 @@ Per-plane data sits in one uniform buffer addressed with dynamic offsets: one
 
 ```ts
 import { getBehavior } from './behaviors';
-import { PerfEngine, requestPerfDevice } from './perf';
+import { requestGpuDevice } from './gpu/context';
+import { PerfEngine } from './perf';
 
-const device = await requestPerfDevice();          // or any GPUDevice
+const device = await requestGpuDevice({ timestamps: true }); // or any GPUDevice
 const engine = new PerfEngine(device, { format }); // format of the target views
 engine.resize(canvas.width, canvas.height);
 engine.brightness = scene.render.brightness;

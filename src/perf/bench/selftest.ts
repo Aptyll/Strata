@@ -12,13 +12,13 @@
 import { behaviors } from '../../behaviors';
 import type { Behavior, FrameContext, GpuContext, PlaneDesc, PlaneInstance } from '../../core/contracts';
 import { GLOBALS_SIZE, PLANE_UNIFORM_SIZE } from '../../gpu/shaderLib';
+import { mat4Identity } from '../../math';
 import { createAtomicRasterPass } from '../atomicRasterPass';
 import { PerfBudget } from '../budget';
 import {
   classifyPlane,
   DEFAULT_LOD,
   LIGHT_ONE,
-  mat4Identity,
   packPosition,
   packVelocity,
   PerfEngine,
