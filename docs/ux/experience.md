@@ -144,6 +144,14 @@ at 42% white. One at a time, never during the opening, never while a gesture
 is in progress, and each is shown at most once per visit. Touch devices get
 touch wording.
 
+In the app, `app-hints.ts` (`mountAppHints`) runs the same schedule and adds
+the HUD's breathing die as one more hint, right after `drag to turn`, so the
+die and a text line never compete and nothing plays during the opening. It
+also waits while the settings menu is open or a long job runs. The HUD's own
+die timer is turned off with `diceHintMs: 0`, and the schedule starts and
+stops the breathing with `hud.hintDice()`. Gestures are read from the canvas
+with the same thresholds as the pointer forces and are never consumed.
+
 ## When WebGPU is not available
 
 `capability.ts` decides, `fallback.ts` draws.
@@ -234,7 +242,7 @@ HUD and key map, so each part also mounts alone:
 | --- | --- | --- |
 | Pointer forces | `attachBrushes(canvas, camera, () => planes)` then `writeGlobals({ brushes: b.update(dt, now) })` | any `CameraController`. Wired into `src/main.ts`. |
 | Opening | `createIntroRunner({ planes, aspect })`, then `step(dt)` each frame | nothing. Returns exposure, per-plane gain for `PlaneDesc.brightness`, and a camera pose with a weight. |
-| Hints | `new HintScheduler()` and `createHintView(root)` | call `learn(id)` when a gesture happens |
+| Hints | `mountAppHints({ canvas, hud, isOpening })`, then `update(dt)` each frame | the HUD, created with `diceHintMs: 0`. Lower level: `new HintScheduler()` and `createHintView(root)` |
 | No-WebGPU screen | `mountFallback(root, await detectCapability())` | a positioned element |
 
 What already fits the shared contracts in `src/core/contracts.ts`:
@@ -269,11 +277,13 @@ and a brief lift on `f.focusedPlane` scaled by `f.focusGlow`.
 | `force-brush.ts` | Wake, attract, repel, release burst, GPU packing, reference force |
 | `gestures.ts` | Mouse, pen and touch recogniser |
 | `hints.ts` | Hint scheduling, DOM line, remembered state |
+| `app-hints.ts` | The app's hint schedule: gesture hints plus the HUD die, one at a time |
+| `engine-brushes.ts` | Pointer forces for the real engine, fed from any `CameraController` |
 | `capability.ts` | WebGPU detection, device tier, plain-language explanations |
 | `fallback.ts` | Canvas 2D single-sheet experience |
 | `math.ts` | Vectors, matrices, easing |
 | `demo/` | Standalone page over a CPU mock world |
-| `test/` | 27 unit tests (run command is in the file header) |
+| `test/` | 30 unit tests (run command is in the file header) |
 
 ## Open questions
 
