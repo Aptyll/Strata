@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "verify": "node src/verify/run.mjs",
     "verify:capture": "node src/capture/demo/verify.mjs"
   },
   "devDependencies": {
