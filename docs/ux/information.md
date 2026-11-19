@@ -105,6 +105,9 @@ For any new label, hint, menu row or message:
   `sheet crossings`, and the row hints say "sheet". `G` reads "go to nearest
   sheet". A test fails when a menu row, a key label or a control row says
   "plane".
+- Esc menu header: reads "simulated" and "sheets", keeps the capital in
+  `2.00M`, and no longer names the world's most common behavior as if it
+  were the one on screen (PR #185, PR #186).
 - Keys sheet: gained the pointer gestures and the camera keys, in named
   groups. Before, it listed only HUD shortcuts, so turning, panning, diving,
   facing a sheet and pushing particles could not be looked up anywhere.
@@ -121,9 +124,5 @@ For any new label, hint, menu row or message:
 - **Auto camera tour (`C`):** the tour steers the camera without telling the
   rig which sheet it frames, so the label stays hidden during a tour. A tour
   with captions would be a good use of the label.
-- **Esc menu header** (`src/ux/hud/menu.js`) still says "simulating" and
-  "planes", and names the world's most common behavior as if it were the one
-  on screen. It reads the same stats, so only its own labels need to follow.
-  Passed to the Esc menu threads on 2026-11-19.
 - **Challenge mode** (`/?challenge`) has its own readout and does not mount
   this layer.
