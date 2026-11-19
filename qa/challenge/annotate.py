@@ -130,6 +130,19 @@ def older_rgba(name: str) -> tuple[np.ndarray, str] | None:
     return a, c
 
 
+def older_file(name: str) -> tuple[str, str] | None:
+    """The same file from the next --in folder that has it (an older run, if folders are listed newest first), and that run's commit."""
+    hits = [d for d in INPUTS if os.path.exists(os.path.join(d, name))]
+    if len(hits) < 2:
+        return None
+    try:
+        with open(os.path.join(hits[1], "info.json")) as fh:
+            c = json.load(fh).get("commit") or "?"
+    except (OSError, ValueError):
+        c = "?"
+    return os.path.join(hits[1], name), c
+
+
 def codes(name: str) -> np.ndarray:
     """The offline renderer's 16-bit developed frame, before grading and label."""
     m = meta(name + ".codes")
@@ -166,7 +179,7 @@ class Fig:
     draw: ImageDraw.ImageDraw
 
 
-def figure(width: int, height: int, number: int, title: str, sub: str, severity: str, sources: list[str] | None = None) -> Fig:
+def figure(width: int, height: int, number: int, title: str, sub: str, severity: str, sources: list[str] | None = None, also: list[str] | None = None) -> Fig:
     img = Image.new("RGB", (width, height), BG)
     d = ImageDraw.Draw(img)
     colour = {"high": RED, "medium": AMBER, "low": CYAN, "ok": GREEN, "fixed": GREEN}[severity]
@@ -177,7 +190,7 @@ def figure(width: int, height: int, number: int, title: str, sub: str, severity:
     tw = d.textlength(tag, font=F_LABEL)
     d.rounded_rectangle([width - tw - 48, 22, width - 24, 50], radius=6, outline=colour, width=2)
     d.text((width - tw - 36, 26), tag, font=F_LABEL, fill=colour)
-    commits = sorted({commit(n) for n in sources or []}) or ["?"]
+    commits = sorted({commit(n) for n in sources or []} | set(also or [])) or ["?"]
     d.text((28, height - 28), FOOTER.format(commits=" and ".join(commits)), font=F_TINY, fill=(110, 110, 115))
     return Fig(img, d)
 
@@ -363,6 +376,9 @@ def fig_washout(out: str) -> None:
     if not have(*need):
         print("skip washout: inputs missing")
         return
+    if "blackPoint" in meta(ladder[0] + ".rgba"):
+        fig_washout_fixed(out)
+        return
     f = figure(1800, 980, 1, "The documented white point drifts with particle count; CountToneMapper does not",
                "src/render DensityPost with the docs/render.md recipe (white = 24 x mean, exposure 1) vs CountToneMapper  |  owner: Render density beyond screen resolution", "low", need)
     W = 420
@@ -397,6 +413,57 @@ def fig_washout(out: str) -> None:
         "Where it matters: only the render demo (src/render/demo/demo.ts, white = max(12, 24 x mean)) and the 'Offline and challenge renders' snippet in docs/render.md. The app uses a fixed white of 128 (brief V02), src/offline has its own percentile grade, and the trillion demo already uses CountToneMapper.",
         "Fix (suggested): point that snippet and the demo at CountToneMapper, or set exposure = 1 / (5th percentile of lit density). When brief V03 adds a black floor to CountToneMapper, set it from percentiles too, so this property survives.",
         "How the 31,000 frame was made: the same 4M particles at 1,803 times the energy, a stand-in for more particles that keeps the frame otherwise identical.",
+    ], 1740, font_=F_SMALL)
+    save(f, out, "01-white-point-drifts-with-count.jpg")
+
+
+def fig_washout_fixed(out: str) -> None:
+    """Figure 01 once the docs recipe sets its black point from the mean density (PR #194): the older run is the before."""
+    dp = ["overflow-e1-f0", "overflow-e1803-f0"]
+    ct = ["overflow-e1-counts-f0", "overflow-e1803-counts-f0"]
+    labels = ("0.5M", "2M", "8M", "32M")
+    ladder = [f"ladder-{c}-f0" for c in (500000, 2000000, 8000000, 32000000)]
+    before = [older_rgba(n) for n in dp]
+    before_ladder = [older_rgba(n) for n in ladder]
+    if any(b is None for b in before + before_ladder):
+        print("skip washout: no older run to compare with")
+        return
+    old_commit = before[0][1]
+    new = [rgba(n) for n in dp]
+    cts = [rgba(n) for n in ct]
+    lad = [rgba(n) for n in ladder]
+    diff = lambda a, b: float(np.abs(a.astype(np.float32) - b).mean())
+    d_old, d_new, d_ct = diff(before[0][0], before[1][0]), diff(new[0], new[1]), diff(cts[0], cts[1])
+    m_old = [float(b[0].mean()) for b in before_ladder]
+    m_new = [float(im.mean()) for im in lad]
+    spread_old, spread_new = max(m_old) - min(m_old), max(m_new) - min(m_new)
+    fixed = d_new <= max(1.0, 3 * d_ct) and spread_new <= spread_old / 2
+    m0, m1 = meta(dp[0] + ".rgba"), meta(dp[1] + ".rgba")
+    f = figure(1800, 1000, 1, "The documented tone recipe now holds its balance as the particle count grows" if fixed else "The documented tone recipe still drifts with particle count",
+               "src/render DensityPost through the docs/render.md recipe, before and after PR #194 (black point = max(1, mean / 4))  |  owner: Render density beyond screen resolution",
+               "fixed" if fixed else "low", [n + ".rgba" for n in dp + ladder], also=[old_commit])
+    W = 420
+    f.draw.text((30, 112), f"before PR #194: exposure 1, a black point of one particle ({old_commit})", font=F_LABEL, fill=AMBER)
+    f.draw.text((30 + 2 * (W + 20), 112), "since PR #194: black point at a quarter of the mean density", font=F_LABEL, fill=GREEN)
+    x, y = 30, 170
+    for im, lab in zip([before[0][0], before[1][0], new[0], new[1]], ["17 particles per pixel", "31,000 particles per pixel"] * 2):
+        w, h, _ = paste(f, im, x, y, W, label=lab)
+        f.draw.text((x, y + h + 6), stat_line(im), font=F_SMALL, fill=DIM)
+        x += W + 20
+    callout(f, 36, y + h + 34, f"identical frame, {d_old:.1f} levels apart per pixel on average", AMBER, F_LABEL)
+    callout(f, 36 + 2 * (W + 20), y + h + 34, f"identical frame, {d_new:.2f} levels apart per pixel", GREEN, F_LABEL)
+    y = 530
+    f.draw.text((30, y - 52), "Real particle counts through the new recipe (render demo source, 960x540, trails warmed up)", font=F_LABEL, fill=FG)
+    x = 30
+    for im, c in zip(lad, labels):
+        w, h, _ = paste(f, im, x, y, W)
+        f.draw.text((x, y + h + 6), f"{c} particles: {stat_line(im)}", font=F_SMALL, fill=DIM)
+        x += W + 20
+    text_block(f, 30, y + h + 44, [
+        f"What changed: docs/render.md and the render demo now set exposure = 1 / black with black = max(1, mean / 4), and white = max(12, 24 x mean) / black, so the log curve's toe moves with the mean density instead of staying at one particle (here black = {m0.get('blackPoint', 0):.1f} and {m1.get('blackPoint', 0):,.0f} for the two frames above).",
+        f"Measured: the same frame at 17 and at 31,000 particles per pixel is now {d_new:.2f} levels apart on average, against {d_old:.1f} before; CountToneMapper, which reads its points from the image, is {d_ct:.2f} apart. Pixels above 230 go from {(new[0] > 230).mean() * 100:.1f}% to {(new[1] > 230).mean() * 100:.1f}% (before: {(before[0][0] > 230).mean() * 100:.1f}% to {(before[1][0] > 230).mean() * 100:.1f}%). Over real counts from 0.5M to 32M the mean level moves {spread_new:.1f} levels ({', '.join(f'{v:.0f}' for v in m_new)}), against {spread_old:.1f} before ({', '.join(f'{v:.0f}' for v in m_old)}).",
+        "Still true: the recipe trusts the mean, so for very uneven density the docs now point at CountToneMapper, which measures the image. The app's own look (a fixed white of 128, brief V02), src/offline's percentile grade and the trillion demo were never on this recipe.",
+        "How the 31,000 frame was made: the same 4M particles at 1,803 times the energy, a stand-in for more particles that keeps the frame otherwise identical. The before panels are the earlier run of the same harness, whose recipe is the old one; src/render itself did not change in between.",
     ], 1740, font_=F_SMALL)
     save(f, out, "01-white-point-drifts-with-count.jpg")
 
@@ -438,9 +505,9 @@ def fig_supersample(out: str) -> None:
     save(f, out, "02-supersampled-captures.jpg")
 
 
-def decode_y(mp4: str, W: int, H: int) -> np.ndarray:
-    """Luma plane exactly as stored in the file, without any range conversion."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", mp4, "-f", "rawvideo", "-pix_fmt", "yuvj420p", "-"], capture_output=True, check=True).stdout
+def decode_y(mp4: str, W: int, H: int, pix_fmt: str = "yuvj420p") -> np.ndarray:
+    """Luma plane exactly as stored in the file: ask for the file's own pixel format, so ffmpeg converts no range."""
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", mp4, "-f", "rawvideo", "-pix_fmt", pix_fmt, "-"], capture_output=True, check=True).stdout
     fs = W * H * 3 // 2
     return np.stack([np.frombuffer(raw[i * fs:i * fs + W * H], np.uint8).reshape(H, W) for i in range(len(raw) // fs)])
 
@@ -449,6 +516,9 @@ def fig_mp4(out: str) -> None:
     mp4 = find("mp4.mp4")
     if not mp4 or not find("mp4-src-f45.rgba"):
         print("skip mp4: inputs missing")
+        return
+    if meta("mp4.mp4").get("range") == "limited" and find("mp4-full.mp4"):
+        fig_mp4_fixed(out)
         return
     m = meta("mp4.mp4")
     W, H = m["width"], m["height"]
@@ -519,6 +589,96 @@ def fig_mp4(out: str) -> None:
         f"Risk: the file is full-range YUV (yuvj420p) tagged with the sRGB transfer curve, carried over from the frames' sRGB colour space. Players and YouTube's own ingest read the range flag, so a direct upload is probably fine (it cannot be checked from here). But an editor or converter that ignores the flag treats it as limited range: in this video every lit pixel whose source value is below 16/255 turns black ({lost:.0f}% of the lit pixels: the fringe and bloom halo here) and {clipped:.1f}% of pixels clip to white.{dust_line} This path matters for the 1T video: src/offline/web exports through startRecording, and Noah's PC cannot run the Node CLI's ffmpeg encode.",
         "Fix (suggested): write BT.709 limited range, the default every tool assumes: convert to I420 in BT.709 limited range and hand the encoder VideoFrames that carry that colorSpace. Until then, for a file that will be edited, re-encode it once with ffmpeg to bt709 tv range before editing.",
         "Not representative of Noah's machine: in this sandbox Chromium encodes in software. A hardware encoder will differ in quality, and possibly in tags; check one export with ffprobe.",
+    ], 1740, font_=F_SMALL)
+    save(f, out, "03-mp4-full-range.jpg")
+
+
+def probe_stream(path: str, packets: bool = False) -> dict:
+    args = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams"] + (["-show_packets"] if packets else []) + ["-of", "json", path]
+    return json.loads(subprocess.run(args, capture_output=True, check=True, text=True).stdout)
+
+
+def tags(st: dict) -> str:
+    return f"{st.get('pix_fmt')}, range {st.get('color_range')}, matrix {st.get('color_space')}, transfer {st.get('color_transfer')}, primaries {st.get('color_primaries')}"
+
+
+def fig_mp4_fixed(out: str) -> None:
+    """Figure 03 once the recorder writes limited range (PR #196): the same frames recorded with range 'limited' and 'full'."""
+    lim, full = find("mp4.mp4"), find("mp4-full.mp4")
+    m = meta("mp4.mp4")
+    W, H = m["width"], m["height"]
+    pl = probe_stream(lim, packets=True)
+    st_l, packets = pl["streams"][0], pl["packets"]
+    st_f = probe_stream(full)["streams"][0]
+    y_l = decode_y(lim, W, H, st_l.get("pix_fmt", "yuv420p")).astype(np.float32)
+    y_f = decode_y(full, W, H, st_f.get("pix_fmt", "yuvj420p")).astype(np.float32)
+    n = min(len(y_l), len(y_f))
+    src = np.stack([rgba(f"mp4-src-f{k}") for k in range(n)]).astype(np.float32)
+    # What a decoder that assumes limited range shows: every tool that ignores the flag, and every tool reading the new file's own flag.
+    as_limited = lambda y: np.clip(np.round((y - 16) * 255 / 219), 0, 255)
+    dec_l, mis_f = as_limited(y_l[:n]), as_limited(y_f[:n])
+    lit = src > 0
+    faint = lit & (src < 16)
+    lost_l = float((dec_l[lit] < 0.5).mean() * 100)
+    lost_f = float((mis_f[lit] < 0.5).mean() * 100)
+    lost_faint_l = float((dec_l[faint] < 0.5).mean() * 100)
+    # The full range file read by its own flag: what was fine before. Its losses are the encoder's, not the range's.
+    lost_ff = float((y_f[:n][lit] < 0.5).mean() * 100)
+    one = src == 1
+    l1_l, l1_f = float((dec_l[one] < 0.5).mean() * 100), float((y_f[:n][one] < 0.5).mean() * 100)
+    psnr = [10 * math.log10(255 ** 2 / max(((s_ - d_) ** 2).mean(), 1e-9)) for s_, d_ in zip(src, dec_l)]
+    keys = [i for i, pk in enumerate(packets) if "K" in pk.get("flags", "")]
+    sizes = [int(pk["size"]) for pk in packets]
+    # Cross-check with ffmpeg's own decode to RGB, which follows the file's tags.
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", lim, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
+    rgb = np.frombuffer(raw, np.uint8)[: n * W * H * 3].reshape(n, H, W, 3).astype(np.float32)
+    err_rgb = float(np.abs(rgb.mean(axis=3) - src).mean())
+    grey = float(np.abs(rgb[..., 0] - rgb[..., 2]).mean())
+    codes_below16 = len({round(16 + v * 219 / 255) for v in range(1, 16)})
+    seq = find("offline-seq.mp4")
+    st_seq = probe_stream(seq)["streams"][0] if seq else None
+    ok = st_l.get("color_range") == "tv" and lost_l <= lost_ff + 0.5 and lost_l < lost_f / 4 and (st_seq is None or st_seq.get("color_range") == "tv")
+    f = figure(1800, 1060, 3, "MP4 recorder: limited range since PR #196, so the faint light survives any decoder" if ok else "MP4 recorder: the limited range output still loses faint light",
+               "src/capture startRecording with its defaults (H.264, 0.15 bits per pixel) and with range 'full', fed the same density-look frames  |  owners: Export MP4 videos for YouTube, offline renderer (web export)",
+               "fixed" if ok else "medium", ["mp4.mp4", "mp4-full.mp4"] + (["offline-seq.mp4"] if seq else []))
+    k = min(45, n - 1)
+    fk = ((src[k] > 0) & (src[k] < 16)).astype(np.float64)
+    cs = np.pad(fk, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    cw, ch = 220, 130
+    best = max(((cs[yy + ch, xx + cw] - cs[yy, xx + cw] - cs[yy + ch, xx] + cs[yy, xx], yy, xx)
+                for yy in range(0, H - ch, 10) for xx in range(0, W - cw, 10)))
+    y0, x0 = best[1], best[2]
+    y1, x1 = y0 + ch, x0 + cw
+    gain = 6
+    paste(f, src[k], 30, 140, 560, label=f"source frame {k}")
+    s = 560 / W
+    f.draw.rectangle([30 + x0 * s, 140 + y0 * s, 30 + x1 * s, 140 + y1 * s], outline=CYAN, width=2)
+    paste(f, mis_f[k][y0:y1, x0:x1] * gain, 620, 140, 560, nearest=True, border=RED, label=f"before: range 'full' read as limited, gain x{gain}")
+    paste(f, dec_l[k][y0:y1, x0:x1] * gain, 1210, 140, 560, nearest=True, border=GREEN, label=f"now: range 'limited', as every decoder reads it, gain x{gain}")
+    crop_lit = src[k][y0:y1, x0:x1] > 0
+    f.draw.text((620, 140 + 331 + 8), f"{(mis_f[k][y0:y1, x0:x1][crop_lit] < 0.5).mean() * 100:.0f}% of the lit pixels here turn black ({lost_f:.0f}% over the video)", font=F_SMALL, fill=RED)
+    f.draw.text((1210, 140 + 331 + 8), f"{(dec_l[k][y0:y1, x0:x1][crop_lit] < 0.5).mean() * 100:.1f}% of them turn black ({lost_l:.2f}% over the video); mean |error| {np.abs(src[k] - dec_l[k]).mean():.2f}", font=F_SMALL, fill=GREEN)
+    chart(f, 30, 560, 860, 240, [("PSNR per frame (dB)", list(range(len(psnr))), psnr, CYAN)], "frame (60 fps)", "PSNR of the limited range file vs source, dB",
+          marks=[(kk, "I", AMBER) for kk in keys], ylim=(min(psnr) - 1, max(psnr) + 1))
+    rows = [
+        ("now", f"default range 'limited': {tags(st_l)}"),
+        ("before", f"range 'full', the browser's own conversion: {tags(st_f)}"),
+    ]
+    if st_seq:
+        rows.append(("1T web export", f"the offline renderer's export of the trillion shot (src/offline/web, 640x360 here): {tags(st_seq)}"))
+    rows += [
+        ("quality", f"PSNR {np.mean(psnr):.1f} dB mean, {min(psnr):.1f} to {max(psnr):.1f}; {n} frames at {st_l.get('avg_frame_rate')} fps, {int(st_l.get('bit_rate', 0)) / 1e6:.2f} Mbit/s, I-frames {np.mean([sizes[i] for i in keys]) / 1024:.0f} KB"),
+        ("ffmpeg's decode", f"to RGB, following the tags: {err_rgb:.2f} levels from the source on average, R and B within {grey:.2f} levels (grey stays grey)"),
+    ]
+    y = 560
+    for kk, v in rows:
+        f.draw.text((930, y), kk, font=F_LABEL, fill=DIM)
+        y = text_block(f, 1080, y, [v], 690, font_=F_SMALL)
+        y += 4
+    text_block(f, 30, 860, [
+        f"Verified: the recorder converts frames to BT.709 limited range itself (src/capture/yuv.ts), and ffprobe reads its files as {st_l.get('pix_fmt')}, range {st_l.get('color_range')}, which every player, editor and converter assumes, so there is no misreading left to fall into. {lost_l:.2f}% of the lit pixels decode to black, the same as the full range file read by its own flag ({lost_ff:.2f}%): that is H.264 rounding the faintest level (1/255) to black in {l1_l:.0f}% of its pixels ({l1_f:.0f}% in full range), not the range. Misread, the full range file loses {lost_f:.0f}% of the lit pixels and {float((mis_f[faint] < 0.5).mean() * 100):.1f}% of those below 16/255 ({lost_faint_l:.1f}% now)." + (" The 1T web export goes through the same recorder and carries the same tags." if st_seq and st_seq.get("color_range") == "tv" else ""),
+        f"Trade-off, by the formula: limited range keeps 220 luma codes for 256 levels, so neighbouring levels can share a code; the 15 source levels below 16 land on {codes_below16} codes. The H.264 noise at this bitrate is larger than that step. The transfer tag is now bt709 on sRGB code values, the usual practice for screen captures (src/capture/yuv.ts).",
+        "Not representative of Noah's machine: in this sandbox Chromium encodes in software. A hardware encoder will differ in quality; the range and tags come from the recorder's own conversion, so they should hold, but check one export with ffprobe.",
     ], 1740, font_=F_SMALL)
     save(f, out, "03-mp4-full-range.jpg")
 

@@ -172,6 +172,13 @@ export interface Look {
   /** 0 = auto: max(12, whiteFactor * mean energy per pixel), as in the render demo. */
   white: number;
   whiteFactor: number;
+  /**
+   * Black point of the auto tone (white 0). 'mean': exposure / max(1, mean / 4),
+   * and the auto white divided by the same, as docs/render.md and the render
+   * demo do since PR #194. 'one': exposure as given, a black point of one
+   * particle, the recipe before it.
+   */
+  black: 'mean' | 'one';
   curve: Curve;
   display: Display;
   dither: number;
@@ -183,7 +190,7 @@ export interface Look {
   fixedScale: number;
 }
 const DEFAULT_LOOK: Look = {
-  mode: 'compute', energy: 1, size: 1, exposure: 1, white: 0, whiteFactor: 24, curve: 'log', display: 'soft',
+  mode: 'compute', energy: 1, size: 1, exposure: 1, white: 0, whiteFactor: 24, black: 'mean', curve: 'log', display: 'soft',
   dither: 1, bloom: 0.35, threshold: 0.55, trail: 0.12, trailMode: 'max', fixedScale: 256,
 };
 
@@ -254,8 +261,10 @@ async function render(s: Shot, onFrame: (f: Frame) => Promise<void>): Promise<vo
   const set = r.settings;
   const pixels = s.whitePixels === 'output' ? s.width * s.height : W * H;
   const mean = (count * L.energy * Math.min(L.size, 64) ** 2) / pixels;
-  const white = L.white || Math.max(12, mean * L.whiteFactor);
-  Object.assign(set.tone, { exposure: L.exposure, white, curve: L.curve, display: L.display, dither: L.dither });
+  const black = L.white || L.black === 'one' ? 1 : Math.max(1, mean / 4);
+  const exposure = L.exposure / black;
+  const white = L.white || Math.max(12, mean * L.whiteFactor) / black;
+  Object.assign(set.tone, { exposure, white, curve: L.curve, display: L.display, dither: L.dither });
   Object.assign(set.bloom, { enabled: L.bloom > 0, strength: L.bloom, threshold: L.threshold });
   Object.assign(set.trails, { enabled: L.trail > 0, halfLife: L.trail, mode: L.trailMode });
   const target = device.createTexture({ size: [W, H], format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
@@ -292,7 +301,7 @@ async function render(s: Shot, onFrame: (f: Frame) => Promise<void>): Promise<vo
         k, rgba, width: s.width, height: s.height, density,
         meta: {
           scenario: s.tag, k, t, simTime: t * s.speed, count, planes, renderWidth: W, renderHeight: H, supersample: ss,
-          width: s.width, height: s.height, white, meanEnergyPerPixel: mean, look: L, cam: s.cam, spin: s.spin,
+          width: s.width, height: s.height, white, exposure, blackPoint: black, meanEnergyPerPixel: mean, look: L, cam: s.cam, spin: s.spin,
           densityFormat: dfmt, whitePixels: s.whitePixels,
         },
       });
@@ -883,26 +892,38 @@ const scenarios = {
 
   /**
    * MP4 through src/capture's recorder with its defaults, fed real density
-   * pipeline frames. Source frames are saved too, for a per-frame comparison
-   * against the decoded video.
+   * pipeline frames, once per colour range (mp4.mp4 is the default range,
+   * mp4-full.mp4 the full range one). Source frames are saved too, for a
+   * per-frame comparison against the decoded video.
    */
-  async mp4(o: { count?: number; frames?: number; width?: number; height?: number; bitsPerPixel?: number; codec?: CaptureCodec; tag?: string } = {}) {
+  async mp4(o: { count?: number; frames?: number; width?: number; height?: number; bitsPerPixel?: number; codec?: CaptureCodec; tag?: string; ranges?: ('limited' | 'full')[] } = {}) {
     const fps = 60;
     const s = shot({ tag: o.tag ?? 'mp4', count: o.count ?? 2_000_000, width: o.width ?? 960, height: o.height ?? 540, frames: o.frames ?? 90, warmup: 8 });
-    const rec = await startRecording(new OffscreenCanvas(s.width, s.height), {
-      fps, width: s.width, height: s.height, codec: o.codec, bitsPerPixel: o.bitsPerPixel,
-    });
+    // One render, one recorder per colour range ('limited' is the default since
+    // PR #196, 'full' the browser's own conversion before it), so both files
+    // hold the same frames. The default range keeps the plain tag.
+    const ranges = o.ranges ?? ['limited', 'full'];
+    const recs = await Promise.all(ranges.map((range) => startRecording(new OffscreenCanvas(s.width, s.height), {
+      fps, width: s.width, height: s.height, codec: o.codec, bitsPerPixel: o.bitsPerPixel, range,
+    })));
     await render(s, async (f) => {
       await save(`${s.tag}-src-f${f.k}.rgba`, f.rgba, f.meta);
-      const vf = new VideoFrame(f.rgba, { format: 'RGBA', codedWidth: f.width, codedHeight: f.height, timestamp: Math.round((f.k * 1e6) / fps) });
-      await rec.addFrame(vf);
+      for (const rec of recs) {
+        const vf = new VideoFrame(f.rgba, { format: 'RGBA', codedWidth: f.width, codedHeight: f.height, timestamp: Math.round((f.k * 1e6) / fps) });
+        await rec.addFrame(vf);
+      }
     });
-    const res = await rec.stop();
-    const bytes = new Uint8Array(await res.blob!.arrayBuffer());
-    const meta = { scenario: s.tag, codec: res.codec, mimeType: res.mimeType, bitrate: res.bitrate, frames: res.frames, fps, width: res.width, height: res.height, bitsPerPixel: o.bitsPerPixel ?? 0.15 };
-    await save(`${s.tag}.mp4`, bytes, meta);
-    log(`saved ${s.tag}.mp4 (${bytes.length} bytes, ${res.codec})`);
-    return meta;
+    const out: Record<string, unknown>[] = [];
+    for (let i = 0; i < recs.length; i++) {
+      const res = await recs[i].stop();
+      const bytes = new Uint8Array(await res.blob!.arrayBuffer());
+      const name = ranges[i] === 'limited' ? s.tag : `${s.tag}-${ranges[i]}`;
+      const meta = { scenario: s.tag, range: ranges[i], codec: res.codec, mimeType: res.mimeType, bitrate: res.bitrate, frames: res.frames, fps, width: res.width, height: res.height, bitsPerPixel: o.bitsPerPixel ?? 0.15 };
+      await save(`${name}.mp4`, bytes, meta);
+      log(`saved ${name}.mp4 (${bytes.length} bytes, ${res.codec}, range ${ranges[i]})`);
+      out.push(meta);
+    }
+    return out;
   },
 };
 

@@ -39,12 +39,12 @@ so list the newest run first. Figures whose inputs are missing are skipped.
 
 | name | what it renders |
 | --- | --- |
-| `ladder` | the render demo's source through the docs/render.md recipe at 0.5M to 32M particles |
+| `ladder` | the render demo's source through the docs/render.md recipe at 0.5M to 32M particles (the look's `black` option picks the recipe before or after PR #194) |
 | `overflow` | one frame at 1 to 230,000 times the energy, DensityPost recipe vs CountToneMapper |
 | `ramp` | synthetic density ramps through DensityPost (default, no dither, filmic) |
 | `flicker` | consecutive frames of the render demo, moving and frozen |
 | `supersample`, `supersampleGain` | 1x, 2x, 3x captures through the capture Resampler, without and with the app's capture gain |
-| `mp4` | `startRecording` with its defaults on density-look frames, plus the source frames |
+| `mp4` | `startRecording` with its defaults on density-look frames, in the default limited range and in full range from one render, plus the source frames |
 | `challenge`, `challengeExposure` | Challenge mode, simulated and procedural, 1M to 67M, and procedural 4M at other exposures |
 | `offline` | the trillion preset scaled down (1024 sheets, the real 600-frame move) at chosen frames; `splat` forces a splat, `frames` renders a short job instead |
 | `offlineSeq`, `offlineMid` | the first frames with the web export's MP4, and frames 300 to 307 at one white point |
