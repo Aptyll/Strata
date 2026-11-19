@@ -57,8 +57,8 @@ Two very different modes, and the wording must keep them apart:
 
 | folder | what lives there |
 | --- | --- |
-| `main.ts` | app entry: wires modules, URL options, `?challenge` / `?record` hooks |
-| `app/` | small pieces split out of main: key ownership (`keys.ts`), intro adapter |
+| `main.ts` | app entry: the boot sequence, read top to bottom; `?challenge` branches off here |
+| `app/` | the app shell main boots from: URL options (`options.ts`), frame graph, scene, HUD entries, keys (`keys.ts`), frame loop and its hooks (`loop.ts`) |
 | `core/` | shared contracts (`contracts.ts`), frame graph, particle budget |
 | `gpu/` | device init (`HDR_FORMAT = rgba16float`), shared WGSL prelude |
 | `sim/` | per-plane simulation host that runs behaviors |
@@ -128,8 +128,9 @@ a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
 - **Never use `pcg2d` for particle identity.** Use `particleKey(index, seed)`
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
-- **Keys have owners.** `src/app/keys.ts`: the HUD owns R, H, Esc, F, ?, `[` `]`
-  `-` `=` G P V. A new HUD shortcut must be added to `RESERVED`.
+- **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
+  owner (HUD, app, capture, theme, panels) and label; the camera gets every key not
+  in it. A new shortcut gets a row there and is registered from that row.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
