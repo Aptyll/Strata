@@ -296,7 +296,7 @@ const { blob } = await rec.stop();
 | `timing` | `'fixed'` | `'fixed'`: frame N is at N / fps. `'realtime'`: wall clock, drops frames when busy. |
 | `output` | `'memory'` | Or a `FileSystemFileHandle` from `pickOutputFile()`. |
 | `hardwareAcceleration` | `'no-preference'` | |
-| `range` | `'limited'` | `'limited'`: frames are converted to BT.709 limited range YUV before encoding. `'full'`: the browser converts, giving full-range YUV. |
+| `range` | `'limited'`; `'full'` with realtime timing | `'limited'`: frames are converted to BT.709 limited range YUV before encoding. `'full'`: the browser converts, giving full-range YUV. |
 | `download`, `filename` | off | Download on stop (memory output). |
 
 Why the bitrate is high: a dense particle field is close to noise, which is
@@ -309,8 +309,14 @@ Colour: files are tagged BT.709, limited ("TV") range, `yuv420p`, which is
 what YouTube, players and editors all assume. The browser's own conversion
 writes full range (`yuvj420p`), and a tool that ignores the range flag then
 turns everything below code 16 black, which is the faint dust and halos.
-The recorder therefore converts to YUV itself, on the CPU: roughly a
-4K frame's readback and conversion per frame, fine for offline renders.
+The recorder therefore converts to YUV itself, on the CPU. That reads each
+frame back in the task that rendered it, waiting for the GPU, then converts
+in script (about 10 ms a 1080p frame and 47 ms a 4K frame on a 2.1 GHz
+cloud core, before the readback). Offline renders do not mind. A live
+recording would stall the view it records, so realtime timing defaults to
+`'full'`: those files come out full range, which players and YouTube read
+correctly. For an editor that ignores the flag, render the clip offline
+(fixed timing, limited range) or pass `range: 'limited'`.
 
 H.264 is tried first because it is what YouTube recommends and what every
 player opens. H.264 tops out around 4096 px wide, so larger sizes fall through
