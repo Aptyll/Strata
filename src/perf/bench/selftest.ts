@@ -220,6 +220,28 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
+    // A sim-only frame (draw off) still simulates what a drawn frame would.
+    const e = make({ lod: true, pixelDensity: 1e-12, minFraction: 0.25, simulateHidden: false });
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
+    e.draw = false;
+    let drawn = 0;
+    let simulated = 0;
+    let visible = 0;
+    for (let i = 0; i < 4; i++) {
+      const st = frame(e); // the rate LOD may skip some frames
+      drawn += st.drawnParticles;
+      simulated = Math.max(simulated, st.simulatedParticles);
+      visible = Math.max(visible, st.visiblePlanes);
+    }
+    check(
+      'draw off still simulates the LOD prefix',
+      drawn === 0 && simulated === N / 4 && visible === 1,
+      `drawn ${drawn}, simulated ${simulated}, visible ${visible}`,
+    );
+    e.destroy();
+  }
+
+  {
     const e = make({ culledSimInterval: 0 });
     e.addPlane(sheet(DRIFT.id, N), DRIFT);
     const st = frame(e, fitViewProj(5));

@@ -360,14 +360,16 @@ export class PerfEngine {
       const c = classifyPlane(this.mvp, plane.count, this.width, this.height, lod, this.cls);
 
       const planeBrightness = plane.desc.brightness ?? 1;
-      let drawCount = 0;
-      if (this.draw && c.visible && planeBrightness > 0) {
-        visible++;
-        drawCount = Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction)));
-      }
+      // The LOD prefix of a plane in view: what a drawn frame draws, and with
+      // simulateHidden off also all that is simulated. It must not depend on
+      // `draw`, or a sim-only frame (draw off) would simulate no visible plane.
+      const lodCount =
+        c.visible && planeBrightness > 0 ? Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction))) : 0;
+      if (lodCount > 0) visible++;
+      const drawCount = this.draw ? lodCount : 0;
       // Stagger by plane id so planes on the same interval do not all land on one frame.
       const doSim = this.simulate && c.simInterval > 0 && (frame + plane.id) % c.simInterval === 0;
-      const simCount = doSim ? (c.visible && !lod.simulateHidden ? drawCount : plane.count) : 0;
+      const simCount = doSim ? (c.visible && !lod.simulateHidden ? lodCount : plane.count) : 0;
       if (drawCount === 0 && simCount === 0) continue;
 
       let dt = 0;
