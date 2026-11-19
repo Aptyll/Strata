@@ -417,6 +417,10 @@ export function createHud(options = {}) {
   };
 
   const commit = (p, raw, { silent = false, notify = true } = {}) => {
+    // The engine echoing its own value must not yank a slider the person is still dragging.
+    // Without this, a live: false range snapped back on every stats refresh mid-drag, and a
+    // release after holding still for a moment committed nothing.
+    if (silent && p.pending) return p.value;
     const v = coerce(p, raw);
     const changed = v !== p.value;
     p.value = v;
@@ -533,7 +537,10 @@ export function createHud(options = {}) {
     if (g && !g.querySelector('.sh-row')) { g.remove(); groups.delete(p.group || ''); }
   };
   const getParam = (id) => params.get(id)?.value;
-  /** Set a value from the engine side. Pass { silent: true } to skip onChange. */
+  /**
+   * Set a value from the engine side. Pass { silent: true } to skip onChange. A silent set
+   * is ignored while the person is mid-drag on that slider (a live: false range).
+   */
   const setParam = (id, value, o) => {
     const p = params.get(id);
     return p ? commit(p, value, o) : undefined;

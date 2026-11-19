@@ -230,7 +230,7 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `announce(title, sub?, holdMs?)` | Fade a title in and out above the die. |
 | `message(text \| null)` | Centred message for loading or an unsupported browser. Stays until cleared. |
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
-| `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. |
+| `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. A silent set is ignored while the person is dragging that slider, so an engine echo never yanks it. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
 | `registerJob({ id, label, group, run })`, `status(text, holdMs?)`, `busy` | Long jobs and the status line. See above. |
 | `registerShortcut({ key, label, run })` | Add a key. Returns a remover. |

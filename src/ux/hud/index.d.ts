@@ -96,7 +96,10 @@ export interface ActionParam {
 export type ParamSpec = RangeParam | ToggleParam | SelectParam | ActionParam;
 
 export interface SetOptions {
-  /** Update the control without calling onChange or emitting 'change'. */
+  /**
+   * Update the control without calling onChange or emitting 'change'. Ignored while the
+   * person is mid-drag on that slider (a live: false range), so an engine echo cannot yank it.
+   */
   silent?: boolean;
 }
 export interface ParamHandle {
