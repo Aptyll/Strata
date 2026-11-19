@@ -15,6 +15,8 @@ const q = new URLSearchParams(location.search);
 const N = Number(q.get('n') ?? 1e10);
 const PLANES = Math.max(1, Number(q.get('planes') ?? Math.max(1, Math.ceil(N / 2 ** 32))));
 const offscreen = q.has('offscreen');
+/** Shared memory counters per workgroup, e.g. ?tile=4096 (16 KB, more workgroups per SM) vs the default 8160 (32 KB). */
+const TILE = q.has('tile') ? Number(q.get('tile')) : undefined;
 const info = document.getElementById('info')!;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 
@@ -89,7 +91,7 @@ async function main(): Promise<void> {
   ctx?.configure({ device, format, alphaMode: 'opaque' });
 
   const LAWS = q.has('strat') ? STRATIFIED_OFFLINE_LAWS : q.has('offline') ? OFFLINE_LAWS : STANDIN_LAWS;
-  const kernel = await TrillionKernel.create(device, { width, height, laws: LAWS });
+  const kernel = await TrillionKernel.create(device, { width, height, laws: LAWS, tileBins: TILE });
   const mapper = new CountToneMapper(device, { format, words: 2 });
   mapper.resize(width, height);
   const shot = SHOTS[q.get('shot') ?? 'wide'] ?? SHOTS.wide;
@@ -175,8 +177,8 @@ interface BenchRow { shot: string; mode: string; particles: number; seconds: num
  * close-up shots. Prints a table and leaves it on window.__trillion.bench.
  */
 async function bench(device: GPUDevice, width: number, height: number, n: number, planesCount: number): Promise<BenchRow[]> {
-  const plain = await TrillionKernel.create(device, { width, height, laws: OFFLINE_LAWS });
-  const strat = await TrillionKernel.create(device, { width, height, laws: STRATIFIED_OFFLINE_LAWS });
+  const plain = await TrillionKernel.create(device, { width, height, laws: OFFLINE_LAWS, tileBins: TILE });
+  const strat = await TrillionKernel.create(device, { width, height, laws: STRATIFIED_OFFLINE_LAWS, tileBins: TILE });
   const modes: { mode: string; k: TrillionKernel; m: 'full' | 'math' | 'noTile' }[] = [
     { mode: 'math only', k: plain, m: 'math' },
     { mode: 'random global atomics', k: plain, m: 'full' },
@@ -204,7 +206,7 @@ async function bench(device: GPUDevice, width: number, height: number, n: number
   }
   plain.destroy();
   strat.destroy();
-  const head = `trillion bench, ${width}x${height}, ${n.toExponential(1)} particles per run, ${planesCount} planes`;
+  const head = `trillion bench, ${width}x${height}, ${n.toExponential(1)} particles per run, ${planesCount} planes, tile ${strat.tileBins} counters`;
   info.textContent = [head, ...rows.map(fmt)].join('\n');
   console.table(rows);
   return rows;
