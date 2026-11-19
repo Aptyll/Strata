@@ -1,13 +1,16 @@
 import { createKeyRouter } from "./app/keys";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
-import { TOKENS, type AppContext, type ParticleBudget, type Scene } from "./core/contracts";
+import { createCapturePass } from "./capture/capturePass";
+import { TOKENS, type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
 import type { DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
 import { initGpu, writeGlobals } from "./gpu/context";
+import { createInterplane } from "./interplane/interplane.pass";
 import { createPasses } from "./passes";
 import { createAtomicRasterPass } from "./perf/atomicRasterPass";
 import { PerfBudget } from "./perf/budget";
+import { createDensitySplatPass, createDensityTonemapPass } from "./render/passes";
 import { Simulation } from "./sim/simulation";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
@@ -20,6 +23,9 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 //   ?particles=4000000&planes=48&behaviors=flow,galaxy&brightness=0.2&seed=1
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
 //   &raster=sprites  draw depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
+//   &raster=splat    sub-pixel splats
+//   &look=density    density tone mapping with bloom and trails
+//   &interplane=0    no particles crossing between planes
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
 //   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
@@ -71,13 +77,39 @@ async function start(): Promise<void> {
   // ---- frame graph -------------------------------------------------------
   const sim = new Simulation(gpu);
   const graph = new FrameGraph(gpu);
-  graph.add(sim, ...createPasses(gpu), createAtomicRasterPass(gpu));
-  const rasterizers = graph.passes.filter((p) => p.stage === "rasterize");
-  // Exactly one rasterize pass draws the particles (each one clears the HDR target).
-  const setRasterizer = (name: string) => rasterizers.forEach((p) => (p.enabled = p.name === name));
-  const wanted = query.get("depth") === "1" ? "sprites" : query.get("raster");
-  setRasterizer(wanted === "points" ? "points" : wanted === "sprites" ? "depth-sprites" : "atomic-raster");
-  const depthSprites = rasterizers.find((p) => p.name === "depth-sprites") as DepthSpritePass | undefined;
+  graph.add(
+    sim,
+    ...createPasses(gpu),
+    createAtomicRasterPass(gpu),
+    createDensitySplatPass({ energy: () => scene.render.brightness }),
+    createDensityTonemapPass(),
+  );
+  /** Of several passes that do the same job, run only the named one. */
+  const chooser = (stage: PassStage) => {
+    const options = graph.passes.filter((p) => p.stage === stage);
+    return {
+      options,
+      set: (name: string) => options.forEach((p) => (p.enabled = p.name === name)),
+      current: () => options.find((p) => p.enabled !== false)?.name,
+    };
+  };
+  // Exactly one rasterize pass draws the particles (each one clears the HDR target),
+  // and exactly one tonemap pass writes the canvas.
+  const rasterizer = chooser("rasterize");
+  const tonemapper = chooser("tonemap");
+  const RASTER_NAMES: Record<string, string> = { points: "points", sprites: "depth-sprites", splat: "density-splat" };
+  const wanted = query.get("depth") === "1" ? "sprites" : query.get("raster") ?? "";
+  rasterizer.set(RASTER_NAMES[wanted] ?? "atomic-raster");
+  tonemapper.set(query.get("look") === "density" ? "density-tonemap" : "tonemap");
+
+  // Particles crossing between neighbouring planes. Its rasterize pass adds onto the HDR
+  // target, so it is registered after the choosers and runs after whichever rasterizer is on.
+  const interplane = createInterplane();
+  graph.add(...interplane.passes);
+  const setInterplane = (on: boolean) => interplane.passes.forEach((p) => (p.enabled = on));
+  setInterplane(query.get("interplane") !== "0");
+
+  const depthSprites = rasterizer.options.find((p) => p.name === "depth-sprites") as DepthSpritePass | undefined;
 
   // ---- budget ------------------------------------------------------------
   const fullBudget = new VisibleOnlyBudget();
@@ -192,13 +224,42 @@ async function start(): Promise<void> {
   });
   hud.registerParam({
     id: "rasterizer", type: "select", group: "performance",
-    value: rasterizers.find((p) => p.enabled !== false)?.name,
+    value: rasterizer.current(),
     options: [
       { value: "atomic-raster", label: "compute" },
       { value: "points", label: "points" },
+      { value: "density-splat", label: "sub-pixel splats" },
       { value: "depth-sprites", label: "depth sprites (fog, focus)" },
     ],
-    onChange: setRasterizer,
+    onChange: rasterizer.set,
+  });
+  hud.registerParam({
+    id: "look", type: "select", group: "look", value: tonemapper.current(),
+    options: [
+      { value: "tonemap", label: "plain" },
+      { value: "density-tonemap", label: "density (bloom, trails)" },
+    ],
+    onChange: tonemapper.set,
+  });
+  hud.registerParam({
+    id: "interplane", label: "plane crossings", type: "toggle", group: "look",
+    value: interplane.passes[0].enabled !== false, onChange: setInterplane,
+  });
+
+  // ---- capture: P saves a PNG, V records an MP4 ---------------------------
+  // The HUD owns the keys (R is the dice), so the controller's own hotkeys are off.
+  const capture = createCapturePass(canvas, {
+    screenshotKey: null,
+    recordKey: null,
+    onStatus: (text) => hud.announce(text),
+  });
+  graph.add(capture);
+  hud.registerShortcut({ key: "p", label: "save image", run: () => capture.controller.requestScreenshot() });
+  hud.registerShortcut({
+    key: "v", label: "record video",
+    run: (e) => {
+      if (!e.repeat) void capture.controller.toggleRecording().catch(() => {});
+    },
   });
   hud.registerParam({
     id: "adaptive", label: "hold frame rate", type: "toggle", group: "performance", value: budget === adaptiveBudget,
