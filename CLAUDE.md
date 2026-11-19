@@ -25,7 +25,8 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  About 5 minutes per 4K frame in Chrome on the 2070.
+  26 to 52 seconds per 4K frame on the 2070, depending on how spread out the
+  hits are.
 
 ## Rules (Noah's, non-negotiable)
 
