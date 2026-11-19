@@ -9,7 +9,8 @@
  * LOD (fewer particles, proportionally brighter).
  */
 
-import type { FrameContext, GpuContext, PlaneInstance } from '../../core/contracts';
+import { behaviors } from '../../behaviors';
+import type { Behavior, FrameContext, GpuContext, PlaneDesc, PlaneInstance } from '../../core/contracts';
 import { createAtomicRasterPass, LIGHT_ONE } from '../atomicRasterPass';
 import { PerfBudget } from '../budget';
 import {
@@ -33,16 +34,49 @@ export interface TestResult {
 const SIZE = 256;
 const N = 200_000;
 
-/** Maps the plane square to NDC [-0.9, 0.9] at depth 0.5: everything is on screen. */
+/** Maps the sheet [-1, 1]^2 to NDC [-0.9, 0.9] at depth 0.5: everything is on screen. */
 function fitViewProj(offsetX = 0): Float32Array {
   const m = new Float32Array(16);
-  m[0] = 1.8;
-  m[5] = 1.8;
+  m[0] = 0.9;
+  m[5] = 0.9;
   m[12] = offsetX;
   m[14] = 0.5;
   m[15] = 1;
   return m;
 }
+
+const sheet = (behaviorId: string, particleCount: number, params?: Record<string, number>): PlaneDesc => ({
+  position: [0, 0, 0],
+  rotation: [0, 0, 0, 1],
+  halfSize: [1, 1],
+  behaviorId,
+  particleCount,
+  seed: 0.37,
+  params,
+});
+
+/** Constant drift at plane.params.speed: slow enough to need sub-quantum dithering. */
+const DRIFT: Behavior = {
+  id: 'perf-test-drift',
+  params: { speed: { default: 0.001, min: 0, max: 1 } },
+  wgsl: /* wgsl */ `
+fn update(pIn: Particle, i: u32) -> Particle {
+  var p = pIn;
+  p.vel = vec2f(plane.params.speed, 0.0);
+  p.pos = wrap(p.pos + p.vel * globals.dt);
+  return p;
+}`,
+};
+
+/** Has its own CPU init: everything starts at one point, moving right. */
+const POINT: Behavior = {
+  id: 'perf-test-point',
+  params: {},
+  wgsl: /* wgsl */ `fn update(p: Particle, i: u32) -> Particle { return p; }`,
+  init(out, count) {
+    for (let i = 0; i < count; i++) out.set([0.5, -0.25, 1, 0], i * 4);
+  },
+};
 
 function sum(a: Uint32Array): number {
   let s = 0;
@@ -56,8 +90,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
 
   // --- CPU: packing -------------------------------------------------------
   {
-    const [x, y] = unpackPosition(packPosition(0.25, 0.75));
-    check('pack position roundtrip', Math.abs(x - 0.25) < 1 / 65536 && Math.abs(y - 0.75) < 1 / 65536, `${x}, ${y}`);
+    const [x, y] = unpackPosition(packPosition(0.25, -0.75));
+    check('pack position roundtrip', Math.abs(x - 0.25) < 2 / 65536 && Math.abs(y + 0.75) < 2 / 65536, `${x}, ${y}`);
     const [vx, vy] = unpackVelocity(packVelocity(-0.5, 1.25, 2), 2);
     check('pack velocity roundtrip', Math.abs(vx + 0.5) < 1e-4 && Math.abs(vy - 1.25) < 1e-4, `${vx}, ${vy}`);
     const [cx] = unpackVelocity(packVelocity(99, 0, 2), 2);
@@ -102,10 +136,9 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   const target = device
     .createTexture({ size: [SIZE, SIZE], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT })
     .createView();
-  const make = (behavior: string, lod = {}) => {
+  const make = (lod = {}) => {
     const e = new PerfEngine(device, { format: 'rgba8unorm', lod: { lod: false, ...lod } });
     e.resize(SIZE, SIZE);
-    e.addPlane({ count: N, model: mat4Identity(), behavior });
     return e;
   };
   const frame = (e: PerfEngine, viewProj = fitViewProj(), dt = 1 / 60, time = 0) =>
@@ -114,7 +147,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   device.pushErrorScope('validation');
 
   {
-    const e = make('flow');
+    const e = make();
+    const id = e.addPlane(sheet(DRIFT.id, N), DRIFT);
     e.simulate = false;
     frame(e);
     const fb = await e.readFramebuffer();
@@ -123,25 +157,37 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     let max = 0;
     for (const v of fb) max = Math.max(max, v);
     const mean = N / (0.9 * SIZE) ** 2;
-    check('uniform init is evenly spread', max / WEIGHT_ONE < mean * 6 + 8, `max ${max / WEIGHT_ONE} per px, mean ${mean.toFixed(2)}`);
+    check('default seeding is evenly spread', max / WEIGHT_ONE < mean * 6 + 8, `max ${max / WEIGHT_ONE} per px, mean ${mean.toFixed(2)}`);
 
-    const before = await e.readParticles(0, 4096);
+    const before = await e.readParticles(id, 4096);
     e.simulate = true;
-    for (let i = 0; i < 30; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
+    const FRAMES = 120;
+    for (let i = 0; i < FRAMES; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
     const s2 = sum(await e.readFramebuffer());
     check('simulation conserves particles', s2 === N * WEIGHT_ONE, `${s2} vs ${N * WEIGHT_ONE}`);
-    const after = await e.readParticles(0, 4096);
-    let moved = 0;
-    let dist = 0;
+    const after = await e.readParticles(id, 4096);
+    let dx = 0;
+    let dy = 0;
     for (let i = 0; i < before.length; i += 2) {
-      if (before[i] !== after[i]) moved++;
       const [ax, ay] = unpackPosition(before[i]);
       const [bx, by] = unpackPosition(after[i]);
-      dist += Math.hypot(bx - ax, by - ay);
+      dx += ((bx - ax + 3) % 2) - 1; // shortest way around the torus
+      dy += Math.abs(by - ay);
     }
-    const avg = dist / (before.length / 2);
-    // flow speed is about 0.08 plane units/s, 0.5 s simulated
-    check('simulation moves particles plausibly', moved > 4000 && avg > 0.005 && avg < 0.2, `moved ${moved}/4096, avg step ${avg.toFixed(4)}`);
+    dx /= before.length / 2;
+    const want = 0.001 * (FRAMES / 60);
+    // Each step is about half a position quantum: plain rounding would give 0 or 2x.
+    check('dithering keeps sub-quantum motion', Math.abs(dx - want) < want * 0.1 && dy === 0, `moved ${dx.toExponential(3)}, expected ${want.toExponential(3)}`);
+
+    e.updatePlane(id, sheet(DRIFT.id, N, { speed: 0.5 }));
+    for (let i = 0; i < 6; i++) frame(e);
+    const fast = await e.readParticles(id, 4096);
+    let fx = 0;
+    for (let i = 0; i < fast.length; i += 2) fx += ((unpackPosition(fast[i])[0] - unpackPosition(after[i])[0] + 3) % 2) - 1;
+    fx /= fast.length / 2;
+    check('params reach the behavior', Math.abs(fx - 0.05) < 0.002, `moved ${fx.toFixed(4)}, expected 0.0500`);
+    const [vx] = unpackVelocity(fast[1], 4);
+    check('velocity is stored', Math.abs(vx - 0.5) < 0.001, `${vx}`);
 
     e.bilinear = true;
     frame(e);
@@ -151,7 +197,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
-    const e = make('flow', { lod: true, pixelDensity: 1e-12, minFraction: 0.25 });
+    const e = make({ lod: true, pixelDensity: 1e-12, minFraction: 0.25 });
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
     const st = frame(e);
     const s = sum(await e.readFramebuffer());
     check(
@@ -163,7 +210,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
-    const e = make('flow', { culledSimInterval: 0 });
+    const e = make({ culledSimInterval: 0 });
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
     const st = frame(e, fitViewProj(5));
     const s = sum(await e.readFramebuffer());
     check('culled plane costs no dispatch', st.dispatches === 0 && st.visiblePlanes === 0 && s === 0, `dispatches ${st.dispatches}, sum ${s}`);
@@ -171,7 +219,8 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
-    const e = make('flow', { culledSimInterval: 4 });
+    const e = make({ culledSimInterval: 4 });
+    e.addPlane(sheet(DRIFT.id, N), DRIFT);
     let sims = 0;
     for (let i = 0; i < 8; i++) sims += frame(e, fitViewProj(5)).simulatedParticles > 0 ? 1 : 0;
     check('culled plane simulates at reduced rate', sims === 2, `${sims} of 8 frames`);
@@ -179,37 +228,35 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
   }
 
   {
-    const e = make('orbit');
-    const p = await e.readParticles(0, 4096);
-    let moving = 0;
-    let maxR = 0;
-    for (let i = 0; i < p.length; i += 2) {
-      if (p[i + 1] !== 0) moving++;
-      const [x, y] = unpackPosition(p[i]);
-      maxR = Math.max(maxR, Math.hypot(x - 0.5, y - 0.5));
-    }
-    check('orbit init: disc with orbital velocities', moving > 4000 && maxR <= 0.43, `moving ${moving}/4096, max radius ${maxR.toFixed(3)}`);
-    for (let i = 0; i < 60; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
-    const q = await e.readParticles(0, 4096);
-    let r = 0;
-    for (let i = 0; i < q.length; i += 2) {
-      const [x, y] = unpackPosition(q[i]);
-      r = Math.max(r, Math.hypot(x - 0.5, y - 0.5));
-    }
-    // Circular orbits should stay circular: the disc must not blow up or collapse.
-    check('orbit stays bound after 1 s', r < 0.47, `max radius ${r.toFixed(3)}`);
+    const e = make();
+    const id = e.addPlane(sheet(POINT.id, 5000), POINT);
+    const p = await e.readParticles(id, 5000);
+    let ok = true;
+    for (let i = 0; i < p.length; i += 2) ok &&= p[i] === packPosition(0.5, -0.25) && p[i + 1] === packVelocity(1, 0, 4);
+    check('behavior init() is packed and uploaded', ok, '');
+
+    // Streaming: removed ranges are reused instead of growing.
+    const a = e.addPlane(sheet(DRIFT.id, 1000), DRIFT);
+    e.addPlane(sheet(DRIFT.id, 1000), DRIFT);
+    e.removePlane(a);
+    e.addPlane(sheet(DRIFT.id, 600), DRIFT);
+    const free = e.pool.pages[0].free;
+    check(
+      'removed planes free their range for reuse',
+      e.pool.pages.length === 1 && e.particleCount === 6600 && free[0][0] === 5600 && free[0][1] === 400,
+      `particles ${e.particleCount}, free ${JSON.stringify(free.slice(0, 2))}`,
+    );
     e.destroy();
   }
 
   {
-    // Every behavior compiles and runs: conservation holds for each.
-    const e = new PerfEngine(device, { format: 'rgba8unorm', lod: { lod: false } });
-    e.resize(SIZE, SIZE);
-    for (const b of e.behaviors) e.addPlane({ count: 10_000, model: mat4Identity(), behavior: b.name });
+    // Every registered behavior compiles on this path and conserves particles.
+    const e = make();
+    for (const b of behaviors) e.addPlane(sheet(b.id, 10_000), b);
     for (let i = 0; i < 10; i++) frame(e, fitViewProj(), 1 / 60, i / 60);
     const s = sum(await e.readFramebuffer());
-    const want = e.behaviors.length * 10_000 * WEIGHT_ONE;
-    check('all behaviors run and conserve particles', s === want, `${s} vs ${want}`);
+    const want = behaviors.length * 10_000 * WEIGHT_ONE;
+    check(`all ${behaviors.length} registered behaviors run packed: ${behaviors.map((b) => b.id).join(', ')}`, s === want, `${s} vs ${want}`);
     e.destroy();
   }
 

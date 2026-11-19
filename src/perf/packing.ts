@@ -1,14 +1,14 @@
 /**
  * Packed particle format: 8 bytes per particle.
  *
- *   word 0  position  x:u16 | y:u16 << 16   unorm over the plane's [0, 1) square
+ *   word 0  position  x:u16 | y:u16 << 16   unorm over the sheet's [-1, 1) square
  *   word 1  velocity  x:i16 | y:i16 << 16   snorm, scaled by the plane's velMax
  *
  * Why fixed point and not f16: a plane is a bounded 2D square, so fixed point
  * spends all 16 bits on uniform resolution (1/65536 of the plane, far below a
  * pixel) where f16 would waste bits on exponent and lose precision away from
  * the origin. u16 addition also wraps for free, which gives toroidal planes
- * with no branch. Sub-quantum motion is preserved on average by dithered
+ * with no branch for anything a behavior lets leave the sheet. Sub-quantum motion is preserved on average by dithered
  * (stochastic) rounding in the shader.
  *
  * The CPU helpers here mirror the WGSL in shaders.ts. They are used for tests
@@ -19,14 +19,15 @@ export const BYTES_PER_PARTICLE = 8;
 export const POS_QUANT = 65536;
 export const VEL_QUANT = 32767;
 
+/** Sheet-local position in [-1, 1) to a packed word. Positions outside wrap. */
 export function packPosition(x: number, y: number): number {
-  const xi = Math.floor(x * POS_QUANT) & 0xffff;
-  const yi = Math.floor(y * POS_QUANT) & 0xffff;
+  const xi = Math.floor((x * 0.5 + 0.5) * POS_QUANT) & 0xffff;
+  const yi = Math.floor((y * 0.5 + 0.5) * POS_QUANT) & 0xffff;
   return (xi | (yi << 16)) >>> 0;
 }
 
 export function unpackPosition(word: number): [number, number] {
-  return [(word & 0xffff) / POS_QUANT, (word >>> 16) / POS_QUANT];
+  return [((word & 0xffff) / POS_QUANT) * 2 - 1, ((word >>> 16) / POS_QUANT) * 2 - 1];
 }
 
 export function packVelocity(vx: number, vy: number, velMax: number): number {

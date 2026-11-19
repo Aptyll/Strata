@@ -7,8 +7,9 @@
  * plane owns one contiguous range inside one page. A plane is then a single
  * compute dispatch over [base, base + count) of its page.
  *
- * Allocation is a bump allocator: planes are never moved, and ranges are not
- * recycled yet (see docs/perf.md, "Not done yet").
+ * Planes are never moved. Released ranges go to a per-page free list (first
+ * fit, neighbours merged), so a streaming world can add and remove planes
+ * forever without growing.
  */
 
 import { BYTES_PER_PARTICLE } from './packing';
@@ -21,7 +22,8 @@ export interface ParticleRange {
 
 export interface ParticlePage {
   buffer: GPUBuffer;
-  used: number;
+  /** Free ranges as [base, count], sorted by base, never adjacent. */
+  free: [number, number][];
 }
 
 /** Default page: 2^23 particles = 64 MB, inside default WebGPU limits. */
@@ -61,23 +63,44 @@ export class ParticlePool {
           'Split larger planes or raise pageParticles.',
       );
     }
-    let page = this.pages.length - 1;
-    if (page < 0 || this.pages[page].used + count > this.pageParticles) {
-      this.pages.push({
-        buffer: this.device.createBuffer({
-          label: `strata-perf particles page ${this.pages.length}`,
-          size: this.pageParticles * BYTES_PER_PARTICLE,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-        }),
-        used: 0,
-      });
-      page = this.pages.length - 1;
+    for (let page = 0; page < this.pages.length; page++) {
+      const free = this.pages[page].free;
+      for (let i = 0; i < free.length; i++) {
+        const [base, size] = free[i];
+        if (size < count) continue;
+        if (size === count) free.splice(i, 1);
+        else free[i] = [base + count, size - count];
+        this.total += count;
+        return { page, base, count };
+      }
     }
-    const p = this.pages[page];
-    const range = { page, base: p.used, count };
-    p.used += count;
+    this.pages.push({
+      buffer: this.device.createBuffer({
+        label: `strata-perf particles page ${this.pages.length}`,
+        size: this.pageParticles * BYTES_PER_PARTICLE,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      }),
+      free: count < this.pageParticles ? [[count, this.pageParticles - count]] : [],
+    });
     this.total += count;
-    return range;
+    return { page: this.pages.length - 1, base: 0, count };
+  }
+
+  /** Returns a range to its page. Pages themselves are kept for reuse. */
+  release(range: ParticleRange): void {
+    const free = this.pages[range.page].free;
+    let i = 0;
+    while (i < free.length && free[i][0] < range.base) i++;
+    free.splice(i, 0, [range.base, range.count]);
+    if (i + 1 < free.length && free[i][0] + free[i][1] === free[i + 1][0]) {
+      free[i][1] += free[i + 1][1];
+      free.splice(i + 1, 1);
+    }
+    if (i > 0 && free[i - 1][0] + free[i - 1][1] === free[i][0]) {
+      free[i - 1][1] += free[i][1];
+      free.splice(i, 1);
+    }
+    this.total -= range.count;
   }
 
   destroy(): void {

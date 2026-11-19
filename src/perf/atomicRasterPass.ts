@@ -13,8 +13,9 @@
  */
 
 import type { FrameContext, GpuContext, Pass } from '../core/contracts';
+import { dispatchSize, DISPATCH_ROW_GROUPS, WORKGROUP_SIZE } from '../gpu/shaderLib';
 
-const WORKGROUP = 256;
+const WORKGROUP = WORKGROUP_SIZE;
 /** Fixed-point scale of the per-pixel light buffer: a full-brightness hit adds this much. */
 export const LIGHT_ONE = 256;
 
@@ -48,10 +49,11 @@ struct Size { width: u32, height: u32 }
 
 @compute @workgroup_size(${WORKGROUP})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
-  if (gid.x >= plane.count) { return; }
+  let i = gid.x + gid.y * ${DISPATCH_ROW_GROUPS * WORKGROUP}u;
+  if (i >= plane.count) { return; }
   let light = u32(clamp(plane.brightness, 0.0, 16.0) * ${LIGHT_ONE}.0 + 0.5);
   if (light == 0u) { return; }
-  let pos = particles[gid.x].pos;
+  let pos = particles[i].pos;
   let clip = globals.viewProj * (plane.model * vec4f(pos, 0.0, 1.0));
   if (clip.w <= 0.0) { return; }
   let ndc = clip.xyz / clip.w;
@@ -78,7 +80,7 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let x = min(u32(pos.x), size.width - 1u);
   let y = min(u32(pos.y), size.height - 1u);
   let v = f32(counts[y * size.width + x]) * (globals.brightness / ${LIGHT_ONE}.0);
-  return vec4f(v, v, v, 0.0);
+  return vec4f(v, v, v, 1.0);
 }
 `;
 
@@ -190,7 +192,7 @@ export function createAtomicRasterPass(gpu: GpuContext, options: AtomicRasterPas
       for (const plane of frame.planes) {
         if (plane.activeCount <= 0) continue;
         compute.setBindGroup(1, plane.simBindGroup);
-        compute.dispatchWorkgroups(Math.ceil(plane.activeCount / WORKGROUP));
+        compute.dispatchWorkgroups(...dispatchSize(plane.activeCount));
       }
       compute.end();
 
@@ -201,7 +203,7 @@ export function createAtomicRasterPass(gpu: GpuContext, options: AtomicRasterPas
             view: frame.hdrView,
             loadOp: clear ? 'clear' : 'load',
             storeOp: 'store',
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
           },
         ],
       });
