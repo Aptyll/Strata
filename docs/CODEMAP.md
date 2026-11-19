@@ -224,7 +224,7 @@ pass uses it yet: depth cues come from the depth sprites rasterizer and the
 parallax camera.
 
 **Rasterizers**, stage `rasterize`. Exactly one is enabled and it clears the
-HDR target. Pick it with the URL or the Esc menu's rasterizer setting (the
+HDR target. Pick it with the URL or the Esc menu's "render" setting (the
 list is `RASTERIZERS` in `src/app/graph.ts`).
 
 | pass | file | how it draws | where counting stops |
@@ -326,7 +326,7 @@ Each step is a small module in `src/app/`:
 | `budget.ts` | which `ParticleBudget` runs: full (`src/core/budget.ts`) or adaptive (`src/perf/budget.ts`), and the target fps |
 | `scene.ts` | the current `Scene`, `loadScene` / `getScene`, the particle total, the generated layout (`buildScene`) |
 | `context.ts` | the `AppContext` handed to UI code; each member forwards to its owner |
-| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat and the app keys |
+| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat (shown, with the count named "active", only while the two differ) and the app keys |
 | `keys.ts` | `KEYS`: every key, its owner and its label, plus the router that gives the camera every key nobody else owns |
 | `intro.ts` | runs the first-run opening on the app's camera and budget |
 | `loop.ts` | the frame loop, the fps meter and the hooks features plug into |
