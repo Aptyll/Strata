@@ -41,10 +41,12 @@ export const MENU_CSS = `
 }
 .sm-fact { min-width: 0; }
 .sm-fact[hidden] { display: none; }
+/* A fact is a value, and values keep their case: 2.00M particles must not read 2.00m (milli). */
 .sm-fact dd {
   margin: 0; color: rgba(var(--hud-fg), var(--hud-a-strong));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  text-transform: none;
 }
 .sm-fact dt { font: var(--hud-font-fine); color: rgba(var(--hud-fg), var(--hud-a-ghost)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
