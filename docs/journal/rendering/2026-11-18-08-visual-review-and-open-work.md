@@ -150,6 +150,10 @@ first.
    ([page 04](2026-11-18-04-particle-keys-and-honest-counting.md),
    [page 07](2026-11-18-07-first-trillion-frames.md)). A re-render of the hero
    still on current main with a manifest would settle all three at once.
+   *Settled at 8:29 PM: every still used the 32-bit keys and none has a GPU
+   count of evaluated particles. A and B were rendered again with manifests.
+   The hero still (key1) had not been
+   ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)).*
 3. **Proof shots.** The count-up and loupe fixes merged at 8:18 PM and both
    shots need a fresh 1T render and a look. Five shots have not been rendered
    at 1T ([page 06](2026-11-18-06-record-entry-and-proof-shots.md)).

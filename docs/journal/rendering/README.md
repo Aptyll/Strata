@@ -3,18 +3,21 @@
 What was built on the rendering side of Strata, in the order it happened: the
 density look, the compute rasterizer and the realtime numbers, depth cues, the
 offline stateless renderer, 64-bit particle keys, the trillion splat kernel,
-the record entry and proof shots, and the first frames with
-1,000,000,000,000 rendered particles from Noah's RTX 2070.
+the record entry and proof shots, the first frames with
+1,000,000,000,000 rendered particles from Noah's RTX 2070, and the audit that
+found which particle keys those frames were rendered with.
 
 Everything on these pages happened on the evening of **Nov 18, 2026, US
-Central** (already Nov 19 in UTC), between 7:12 PM and about 8:20 PM. Times
+Central** (already Nov 19 in UTC), between 7:12 PM and about 8:40 PM. Times
 are Central unless marked UTC. Conventions are in the
 [journal index](../README.md).
 
 [![The frame Noah picked to open the video: 1,000,000,000,000 rendered particles at 3840x2160, about 843 billion of them in view](images/trillion-key1-f0_1280.jpg)](../../record/trillion-key1-f0.png)
 
 *`trillion-key1-f0.png`, rendered on the RTX 2070 in 52 seconds. Click for the
-full 3840x2160 frame.*
+full 3840x2160 frame. Like every still from the first hour it was rendered on
+the old 32-bit particle keys: 10^12 particles rendered, drawn from about 4.3
+billion keys ([page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md)).*
 
 ## Pages
 
@@ -28,6 +31,7 @@ full 3840x2160 frame.*
 | [06. Record entry and proof shots](2026-11-18-06-record-entry-and-proof-shots.md) | `src/record` and `src/proof`: `?record`, the live preview, and the count-up and loupe shots rendered at 1T |
 | [07. The first trillion frames](2026-11-18-07-first-trillion-frames.md) | every 1T frame from the RTX 2070: time, in-frame count, grade, picture |
 | [08. Visual review and open work](2026-11-18-08-visual-review-and-open-work.md) | what the pictures showed was wrong, Noah's decisions, and what was still open at 8:20 PM |
+| [09. The key audit, 64-bit re-renders and proof shot reruns](2026-11-18-09-key-audit-and-64-bit-rerenders.md) | 8:20 to 8:40 PM: every still so far turned out to be on the old 32-bit keys, A and B were rendered again on 64-bit keys with the first render manifests, and the loupe and count-up reruns came back |
 
 ## Timeline
 
@@ -56,6 +60,12 @@ full 3840x2160 frame.*
 | 8:07 PM | Loupe proof shot reported: the count is exact, the picture reads as static. First RTX 2070 bench of the trillion kernel reported | [06](2026-11-18-06-record-entry-and-proof-shots.md), [05](2026-11-18-05-trillion-kernel.md) |
 | 8:10 PM | Full 1T 4K frames on the trillion kernel reported: 42 to 49 s, with the coherent path about 3% ahead of the plain one | [05](2026-11-18-05-trillion-kernel.md) |
 | 8:17 to 8:20 PM | Loupe and count-up fixes ([#146](https://github.com/Aptyll/Strata/pull/146), [#148](https://github.com/Aptyll/Strata/pull/148)), the trillion kernel's evaluated count read from the GPU ([#149](https://github.com/Aptyll/Strata/pull/149)), a darker default tone curve in the app ([#139](https://github.com/Aptyll/Strata/pull/139)) | [06](2026-11-18-06-record-entry-and-proof-shots.md), [04](2026-11-18-04-particle-keys-and-honest-counting.md), [08](2026-11-18-08-visual-review-and-open-work.md) |
+| 8:23 PM | Loupe rerun reported: the dots stand apart, and the two counts differ by 2 | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| 8:26 PM | The particle key is hardened, which moves every particle ([#153](https://github.com/Aptyll/Strata/pull/153)). The loupe gets an exact pixel test ([#155](https://github.com/Aptyll/Strata/pull/155)) | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| 8:29 PM | **The desktop's git reflog answers the question from pages 04 and 07: every still and the first clip were rendered on the old 32-bit keys.** A and B hold far fewer than a trillion distinct particles | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| 8:31 PM | A and B are marked as not a trillion distinct particles ([#163](https://github.com/Aptyll/Strata/pull/163)). Second loupe rerun: 106,651 particles in the pixel, 106,651 dots. Count-up rerun | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| 8:35 PM | **A and B rendered again on 64-bit keys, each with a render manifest**: the first trillion frames with a recorded commit and a GPU count of evaluated particles | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| 8:36 to 8:37 PM | The trillion kernel is reworked after its first 2070 numbers ([#171](https://github.com/Aptyll/Strata/pull/171)). The 64-bit A and B replace the 32-bit ones in the repo ([#173](https://github.com/Aptyll/Strata/pull/173)) | [09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
 
 ## Numbers at a glance
 
@@ -78,6 +88,11 @@ repo doc when this was written.
 | Trillion kernel, full 1T 4K frame | 42 to 49 s | reported, RTX 2070 | [page 05](2026-11-18-05-trillion-kernel.md) |
 | Count-up proof shot, last pass (1T, count weighting) | about 193 s; all 37 passes 324.6 s | reported, RTX 2070 | [page 06](2026-11-18-06-record-entry-and-proof-shots.md) |
 | Hits per pixel if 1T spread evenly over 4K | 120,563 | arithmetic (10^12 / 8,294,400) | |
+| Composition A again, 64-bit keys, flux | 161.4 s; evaluated 1,000,000,000,000; in frame 985,878,422,357; light of 677.3 billion full-weight particles | measured, RTX 2070, GPU counts from the manifest | [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md), [docs/record](../../record/README.md) |
+| Composition B again, 64-bit keys, flux | 51.4 s; evaluated 1,000,000,000,000; in frame 927,901,486,604; light of 884.2 billion full-weight particles | measured, RTX 2070, GPU counts from the manifest | [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md), [docs/record](../../record/README.md) |
+| Distinct particles in the retired 32-bit A and B | at most about 17.2 billion and 137 billion | arithmetic (4 x 2^32 and 32 x 2^32) | [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| Loupe rerun at 1T | 106,651 particles in the picked pixel, 106,651 dots in the opened-up view | GPU counts, read from the label | [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
+| Count-up rerun, last pass (1T, count weighting) | 111.9 s; all 37 passes 286.3 s | read from the label, RTX 2070 | [page 09](2026-11-18-09-key-audit-and-64-bit-rerenders.md) |
 | Planes needed for 1T | at least 233 | arithmetic (10^12 / 2^32 = 232.8) | [docs/trillion.md](../../trillion.md) |
 | Coherent-id kernel target | 10 to 15 s per 1T frame | estimate, not confirmed by the first bench | [throughput brief](../../briefs/throughput-math-2070.md) |
 
