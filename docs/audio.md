@@ -46,6 +46,10 @@ same frames and rolls always give the same soundtrack.
 - The tab going to the background silences it and suspends the audio context.
 - Only realtime frames drive the live sound. While capture or the record job
   has the GPU, it holds its last chord and levels.
+- A video rendered from the Esc menu (**render video**) while the sound is on
+  gets its own soundtrack, made from the frames it renders, muxed into the
+  MP4. The live sound fades out meanwhile and comes back afterwards. Live
+  recordings (`V`) stay silent.
 
 Wiring, in `src/main.ts` (M is the `sound` row of `KEYS` in `src/app/keys.ts`):
 
@@ -91,12 +95,11 @@ waiting for audio, so streaming a long 4K render to disk still works. When the
 recording stops, `finish(duration)` returns the rest, faded out, ending
 exactly at the last video frame.
 
-In the app, `sound.recordingAudio(fps)` opens one for an offline video
-rendered while the sound is on: every frame rendered until the recording
-finishes or is cancelled goes into it, and the live sound fades out
-meanwhile. Teaching `src/capture` to take it (`RecordingOptions.audio`, an AAC
-track, Opus where the browser cannot encode AAC) is a separate small change;
-until that lands, videos from the app are silent.
+`src/capture` takes it as `recording.audio` and adds an AAC track at
+192 kbit/s (Opus where the browser cannot encode AAC; see "Sound" in
+`docs/capture.md`). In the app, `sound.recordingAudio(fps)` opens one for an
+offline video rendered while the sound is on (`CaptureHost.audio`): every
+frame rendered until the recording finishes or is cancelled goes into it.
 
 ### Scripted videos (the trillion clips)
 
@@ -114,7 +117,7 @@ const score = scoreFromTimeline({
   density: (t) => densityOf(landed(t) / pixels), // optional: from the per-frame stats
   events: [{ type: 'accent', time: 12 }],
 });
-// Either mux while encoding with src/capture (once it takes `audio`) ...
+// Either mux while encoding with src/capture ...
 const recording = { output, audio: createRecordingAudio(compose(score)) };
 // ... or write a WAV and mux with ffmpeg:
 const wav = encodeWav(await renderScore(score));  // 24-bit PCM
@@ -151,7 +154,9 @@ WAV header, loudness reference; well under a second).
 
 Nobody has listened to it on real speakers: levels and seams were measured,
 the sound itself was not judged. Live playback has not run on Noah's PC, and
-the app wiring (M, the menu switch, the dice) was type checked and built but
-not clicked through, since the cloud sandbox cannot run the WebGPU app. The
+the app wiring (M, the menu switch, the dice, sound in rendered videos) was
+type checked and built but not clicked through, since the cloud sandbox cannot
+run the WebGPU app. Muxing was checked in headless Chromium with Opus; the AAC
+path (what Chrome on Windows will pick) has not run. The
 voice entry points and the brightness range were set by reasoning, not by ear,
 and are the first things to tune (`harmony.ts`, `composer.ts`).

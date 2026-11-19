@@ -38,6 +38,9 @@ jobs:
       # so asset URLs stay right either way.
       - name: Build
         run: npm run build -- --base "${{ steps.pages.outputs.base_path }}/"
+        env:
+          # The site's full public address, for canonical links and link preview images (src/site).
+          STRATA_SITE_URL: ${{ steps.pages.outputs.base_url }}/
 
       # The rendering explainer is a standalone page; publish it next to the app.
       - name: Add the explainer pages

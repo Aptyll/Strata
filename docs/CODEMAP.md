@@ -62,13 +62,14 @@ build (`vite.config.ts`).
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
 | `src/audio` | generative soundtrack: a Web Audio drone driven by the scene, off by default (M); offline render in step with video frames, WAV | `docs/audio.md` |
-| `src/stateless` | 64-bit particle keys and randomness for stateless particles | `README.md` |
+| `src/stateless` | 64-bit particle keys and randomness for stateless particles, and stateless motion laws (`laws/`) with a demo page | `README.md` |
 | `src/color-life` | particle life with color species: rule matrix rolls, GPU grid sort for neighbors, colored additive render; standalone | `README.md` |
 | `src/trillion` | trillion particle splat kernel: exact per-pixel counts, nothing stored | `index.ts` |
 | `src/offline` | offline renderer (browser and Node): stateless particles into a 64-bit grid, frame by frame, to MP4 | `README.md` |
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
+| `src/site` | what the published site says about itself (build-time, nothing runs in the app): titles, descriptions and link previews for every shipped page from one table, the share card, `sitemap.xml`, the landing page's load budget | `README.md`, then `pages.ts` |
 | `src/math.ts` | column-major mat4 helpers that write into `out`, `planeModelMatrix`, quaternion helpers, `seededRandom` (mulberry32) | |
 | `docs/` | one doc per area, plus `explainers/rendering.html` | `architecture.md` |
 
@@ -133,6 +134,7 @@ CPU twins for the perf format are in `src/perf/packing.ts`.
 | a WebGPU device with the large buffer limits (and optional timestamps) | `requestGpuDevice` in `src/gpu/context.ts` |
 | a compute pipeline that logs WGSL errors with line numbers | `compileComputePipeline` in `src/gpu/context.ts` |
 | keys and randomness for stateless particles | `src/stateless/rng.ts` |
+| a stateless motion law (position from q or a key, and time, with a CPU mirror) | `src/stateless/laws/` |
 | tone parameters, HDR format choice, render-side WGSL | `src/render/common.ts` |
 | turn a buffer of integer counters into density or a picture | `CountToneMapper` (`src/render/counts.ts`), or `counterLoadWgsl` and `counterResolveWgsl` in `src/render/common.ts` |
 | a compile check for a shader you generate | a `*.verify.ts` file next to it, see `src/verify/README.md` |
@@ -388,6 +390,7 @@ particle's key and the time, and adds it to an integer grid.
 | --- | --- | --- |
 | identity | `src/stateless/rng.ts` | `particleKey(index, seed)`: a 64-bit Feistel key, distinct for every particle while sheet seeds are unique and no sheet holds more than 2^32; `draw(key, k)` gives its random words (laws use k = 0..5, the offline runner owns 6 and 7) |
 | motion | `src/offline/core/laws.ts` | `kepler`, `vortex`, `lissajous`: a sheet-local position from (key, t, 8 params), in WGSL with a TypeScript mirror |
+| more motion | `src/stateless/laws` | `veil`, `galaxy`, `web`, `ribbons`: same signature, written against q in [0, 1)^3 with a key wrapper, and a strata variant for `TrillionKernel`; not used by a preset yet |
 | render | `src/offline/core/renderer.ts`, `shaders.ts` | `StatelessRenderer`: dispatches sized to a time target add particles to the 64-bit grid, with its own accumulate shader (default) or `TrillionKernel`; checkpoints between batches; tally of evaluated and landed particles |
 | develop | `src/offline/core/develop.ts` | sums each output pixel's `ssaa * ssaa` cells and stores a 16-bit log PNG (`code = 1024 * log2(1 + units)`) plus a stats JSON |
 | grade, encode | `src/offline/core/grade.ts`, `session.ts` | stored frames to 8-bit (exposure, curve, dither, label), then WebCodecs in the browser or ffmpeg in Node |
@@ -514,7 +517,7 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
 - **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
   adds P and V and the "capture" menu section, and reaches the app only
   through `CaptureHost` (add a pass, render one frame, go offline, fix the
-  resolution). The record job (`src/record`) is separate: it renders
+  resolution, and optionally a soundtrack for rendered videos). The record job (`src/record`) is separate: it renders
   stateless particles with `src/offline` and borrows only the HUD and the
   offline flag.
 - **Audio** (`docs/audio.md`): `mountSound(host)` in `src/audio/app.ts` adds M

@@ -17,7 +17,7 @@ import { DEFAULT_LOOK, drawLabel, exposureTrack, gradeFrame, toneTable, withComm
 import { totalParticles, type OfflineJob } from "./job";
 import { pcg } from "./laws";
 import { decodeGrayPng16, encodeGrayPng, type Zlib } from "./png";
-import { StatelessRenderer, type Accumulation, type FrameCursor, type RendererOptions } from "./renderer";
+import { StatelessRenderer, type Accumulation, type FrameCursor, type FrameProgress, type RendererOptions } from "./renderer";
 
 /** A directory of files. Implemented over node:fs and over the browser's File System Access API. */
 export interface FileStore {
@@ -44,14 +44,38 @@ export function jobFingerprint(job: OfflineJob): number {
   return h >>> 0;
 }
 
-// Version 3: landed tally in header words 6 and 7, GPU evaluated count in 8 and 9.
+// Version 4: landed tally in header words 6 and 7, GPU evaluated count in 8
+// and 9, and the work spent so far in 10 to 12 (milliseconds, dispatches,
+// resumes), so a continued frame reports its whole time. A checkpoint from an
+// older version has a shorter header, fails the length check below and the
+// frame starts over.
 const PARTIAL_MAGIC = 0x53545243;
-const PARTIAL_HEADER_WORDS = 10;
+const PARTIAL_HEADER_WORDS = 13;
+const U32_MAX = 0xffffffff;
 
-function packPartial(job: OfflineJob, frame: number, cursor: FrameCursor, { lo, hi, landed, gpuEvaluated }: Accumulation): Uint8Array {
+function packPartial(
+  job: OfflineJob,
+  frame: number,
+  cursor: FrameCursor,
+  { lo, hi, landed, gpuEvaluated }: Accumulation,
+  progress: FrameProgress,
+): Uint8Array {
   const out = new Uint32Array(PARTIAL_HEADER_WORDS + lo.length + hi.length);
   const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
-  out.set([PARTIAL_MAGIC, jobFingerprint(job), frame, cursor.plane, cursor.offset, lo.length, ...split(landed), ...split(gpuEvaluated)]);
+  const u32 = (v: number) => Math.min(U32_MAX, Math.max(0, Math.round(v)));
+  out.set([
+    PARTIAL_MAGIC,
+    jobFingerprint(job),
+    frame,
+    cursor.plane,
+    cursor.offset,
+    lo.length,
+    ...split(landed),
+    ...split(gpuEvaluated),
+    u32(progress.seconds * 1000),
+    u32(progress.batches),
+    u32(progress.resumes),
+  ]);
   out.set(lo, PARTIAL_HEADER_WORDS);
   out.set(hi, PARTIAL_HEADER_WORDS + lo.length);
   return new Uint8Array(out.buffer);
@@ -61,7 +85,7 @@ function unpackPartial(
   job: OfflineJob,
   frame: number,
   file: Uint8Array,
-): ({ cursor: FrameCursor } & Accumulation) | null {
+): ({ cursor: FrameCursor } & Accumulation & FrameProgress) | null {
   if (file.byteLength < PARTIAL_HEADER_WORDS * 4 || file.byteLength % 4) return null;
   const words = new Uint32Array(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
   const cells = job.width * job.height * job.ssaa * job.ssaa;
@@ -73,6 +97,9 @@ function unpackPartial(
     hi: words.slice(PARTIAL_HEADER_WORDS + cells),
     landed: BigInt(words[6]) + (BigInt(words[7]) << 32n),
     gpuEvaluated: BigInt(words[8]) + (BigInt(words[9]) << 32n),
+    seconds: words[10] / 1000,
+    batches: words[11],
+    resumes: words[12],
   };
 }
 
@@ -175,7 +202,7 @@ export async function renderJob(
             (opts.checkpointSeconds ?? 300) > 0
               ? {
                   everyMs: (opts.checkpointSeconds ?? 300) * 1000,
-                  save: (cursor, acc) => store.write(partialName(frame), packPartial(job, frame, cursor, acc)),
+                  save: (cursor, acc, progress) => store.write(partialName(frame), packPartial(job, frame, cursor, acc, progress)),
                 }
               : undefined,
           onProgress: (done, total, batchSize, batchMs) => {
@@ -210,6 +237,7 @@ export async function renderJob(
         evaluatedBy: renderer.evaluatedBy,
         seconds: result.seconds,
         batches: result.batches,
+        resumes: result.resumes,
       });
       await store.write(frameImageName(frame), await encodeGrayPng(developed.codes, job.width, job.height, zlib));
       await store.write(frameStatsName(frame), text.encode(JSON.stringify(stats)));
