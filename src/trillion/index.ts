@@ -5,3 +5,4 @@ export { renderFrame } from './driver';
 export type { FrameOptions } from './driver';
 export { LAW_PRELUDE, splatWgsl, FOLD_WGSL } from './wgsl';
 export { ORBIT_LAW, LISSAJOUS_LAW, STANDIN_LAWS } from './laws';
+export { OFFLINE_LAWS } from './offlineLaws';

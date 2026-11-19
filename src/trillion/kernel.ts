@@ -3,7 +3,7 @@
 
 import { FOLD_WGSL, LAW_PRELUDE, SLOT_BYTES, WORKGROUP, splatWgsl } from './wgsl';
 
-/** A stateless motion law: WGSL defining `fn <fn>(key: u32, t: f32, p: array<f32, 8>) -> vec2f`. */
+/** A stateless motion law: WGSL defining `fn <fn>(key: Key, t: f32, p: array<f32, 8>) -> vec2f` (Key = vec2u, src/stateless). */
 export interface TrillionLaw {
   id: string;
   /** Name of the WGSL function. */
@@ -60,12 +60,17 @@ export interface TrillionFrameSettings {
   salt: number;
   /** Stochastic bilinear sub-pixel splat (default) or plain point. */
   stochastic: boolean;
+  /**
+   * Skip planes that are entirely off screen (counted as culled). Off by
+   * default: the record claim is that every particle is evaluated.
+   */
+  cull: boolean;
 }
 
 export interface TrillionTally {
   /** Particles whose position was computed. */
   evaluated: number;
-  /** Particles skipped as whole batches because their plane is out of view. */
+  /** Particles skipped as whole batches because their plane is out of view (only with settings.cull). */
   culled: number;
   /** Evaluated particles that fell inside the frame. */
   inView: number;
@@ -90,7 +95,7 @@ export class TrillionKernel {
   counts!: GPUBuffer;
   /** Landed and in-view totals as 64 bit (lo, hi) pairs. */
   readonly tallyBuffer: GPUBuffer;
-  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true };
+  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false };
   /** CPU side tally since the last `clear`. GPU side counts come from `readTally`. */
   evaluated = 0;
   culled = 0;
@@ -221,9 +226,9 @@ export class TrillionKernel {
   }
 
   /**
-   * Encodes plane-local ids [start, start + count). Whole batches of an
-   * unseen plane are skipped and counted as culled. Returns the particles
-   * that will be evaluated.
+   * Encodes plane-local ids [start, start + count). With settings.cull, whole
+   * batches of an unseen plane are skipped and counted as culled. Returns the
+   * particles that will be evaluated.
    */
   encodeBatch(encoder: GPUCommandEncoder, batch: TrillionBatch): number {
     const { plane } = batch;
@@ -234,12 +239,12 @@ export class TrillionKernel {
     const end = Math.min(plane.count, start + Math.floor(batch.count));
     if (end <= start) return 0;
     const rect = this.footprint(plane);
-    if (!rect) { this.culled += end - start; return 0; }
-    const tiled = rect.w * rect.h <= this.tileBins;
+    if (!rect && this.settings.cull) { this.culled += end - start; return 0; }
+    const tiled = !!rect && rect.w * rect.h <= this.tileBins;
     const pipe = tiled ? pipes.tiled : pipes.direct;
     // Shared memory flushes cost up to tileBins atomics: give each workgroup
     // at least 8 particles per counter. Direct: 64 per invocation.
-    const perThread = tiled ? Math.min(2048, Math.max(64, Math.ceil((8 * rect.w * rect.h) / WORKGROUP))) : 64;
+    const perThread = tiled && rect ? Math.min(2048, Math.max(64, Math.ceil((8 * rect.w * rect.h) / WORKGROUP))) : 64;
     let total = 0;
     while (start < end) {
       const n = Math.min(end - start, MAX_DISPATCH);
