@@ -17,8 +17,11 @@
  *   seed=1
  *
  * Keys
- *   M mode   R restart the ramp   C copy the result as JSON   I hide the readout
+ *   M mode   R restart the ramp   C copy the result as JSON   I hide all text
  *   - =  exposure
+ *
+ * The count at the top and its buttons (copy result, run again, back to the
+ * world, details) are in viewer.ts; what they say is in share.ts.
  */
 
 import { TOKENS } from "../core/contracts";
@@ -28,7 +31,9 @@ import { BYTES_PER_PARTICLE, ChallengeEngine } from "./engine";
 import type { ChallengeMode } from "./engine";
 import { Ramp } from "./ramp";
 import { ROW } from "./shaders";
+import { describeGpu, mountChallengeViewer } from "./viewer";
 import { adapterOptions } from "../gpu/adapter-options";
+import { detectCapability, explainUnsupported } from "../ux/experience/capability";
 
 /** The shared challenge target for realtime: simulated particles, 1080p, 30 fps. */
 export const TIER1 = { particles: 100_000_000, fps: 30, width: 1920, height: 1080 } as const;
@@ -64,7 +69,14 @@ export interface ChallengeResult {
    */
   gpuCountVerified: boolean;
   tier1: boolean;
+  /** What WebGPU says about the adapter, for example "nvidia turing". */
   adapter: string;
+  /**
+   * The card's name as people know it ("NVIDIA GeForce RTX 2070"), from WebGL
+   * when that is the same vendor as the adapter, else the same words as
+   * `adapter`. Empty when the browser names nothing.
+   */
+  gpuName: string;
   workgroupSize: number;
 }
 
@@ -149,27 +161,34 @@ export async function startChallenge(
     hud.textContent = text;
   };
 
-  if (!navigator.gpu) {
-    say("Challenge mode needs WebGPU (recent Chrome, Edge or Safari).");
-    return;
-  }
+  // The count block: the number, what it means, and buttons (viewer.ts).
+  const viewer = mountChallengeViewer({ readout: hud, restart: () => restart() });
+  /** No run is possible: say why in plain words, with the way back to the world. */
+  const cannot = async (status?: "no-adapter" | "device-failed") => {
+    const cap = await detectCapability();
+    const why = explainUnsupported(status ? { ...cap, status } : cap);
+    viewer.explain("challenge mode needs WebGPU", why.reason, why.action);
+  };
+
+  if (!navigator.gpu) return cannot();
   const adapter = await navigator.gpu.requestAdapter(adapterOptions());
-  if (!adapter) {
-    say("No WebGPU adapter found.");
-    return;
-  }
+  if (!adapter) return cannot("no-adapter");
   const features: GPUFeatureName[] = adapter.features.has("timestamp-query") ? ["timestamp-query"] : [];
-  const device = await adapter.requestDevice({ requiredFeatures: features });
+  let device: GPUDevice;
+  try {
+    device = await adapter.requestDevice({ requiredFeatures: features });
+  } catch (err) {
+    console.warn(err);
+    return cannot("device-failed");
+  }
+  const card = describeGpu(adapter, adapterOptions());
   const info = adapter.info;
   const adapterName = [info?.vendor, info?.architecture, info?.device, info?.description]
     .filter((s) => s)
     .join(" ") || "unknown adapter";
 
   const context = canvas.getContext("webgpu");
-  if (!context) {
-    say("Could not get a WebGPU canvas context.");
-    return;
-  }
+  if (!context) return cannot("device-failed");
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
 
@@ -306,6 +325,7 @@ export async function startChallenge(
         rate >= TIER1.fps &&
         canvas.width * canvas.height >= TIER1.width * TIER1.height,
       adapter: adapterName,
+      gpuName: card.name,
       workgroupSize: engine.workgroupSize,
     };
   };
@@ -333,6 +353,14 @@ export async function startChallenge(
   const render = () => {
     const r = result();
     (window as unknown as { __strataChallenge: ChallengeResult }).__strataChallenge = r;
+    viewer.update({
+      result: r,
+      phase: ramp ? ramp.phase : "fixed",
+      mismatches: engine.countMismatches,
+      memoryLimited: engine.memoryLimited,
+      software: card.software,
+      lost,
+    });
     if (hud.style.display === "none") return;
     const lines: string[] = [];
     const modeName = r.mode === "sim" ? "simulated" : "procedural (stateless, not a tier entry)";
@@ -373,10 +401,10 @@ export async function startChallenge(
     const gpu = r.gpuMs === null ? "" : `GPU ${r.gpuMs.toFixed(1)} ms   `;
     const mem = r.mode === "sim" ? `${(engine.stateBytes / 2 ** 20).toFixed(0)} MB state   ` : "";
     lines.push(`${gpu}${mem}${canvas.width}x${canvas.height}   ${r.planes} sheets   target ${targetFps} fps`);
-    lines.push(adapterName);
+    lines.push(card.name && card.name !== adapterName ? `${card.name}   (${adapterName})` : adapterName);
     if (lost) lines.push(`GPU device lost: ${lost}`);
     if (errorText) lines.push(errorText);
-    lines.push("M mode   R restart   C copy result   I hide");
+    lines.push("M mode   R restart   C copy JSON   I hide");
     say(lines.join("\n"));
   };
 
@@ -394,7 +422,7 @@ export async function startChallenge(
         void navigator.clipboard?.writeText(JSON.stringify(result(), null, 2));
         break;
       case "KeyI":
-        hud.style.display = hud.style.display === "none" ? "" : "none";
+        viewer.toggle(); // the count block and the readout, for a clean picture
         break;
       case "Minus":
         engine.exposure *= 0.8;

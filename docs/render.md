@@ -159,6 +159,17 @@ so dim contributions survive on average. A fullscreen pass then copies the
 grid into the density target. The cost is one invocation and at most four
 atomic adds per particle, independent of overdraw.
 
+The app's default rasterizer, `atomic-raster` (`src/raster`), is the same
+compute idea working straight on the engine's particle buffers, into a `u32`
+grid at `LIGHT_ONE` (256) units per full-brightness hit. By default it adds
+one rounded value per particle. `?subpixel=1` turns on the 2x2 split above,
+with stochastic rounding, and `?depth=1` adds the depth cues from `src/depth`
+(fog, near fade and size gain as a weight, depth of field as a fixed lens
+offset per particle). Neither option blends into the f16 target, so the
+default path counts to 16.7 million full hits per pixel either way (table
+below). The `points`, `density-splat` and `depth-sprites` passes stay
+selectable for comparison and are labelled debug.
+
 Particle buffers need `VERTEX` usage for the raster modes and `STORAGE` for
 `compute`. Engine plane buffers have both.
 

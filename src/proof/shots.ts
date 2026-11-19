@@ -171,7 +171,9 @@ export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number,
 
 /** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
 export const LOUPE_MIN = 10_000;
-export const LOUPE_MAX = 50_000;
+// 100k: at 1T no sheet-interior pixel holds under 50k (2070 run, 2026-11-19).
+// Opened at 2160x2160, 100k dots are still about 7 px apart.
+export const LOUPE_MAX = 100_000;
 
 /** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
 export const LOUPE_SIZE = 2160;
@@ -242,12 +244,11 @@ export function rollPixel(
 }
 
 /**
- * The loupe: the main camera, unchanged, with an off-axis window that
- * stretches exactly pixel (x, y) of the main frame over a size x size output.
- * A particle lands in the loupe exactly when its projected centre falls in
- * that pixel of the main view (same camera, same projection, cut by the same
- * pixel edges), so the dot count equals the pixel's count up to f32 rounding
- * at the pixel border.
+ * The loupe: the main camera, unchanged, keeping only the particles whose
+ * main-view pixel is exactly (x, y) (job.select: the same float operations and
+ * u32 floor as the main frame, in the same shader), each placed in a
+ * size x size output by where it falls inside that pixel. The dot count is
+ * then the pixel's count exactly, not approximately.
  */
 export function loupeJob(job: OfflineJob, x: number, y: number, size: number): OfflineJob {
   return {
@@ -255,8 +256,9 @@ export function loupeJob(job: OfflineJob, x: number, y: number, size: number): O
     name: `loupe ${x},${y}`,
     width: size,
     height: size,
+    ssaa: 1,
     frames: 1,
-    window: { width: job.width * job.ssaa, height: job.height * job.ssaa, x0: x * job.ssaa, y0: y * job.ssaa, x1: (x + 1) * job.ssaa, y1: (y + 1) * job.ssaa },
+    select: { width: job.width * job.ssaa, height: job.height * job.ssaa, x: x * job.ssaa, y: y * job.ssaa },
   };
 }
 
