@@ -152,8 +152,8 @@ function registerMenu(
       id: "white", label: "white point", type: "range", scale: "log", group: "look", min: 1, max: 100_000,
       value: look.tone.white, onChange: (v) => (look.tone.white = v),
     });
-    // Power on the tone curve's output. 1 is the default look; about 2.2 undoes the second
-    // brightening that the sRGB encode adds on top of the log curve
+    // Power on the tone curve's output. The default, 2.2 (src/passes/tonemap.pass.ts), undoes the
+    // second brightening that the sRGB encode adds on top of the log curve; 1 is the plain curve
     // (docs/briefs/visual/V02-tone-curve-lifts-mid-greys.md).
     hud.registerParam({
       id: "contrast", type: "range", group: "look", min: 1, max: 3, step: 0.1,
