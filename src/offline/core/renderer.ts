@@ -22,6 +22,9 @@ import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
  *             depth, and evaluated is counted by the host from dispatch sizes.
+ *             Camera motion blur is offline only: the trillion kernel projects
+ *             every particle with the mid-shutter camera, so an A/B with a
+ *             moving camera compares blurred against unblurred camera moves.
  * Both give exact integer grids. Run `bench --kernel both` to compare.
  */
 export type KernelChoice = "offline" | "trillion";
