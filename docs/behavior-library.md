@@ -90,10 +90,11 @@ Pick a behavior and a particle count, drag the sliders. Drag pans, the wheel
 zooms, space pauses, R resets, H hides the panel. A link such as
 `#b=strange-attractor&n=4000000&kind=3` opens a specific setup.
 
-`preview/harness.ts` supplies the WGSL scope from `docs/architecture.md`
-(`globals`, `plane`, `rand`, `noise2`, `outside`, `wrap`, `respawn`) with the
-same uniform layouts. It is a stand-in: when the engine and the harness
-disagree, the engine is right.
+`preview/harness.ts` runs the engine's own compute shader (`buildSimShader`
+in `src/gpu/shaderLib.ts`, with the full behavior scope from
+`docs/architecture.md`) and packs the engine's uniforms with `packGlobals` and
+`packPlane`, so a behavior moves exactly as it does in the app. Only the
+drawing is simpler: one additive point per particle, then the basic tone curve.
 
 ## Notes for the engine
 

@@ -33,11 +33,13 @@ build (`vite.config.ts`).
 | `/src/depth/demo/` | `src/depth/demo/demo.ts` | depth cues demo |
 | `/src/interplane/demo/` | `src/interplane/demo/demo.ts` | particles crossing between sheets |
 | `/src/capture/demo/` | `src/capture/demo/main.ts` | stills and video capture |
+| `/src/audio/demo/` | `src/audio/demo/main.ts` | the soundtrack on its own: a pretend scene with sliders, offline render to WAV, no WebGPU |
 | `/src/trillion/demo/` | `src/trillion/demo/demo.ts` | trillion splat kernel demo |
 | `/src/proof/web/` | `src/proof/web/` | trillion proof shots (count-up, loupe, dive, ...) |
 | `/src/world/demo/` | `src/world/demo/index.html` | world layouts and streaming |
 | `/src/ux/camera/demo/`, `/src/ux/experience/demo/`, `/src/ux/hud/demo/` | each folder | camera, first-run experience and HUD on their own |
 | `/src/ux/autocam/demo/` | `src/ux/autocam/demo/main.ts` | auto camera tour flying over dot-cloud sheets, no WebGPU |
+| `/src/ux/design/demo/` | `src/ux/design/demo/main.ts` | design tokens specimen: every type role, ink level, spacing step and timing in use, no WebGPU (also in the production build) |
 
 ## Folders
 
@@ -59,13 +61,15 @@ build (`vite.config.ts`).
 | `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
-| `src/stateless` | 64-bit particle keys and randomness for stateless particles | `README.md` |
+| `src/audio` | generative soundtrack: a Web Audio drone driven by the scene, off by default (M); offline render in step with video frames, WAV | `docs/audio.md` |
+| `src/stateless` | 64-bit particle keys and randomness for stateless particles, and stateless motion laws (`laws/`) with a demo page | `README.md` |
 | `src/color-life` | particle life with color species: rule matrix rolls, GPU grid sort for neighbors, colored additive render; standalone | `README.md` |
 | `src/trillion` | trillion particle splat kernel: exact per-pixel counts, nothing stored | `index.ts` |
 | `src/offline` | offline renderer (browser and Node): stateless particles into a 64-bit grid, frame by frame, to MP4 | `README.md` |
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
+| `src/site` | what the published site says about itself (build-time, nothing runs in the app): titles, descriptions and link previews for every shipped page from one table, the share card, `sitemap.xml`, the landing page's load budget | `README.md`, then `pages.ts` |
 | `src/math.ts` | column-major mat4 helpers that write into `out`, `planeModelMatrix`, quaternion helpers, `seededRandom` (mulberry32) | |
 | `docs/` | one doc per area, plus `explainers/rendering.html` | `architecture.md` |
 
@@ -77,13 +81,13 @@ adding another.
 
 | engine | folder | particle state | how it draws | used by |
 | --- | --- | --- | --- | --- |
-| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/perf/atomicRasterPass.ts`), `points`, `density-splat`, `depth-sprites` | the app `/` |
+| `Simulation` (the engine) | `src/sim`, `src/gpu` | 16 bytes: `pos: vec2f, vel: vec2f`, one buffer per plane | a rasterize pass reads the buffer: `atomic-raster` (default, `src/raster`, with optional sub-pixel and depth cues), `points`, `density-splat`, `depth-sprites` | the app `/` |
 | `PerfEngine` | `src/perf` | 8 bytes packed (below), 64 MB pages, one range per plane | fused kernel: simulate and `atomicAdd` in one pass, then a fullscreen resolve | bench page; not yet the app's simulation |
 | `ChallengeEngine` | `src/challenge` | 8 bytes packed, a different velocity encoding (below), 128 MiB slabs | fused kernel with its own forces (not contract behaviors), `atomicAdd`, own resolve | `/?challenge` |
 | stateless "proc" mode | `src/challenge` | none: position from `(id, time)` | same accumulation buffer as above | `/?challenge`, key `M` |
 | `TrillionKernel` | `src/trillion` | none: stateless laws keyed by particle | exact hit counts per pixel (u32 hot counters folded into 64 bits), batched submits | trillion demo; the offline renderer with `--kernel trillion` |
 | offline renderer | `src/offline` (+ `src/record`, `src/proof`) | none: 64-bit keys from `src/stateless` | 64-bit integer accumulation grid, developed to 16-bit log PNG, encoded to MP4 | offline page, Node CLI, `?record` |
-| behavior preview | `src/behaviors/preview` | 16 bytes, like the engine | point list | preview page |
+| behavior preview | `src/behaviors/preview` | 16 bytes: the engine's own `buildSimShader` and uniforms on one sheet | point list | preview page |
 
 Contract behaviors (`src/behaviors/*.behavior.ts`) run unchanged on
 `Simulation` and `PerfEngine`, because both build their shader from the same
@@ -95,7 +99,8 @@ the stateless renderers have their own motion code.
 **Engine uniforms and the 16-byte particle**: the header of
 `src/gpu/shaderLib.ts` lists every byte offset of `Particle`, `Globals`
 (208 bytes, group 0) and `Plane` (112 bytes, group 1), next to the WGSL
-declarations and offset constants. Change them there and nowhere else.
+declarations, the offset constants and the only CPU writers, `packGlobals`
+and `packPlane`. Change them there and nowhere else.
 
 **8-byte packed particles** (two u32 words):
 
@@ -129,6 +134,7 @@ CPU twins for the perf format are in `src/perf/packing.ts`.
 | a WebGPU device with the large buffer limits (and optional timestamps) | `requestGpuDevice` in `src/gpu/context.ts` |
 | a compute pipeline that logs WGSL errors with line numbers | `compileComputePipeline` in `src/gpu/context.ts` |
 | keys and randomness for stateless particles | `src/stateless/rng.ts` |
+| a stateless motion law (position from q or a key, and time, with a CPU mirror) | `src/stateless/laws/` |
 | tone parameters, HDR format choice, render-side WGSL | `src/render/common.ts` |
 | turn a buffer of integer counters into density or a picture | `CountToneMapper` (`src/render/counts.ts`), or `counterLoadWgsl` and `counterResolveWgsl` in `src/render/common.ts` |
 | a compile check for a shader you generate | a `*.verify.ts` file next to it, see `src/verify/README.md` |
@@ -180,9 +186,15 @@ Worth knowing before adding a fourth of anything:
 - **Several tone mappers.** One density look for the app, `basicTone` for
   previews, and separate ones for challenge and the offline grade. Table in
   "Rendering, depth and the 1T path" below.
+- **Small math modules.** `src/math.ts` serves the engine, the perf path and
+  the behavior preview. `src/ux/camera/math.ts` (reversed-Z perspective),
+  `src/ux/experience/math.ts`, `src/world/math.ts` and
+  `src/offline/core/math.ts` serve their own folders, and several demos keep a
+  private `perspective` and `lookAt`. New engine code uses `src/math.ts`.
 - **WGSL copies.** The pcg hash and the fullscreen triangle used to be pasted
   into many shaders; new code takes them from `src/gpu/wgsl.ts`, and the old
-  copies are being switched over area by area. `STATELESS_RNG_WGSL`
+  copies are being switched over area by area. The only other `fn pcg` left is
+  in `src/challenge/shaders.ts`, which stays self-contained on purpose. `STATELESS_RNG_WGSL`
   (`src/stateless/rng.ts`) keeps its own `pcg` and `u01`, the same math, so the
   1T laws stay self-contained: never put it in one module with `PCG_WGSL` or
   `U01_WGSL` (WGSL rejects a second declaration).
@@ -191,16 +203,124 @@ Worth knowing before adding a fourth of anything:
 
 ## Engine core: contracts, GPU, simulation
 
-_Details to come with the GPU and perf cleanup._
+The realtime world runs on `src/core` (types, frame graph, default budget),
+`src/gpu` (device setup and the CPU/GPU byte contract) and `src/sim` (the
+simulation).
+
+**From a behavior to a dispatch** (`src/sim/simulation.ts`):
+
+1. `addPlane(desc)` looks up the behavior, allocates `capacity` x 16 bytes of
+   particles (capped by the device's buffer limits) and seeds them on the CPU:
+   the behavior's `init()`, else uniform random positions at rest.
+2. `buildSimShader(behavior)` puts the behavior's `update` inside the prelude
+   (`behaviorPreludeWGSL`: Globals, Particle, a `Params` struct named after the
+   behavior's params, Plane, the helpers), then `simulateParticle` and an entry
+   point. `compileComputePipeline` compiles it once per behavior id.
+3. `updatePlane` packs the plane's uniform with `packPlane` (model from
+   `planeModelMatrix`, params from `planeParamValues`). Each frame only
+   `count` is rewritten.
+4. Each frame `writeGlobals` packs the Globals uniform with `packGlobals`, and
+   the simulate pass dispatches `dispatchSize(activeCount)` workgroups for
+   every plane that has active particles and is not paused.
+
+**Bind groups** (layouts created in `initGpu`):
+
+| group | binding | buffer | written by |
+| --- | --- | --- | --- |
+| 0 | 0 | Globals uniform, 208 bytes | `writeGlobals`, once per frame |
+| 1 | 0 | the plane's Plane uniform, 112 bytes | `Simulation.updatePlane`; `count` patched per frame |
+| 1 | 1 | the plane's particles, `array<Particle>` | seeded by `addPlane`, then only the GPU |
+
+Rasterize passes bind the same group 0 and a plane's `simBindGroup` (uniform
+and particles) or `renderBindGroup` (uniform only, vertex stage) from
+`PlaneInstance`.
+
+**Where to change what:**
+
+- A uniform field: the header table, the offset constants, the WGSL struct
+  (and `PLANE_STRUCT_WGSL` for passes) and the packer, all in
+  `src/gpu/shaderLib.ts`. `PerfEngine` packs the same blocks with the same
+  packers, so it follows. `npm run verify` compiles every shader built from
+  them.
+- A helper every behavior can call: the prelude in `behaviorPreludeWGSL`, and
+  its name in the reserved list of the header.
+- The frame's stage order: `PASS_ORDER` in `src/core/contracts.ts`, in its own
+  small PR.
+- Which planes run and with how many particles: the budget. `VisibleOnlyBudget`
+  (`src/core/budget.ts`) by default, `PerfBudget` (`src/perf/budget.ts`) with
+  `?adaptive=1`; `src/app/budget.ts` picks one.
 
 ## The perf path
 
-_Details to come with the GPU and perf cleanup. Meanwhile see `docs/perf.md`._
+`src/perf` has two parts (see `src/perf/index.ts`):
+
+- **In the app.** `createAtomicRasterPass` (`atomicRasterPass.ts`, a
+  re-export of `src/raster` since the rasterizers were unified) is the
+  default rasterizer: one compute dispatch per plane reads the engine's
+  16-byte particles, projects them and adds `plane.brightness * LIGHT_ONE` to a
+  u32 per pixel with `atomicAdd`; a fullscreen triangle then adds each pixel's
+  sum `/ LIGHT_ONE * globals.brightness` to the HDR target. `PerfBudget`
+  (`budget.ts`) is the adaptive budget: a density cap per plane, and a governor
+  that steps toward the target frame rate every 0.5 s.
+- **On the bench page.** `PerfEngine` (`engine.ts`), the 8-byte particle path
+  behind the 100M and 800M numbers in `docs/perf.md`.
+
+**One `PerfEngine` frame** (`encode`):
+
+1. CPU, per plane: `classifyPlane` (`culling.ts`) culls against the frustum
+   and picks the LOD: draw only a prefix of the particles (`drawCount`) at a
+   proportionally higher weight, and simulate every 1st, 2nd or 4th frame (8th
+   when culled) with the accumulated dt.
+2. CPU: one 768-byte uniform slot per dispatched plane: Globals at +0 and Plane
+   at +256 in the engine's own layout (`packGlobals`, `packPlane`), the Perf
+   block at +512 (`packPerf` in `src/perf/shaders.ts`). One `writeBuffer`
+   uploads every slot.
+3. GPU: clear the u32 framebuffer, then one compute pass with one dispatch per
+   plane, bound with dynamic offsets `k * SLOT_STRIDE`. Each invocation
+   unpacks a particle, calls `simulateParticle` (the behavior plus brushes),
+   packs it back with stochastic rounding, projects it and adds its weight.
+4. GPU: a fullscreen resolve (`RESOLVE_WGSL`). `fsTonemap` writes the finished
+   picture with `basicTone`; `fsHdr` adds linear light to a float target.
+
+**Storage.** `ParticlePool` keeps pages of 8,388,608 particles (64 MiB, inside
+the default WebGPU limits). A plane is one contiguous range of one page, and
+`Perf.base` is its offset. Velocity clamps at `velMax` (4 by default,
+overridable per behavior).
+
+**Checks.** `/src/perf/bench/?selftest=1` runs exact-sum checks on a real
+device: the framebuffer total must equal particles on screen times weight,
+across steps and LOD. The bench's URL options are listed at the top of
+`src/perf/bench/main.ts`.
 
 ## Behaviors
 
-_Details to come with the GPU and perf cleanup. Meanwhile see
-`docs/behaviors.md` and `docs/behavior-library.md`._
+A behavior is one file, `src/behaviors/<id>.behavior.ts`, whose default export
+is `defineBehavior({ id, label, description, params, wgsl, init? })` from
+`src/behaviors/core`. `src/behaviors/index.ts` registers every such file by
+name and warns when two share a label. How to write one is in
+`docs/behaviors.md`; the built-in ones are in `docs/behavior-library.md`.
+
+- **WGSL contract.** Define `fn update(p: Particle, i: u32) -> Particle`. In
+  scope: `globals` (time, dt, frame), `plane.params.<name>`, `plane.seed`, and
+  the helpers `rand(i, salt)`, `noise2`, `outside`, `wrap`, `respawn`,
+  `brushAccel`. The prelude's names are reserved (list in the
+  `src/gpu/shaderLib.ts` header), so prefix your own helpers (`cf_`, `sa_`,
+  `gw_`).
+- **Params.** At most 8 floats, in declaration order (`paramSlotNames`).
+  `PlaneDesc.params` holds overrides, and the engine uploads them as given
+  (`planeParamValues`, no clamping).
+- **Where behaviors run.** The engine (`buildSimShader`), `PerfEngine`
+  (`buildSimRasterWGSL`, same prelude) and the preview page (the engine's own
+  shader on one sheet). Challenge mode and the stateless renderers have their
+  own motion code.
+- **Checks.** `defineBehavior` validates when the file loads (id, param ranges,
+  `update` present, every `plane.params.x` declared), and `npm run verify`
+  compiles every behavior for both engines.
+- **Tools.** `src/behaviors/core` also has param and preset helpers and
+  reusable WGSL blocks (`CURL`, `ORBITERS`, `DAMP`, ...). The app's dice
+  (`src/ux/behavior-ui/roll.ts`) and Esc menu sliders (`src/ux/hud/wire.ts`)
+  do not use the param and preset helpers; the dice reads the same
+  `randomize` and `randomRange` hints with its own code.
 
 ## Rendering, depth and the 1T path
 
@@ -222,15 +342,16 @@ pass uses it yet: depth cues come from the depth sprites rasterizer and the
 parallax camera.
 
 **Rasterizers**, stage `rasterize`. Exactly one is enabled and it clears the
-HDR target. Pick it with the URL or the Esc menu's rasterizer setting (the
+HDR target. Pick it with the URL or the Esc menu's "render" setting (the
 list is `RASTERIZERS` in `src/app/graph.ts`).
 
 | pass | file | how it draws | where counting stops |
 | --- | --- | --- | --- |
-| `atomic-raster` (default) | `src/perf/atomicRasterPass.ts` | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` (default) | `src/raster` (`kernel.ts`, `pass.ts`; `src/perf/atomicRasterPass.ts` keeps the old names) | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
+| `atomic-raster` with `?depth=1` and/or `?subpixel=1` | `src/raster/kernel.ts` (`rasterKernelWgsl`) | the same pass with options: fog, near fade and size gain as a weight per particle, depth of field as a fixed lens offset per particle (`src/depth`), the 2x2 bilinear split; stochastic rounding keeps dim light on average | the same u32 limit: nothing blends in f16 |
 | `points` (`?raster=points`) | `src/passes/points.pass.ts` | one-pixel point list, additive blend | about 2048 hits per pixel, where adding to f16 stops changing it |
 | `sheet-hue` (`?raster=hue`) | `src/hue/sheetHue.ts` | points that also write the sheet's hue; its `ui` pass `sheet-hue-tint` tints the canvas after the tone map | the same f16 limit |
-| `depth-sprites` (`?raster=sprites` or `?depth=1`) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
+| `depth-sprites` (`?raster=sprites`, debug) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
 | `density-splat` (`?raster=splat`) | `src/render/passes.ts` (`SplatAccumulator` in `quad` mode) | instanced quads with a 2x2 tent, smooth below one pixel | the same f16 limit |
 
 `interplane-streams` (`src/interplane/interplane.pass.ts`) is a rasterize pass
@@ -244,7 +365,7 @@ belongs to one page or path.
 | --- | --- | --- | --- |
 | `DensityPost`: trails, bloom, then `ToneMap` (log, power or linear curve, display shoulder, dither) | `src/render/post.ts`, `tonemap.ts` | any float density texture, red channel | the app's default tonemap pass (`src/passes/tonemap.pass.ts` calls `createDensityTonemapPass`), the render demo |
 | `CountToneMapper` | `src/render/counts.ts` | u32 counters, or 64-bit ones with `words: 2` (lo at 2i, hi at 2i + 1); resolves them to `r32float` and runs `DensityPost`; `measureAndExpose` sets exposure from a histogram of lit pixels | the render counts demo, the trillion demo |
-| `basicTone`: `pow(1 - exp(-x), 1/2.2)` | `src/gpu/wgsl.ts` | linear light | `?tonemap=basic`, the `PerfEngine` resolve, the depth demo; the behaviors preview has its own copy |
+| `basicTone`: `pow(1 - exp(-x), 1/2.2)` | `src/gpu/wgsl.ts` | linear light | `?tonemap=basic`, the `PerfEngine` resolve, the depth demo, the behaviors preview |
 | challenge `fs_canvas`: `log(1 + v c) / log(1 + c)` | `src/challenge/shaders.ts` | its u32 buffer | `/?challenge` |
 | offline develop and grade (CPU) | `src/offline/core/develop.ts`, `grade.ts` | the 64-bit grid, stored as 16-bit log PNGs; percentile exposure smoothed over time, log curve with a toe, dither, label | the offline page, the Node CLI, `?record`, the proof shots |
 
@@ -271,6 +392,7 @@ particle's key and the time, and adds it to an integer grid.
 | --- | --- | --- |
 | identity | `src/stateless/rng.ts` | `particleKey(index, seed)`: a 64-bit Feistel key, distinct for every particle while sheet seeds are unique and no sheet holds more than 2^32; `draw(key, k)` gives its random words (laws use k = 0..5, the offline runner owns 6 and 7) |
 | motion | `src/offline/core/laws.ts` | `kepler`, `vortex`, `lissajous`: a sheet-local position from (key, t, 8 params), in WGSL with a TypeScript mirror |
+| more motion | `src/stateless/laws` | `veil`, `galaxy`, `web`, `ribbons`: same signature, written against q in [0, 1)^3 with a key wrapper, and a strata variant for `TrillionKernel`; not used by a preset yet |
 | render | `src/offline/core/renderer.ts`, `shaders.ts` | `StatelessRenderer`: dispatches sized to a time target add particles to the 64-bit grid, with its own accumulate shader (default) or `TrillionKernel`; checkpoints between batches; tally of evaluated and landed particles |
 | develop | `src/offline/core/develop.ts` | sums each output pixel's `ssaa * ssaa` cells and stores a 16-bit log PNG (`code = 1024 * log2(1 + units)`) plus a stats JSON |
 | grade, encode | `src/offline/core/grade.ts`, `session.ts` | stored frames to 8-bit (exposure, curve, dither, label), then WebCodecs in the browser or ffmpeg in Node |
@@ -324,7 +446,7 @@ Each step is a small module in `src/app/`:
 | `budget.ts` | which `ParticleBudget` runs: full (`src/core/budget.ts`) or adaptive (`src/perf/budget.ts`), and the target fps |
 | `scene.ts` | the current `Scene`, `loadScene` / `getScene`, the particle total, the generated layout (`buildScene`) |
 | `context.ts` | the `AppContext` handed to UI code; each member forwards to its owner |
-| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat and the app keys |
+| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat (shown, with the count named "active", only while the two differ) and the app keys |
 | `keys.ts` | `KEYS`: every key, its owner and its label, plus the router that gives the camera every key nobody else owns |
 | `intro.ts` | runs the first-run opening on the app's camera and budget |
 | `loop.ts` | the frame loop, the fps meter and the hooks features plug into |
@@ -378,12 +500,13 @@ is what input, scenes, the intro and the world move.
 | `ux/camera` | the one camera: `CameraRig` (flights, focus, idle drift, picking), `EngineCamera` (the `CameraController` contract around it), `attachCameraInput` (mouse, touch, keys) | `src/main.ts` |
 | `ux/hud` | the HUD (`index.js`, plain JS typed by `index.d.ts`): dice, stats line, Esc menu, keys sheet, status line, jobs. `wire.ts` connects it to an `AppContext`: dice rolls, particle and brightness sliders, behavior params, the `#r=` share link | `src/app/hud.ts` |
 | `ux/behavior-ui` | `rollScene` (a seeded new scene) and `startRoll` (glides the live planes into it) | `ux/hud/wire.ts` |
+| `ux/design` | the design tokens every piece of chrome is styled with (`--st-*` custom properties: type roles, ink levels, spacing, motion, the theme accent); rules in `docs/ux/design.md` | chrome modules, as each is moved over |
 | `ux/theme` | color themes: a gradient map applied as one SVG filter on the canvas after the tone map, no per-particle cost; T cycles, `?theme=` shares | `src/app/hud.ts` |
 | `ux/experience` | the first-run experience. The app uses `intro-runner.ts` (through `src/app/intro.ts`), `engine-brushes.ts` (pointer forces), `capability.ts` and `fallback.ts` (no WebGPU). `createExperience` (`index.ts`) and `hints.ts` drive only the standalone demo, and `camera-rig.ts` is a thin front for `ux/camera` kept for that API | parts, from `src/main.ts` |
 
 Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module`.
 
-### `src/world`, `src/interplane`, `src/capture`
+### `src/world`, `src/interplane`, `src/capture`, `src/audio`
 
 - **World** (`docs/world.md`): `startStreamingWorld(app, options)` streams an
   endless seeded world through `AppContext.addPlane` and `removePlane` around
@@ -396,6 +519,11 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
 - **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
   adds P and V and the "capture" menu section, and reaches the app only
   through `CaptureHost` (add a pass, render one frame, go offline, fix the
-  resolution). The record job (`src/record`) is separate: it renders
+  resolution, and optionally a soundtrack for rendered videos). The record job (`src/record`) is separate: it renders
   stateless particles with `src/offline` and borrows only the HUD and the
   offline flag.
+- **Audio** (`docs/audio.md`): `mountSound(host)` in `src/audio/app.ts` adds M
+  and the "sound" menu section and is ticked by an `afterFrame` hook. It is off
+  on every load and only realtime frames drive the live sound;
+  `recordingAudio(fps)` collects an offline video's frames into its own
+  soundtrack. Tests: `npm test -- audio`.

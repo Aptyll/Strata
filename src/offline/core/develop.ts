@@ -40,9 +40,18 @@ export interface FrameStats {
   maxCode: number;
   /** Lit-pixel histogram over code >> 8 (quarter stops). */
   hist: number[];
-  /** Wall seconds of GPU work, and how many dispatches it took. */
+  /**
+   * Wall seconds of GPU work, and how many dispatches it took, for the whole
+   * frame: a frame that was stopped and continued sums every run.
+   */
   seconds: number;
   batches: number;
+  /**
+   * How many times the frame was continued from a checkpoint. 0 is one
+   * uninterrupted run. Absent in stats written before this field existed,
+   * where `seconds` and `batches` of a continued frame cover only its last run.
+   */
+  resumes?: number;
 }
 
 export const encodeLog = (units: number): number => Math.min(65535, Math.round(LOG_SCALE * Math.log2(1 + units)));
@@ -84,7 +93,7 @@ export function frameStats(
   frame: number,
   acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint },
   developed: { litPixels: number; maxCode: number; hist: number[] },
-  run: { evaluated: bigint; seconds: number; batches: number; evaluatedBy?: "gpu" | "host" },
+  run: { evaluated: bigint; seconds: number; batches: number; resumes?: number; evaluatedBy?: "gpu" | "host" },
 ): FrameStats {
   return {
     frame,
@@ -97,5 +106,6 @@ export function frameStats(
     hist: developed.hist,
     seconds: run.seconds,
     batches: run.batches,
+    resumes: run.resumes,
   };
 }

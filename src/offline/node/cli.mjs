@@ -224,10 +224,12 @@ async function render(args) {
           const eta = (p.total - p.done) / Math.max(p.rate, 1);
           process.stdout.write(`\rframe ${p.frame}: ${((100 * p.done) / p.total).toFixed(1)}%  ${fmtRate(p.rate)}  batch ${withCommas(p.batchSize)} in ${p.batchMs.toFixed(0)} ms  frame eta ${fmtDuration(eta)}      `);
         },
-        onFrame: (s, resumed) => {
+        onFrame: (s) => {
           failures = 0;
+          // The stats sum every run of a continued frame, so the rate holds for it too.
           const rate = Number(s.evaluated) / Math.max(s.seconds, 1e-9);
-          process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
+          const runs = s.resumes ? ` over ${s.resumes + 1} runs` : "";
+          process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${runs}, ${fmtRate(rate)}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
         },
       });
       console.log(`\nRendered ${r.rendered} frames, ${r.skipped} were already done.${r.stopped ? " Stopped early: run the same command to continue." : ""}`);

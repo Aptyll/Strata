@@ -15,12 +15,12 @@ check `git log` for anything newer.
 
 | # | brief | why it is here | owner (2026-11-19) |
 | --- | --- | --- | --- |
-| 1 | [throughput-math-2070](throughput-math-2070.md) | About 5 minutes per 1T 4K frame today (3.3 G/s in Chrome): a still is easy, a clip is a day. It fixes clip length and fps, and names the lever that could make a clip feasible. | unowned |
+| 1 | [throughput-math-2070](throughput-math-2070.md) | About 5 minutes per 1T 4K frame today (3.3 G/s in Chrome): a still is easy, a clip is a day. It fixes clip length and fps, and names the lever that could make a clip feasible. | lever built in `src/trillion` by the trillion kernel thread: coherent ids with a shared memory tile (PR #82), partial tiles (PR #115); open: measure it on the 2070 in Chrome |
 | 2 | [64-bit-ids](64-bit-ids.md) | If identity is 32 bits in any one distribution, "1T" is 4.29B particles drawn 233 times. The claim fails. | done for every record path (PRs #45, #47, #58); open only for a one-sheet trillion |
-| 3 | [honest-counting](honest-counting.md) | The video is only as strong as its proof: exact tally, manifest, wording. | mostly done (PRs #43, #48, #49, #52); open: manifest, `npm run record`, wording audit |
-| 4 | [video-scale-ladder](video-scale-ladder.md) | The deliverable: 1M to 1T on one shot, ending with 1T collapsed into one pixel. | ladder done in the Node runner (PR #59), write combining done (PR #65); open: browser ladder, collapse ending |
+| 3 | [honest-counting](honest-counting.md) | The video is only as strong as its proof: exact tally, manifest, wording. | done: tallies (PRs #43, #48, #49, #52), manifest and `npm run record` (PR #94); wording audit clean on main `a453d91` (code, docs and video prompts say "rendered" for the trillion) |
+| 4 | [video-scale-ladder](video-scale-ladder.md) | The deliverable: 1M to 1T on one shot, ending with 1T collapsed into one pixel. | done: Node ladder (PR #59), write combining (PR #65), browser `ladder` and `collapse` shots on `/src/proof/web/` (PR #79) |
 | 5 | [accumulation-and-tonemap](accumulation-and-tonemap.md) | Where 1T looks different from 1B, and how not to hide it. | cleanup threads own `src/render`, `src/depth` |
-| 6 | [unify-rasterizers](unify-rasterizers.md) | Realtime app quality. Off the 1T critical path. | unowned (coordinate with the cleanup threads) |
+| 6 | [unify-rasterizers](unify-rasterizers.md) | Realtime app quality. Off the 1T critical path. | done: decisions and debug labels (PR #128); cues as options of the compute rasterizer in `src/raster`, `?depth=1`, `?subpixel=1`, docs (brief-executor thread). Open: menu switches, a look on the 2070 |
 
 Rule for all of them: Noah asked for speed over verification. Type check
 (`npx tsc --noEmit`) and a quick build (`npm run build`) only; real testing is
@@ -48,12 +48,13 @@ Beyond the brief executors, ideas that came out of this distillation:
 
 1. **Coherent-id and shared-tile kernel.** The one lever estimated to bring a
    1T 4K frame from minutes to seconds (see
-   [throughput-math-2070](throughput-math-2070.md), lever 5).
+   [throughput-math-2070](throughput-math-2070.md), lever 5). Done in `src/trillion`
+   (PR #82, #115).
 2. **Grain prover.** Renders one frame at 1B, 10B and 1T with exposure locked,
    and outputs a per-pixel noise map. Shows where 1T is visibly different (the
    faint regions) and where it is not (the dense cores).
 3. **Browser ladder and collapse.** The Node ladder cannot run on Noah's PC;
-   bring it and the one-pixel ending to `/src/proof/web/`.
+   bring it and the one-pixel ending to `/src/proof/web/`. Done (PR #79).
 4. **Claims fact-checker.** Reads the video script, title and description and
    checks every number against the manifest and `docs/briefs`.
 5. **Export quality tester.** Encodes the same graded frames as 8-bit and

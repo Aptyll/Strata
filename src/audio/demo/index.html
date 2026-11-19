@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Strata sound</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #000; color: #fff; }
+      body {
+        font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0.04em;
+        display: flex;
+        justify-content: center;
+      }
+      main { width: min(440px, 100% - 32px); padding: 48px 0; display: flex; flex-direction: column; gap: 20px; }
+      h1 { font: inherit; margin: 0; opacity: 0.9; }
+      p { margin: 0; opacity: 0.45; }
+      section { display: flex; flex-direction: column; gap: 8px; }
+      .row { display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; gap: 12px; }
+      .row span:first-child { opacity: 0.45; }
+      .row output { text-align: right; opacity: 0.9; }
+      .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+      button {
+        font: inherit; letter-spacing: inherit; color: #fff; background: none;
+        border: 1px solid rgba(255, 255, 255, 0.45); padding: 4px 10px; cursor: pointer;
+        opacity: 0.9; transition: border-color 180ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      button:hover, button[aria-pressed="true"] { border-color: #fff; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      input[type="range"] { width: 100%; accent-color: #fff; }
+      #voices { display: flex; gap: 10px; }
+      #voices i { width: 8px; height: 8px; border-radius: 50%; background: #fff; opacity: 0.08; }
+      #status { min-height: 1.5em; opacity: 0.45; white-space: pre-wrap; }
+      label { opacity: 0.45; display: flex; gap: 6px; align-items: center; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>strata sound</h1>
+        <p>The soundtrack on its own, driven by a pretend scene. In the app: M, or "sound" in the Esc menu.</p>
+      </section>
+      <section>
+        <div class="buttons"><button id="power" aria-pressed="false">sound off</button></div>
+        <div class="row"><span>particles</span><input id="particles" type="range" min="3" max="12" step="0.01" value="6.3" /><output id="particles-out"></output></div>
+        <div class="row"><span>fill</span><input id="fill" type="range" min="0" max="1" step="0.01" value="0.6" /><output id="fill-out"></output></div>
+        <div class="row"><span>density</span><input id="density" type="range" min="0" max="1" step="0.01" value="0.4" /><output id="density-out"></output></div>
+        <div class="row"><span>orbit</span><input id="orbit" type="range" min="0" max="1.5" step="0.01" value="0.1" /><output id="orbit-out"></output></div>
+        <div class="row"><span>zoom</span><input id="zoom" type="range" min="-3" max="3" step="0.01" value="0" /><output id="zoom-out"></output></div>
+        <label><input id="auto-density" type="checkbox" checked /> density follows particles and fill</label>
+        <div class="buttons">
+          <button id="roll">roll the dice</button>
+          <button id="accent">accent</button>
+          <button id="ladder" aria-pressed="false">climb 1M to 1T</button>
+        </div>
+        <div class="row"><span>voices</span><div id="voices"></div><output id="chord"></output></div>
+      </section>
+      <section>
+        <p>Offline: the same synth, faster than realtime, one video frame per 1/fps second.</p>
+        <div class="buttons">
+          <button id="render">render 60 s climb as wav</button>
+          <button id="load">render a score .json as wav</button>
+          <input id="file" type="file" accept=".json,application/json" hidden />
+        </div>
+        <div id="status"></div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

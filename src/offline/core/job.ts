@@ -12,7 +12,11 @@ import type { Quat, Vec2, Vec3 } from "../../core/contracts";
  * a pure function of (plane seed, particle index, time), re-evaluated from
  * scratch every frame. See laws.ts for the equations.
  */
-export type LawId = "kepler" | "vortex" | "lissajous";
+export type CoreLawId = "kepler" | "vortex" | "lissajous";
+/** Laws from src/stateless/laws, by their id there. */
+export type StatelessLawId = "veil" | "galaxy" | "web" | "ribbons";
+export type LawId = CoreLawId | StatelessLawId;
+export const LAW_IDS: readonly LawId[] = ["kepler", "vortex", "lissajous", "veil", "galaxy", "web", "ribbons"];
 
 /** Each law reads up to 8 floats. Same cap as MAX_BEHAVIOR_PARAMS. */
 export const LAW_PARAM_COUNT = 8;
@@ -83,6 +87,25 @@ export interface OfflineJob {
   near: number;
   planes: OfflinePlane[];
   camera: CameraKey[];
+  /**
+   * Optional off-axis window (the proof loupe). Project as if the frame were
+   * `width` x `height` pixels, then stretch the rectangle [x0, x1) x [y0, y1)
+   * of that frame over the whole output. Particles land in the output exactly
+   * when they land in that rectangle of the reference frame, so a window of one
+   * reference pixel holds that pixel's particles. Absent: the normal frame.
+   */
+  window?: ProjectionWindow;
+}
+
+export interface ProjectionWindow {
+  /** Reference frame size in pixels (the main view the window is cut from). */
+  width: number;
+  height: number;
+  /** Rectangle in reference-frame pixels, x0 < x1, y0 < y1. */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
 /** One unit of light. A particle at full weight adds this to the 64-bit accumulator. */
@@ -120,11 +143,16 @@ export function validateJob(job: OfflineJob): void {
       fail(`plane ${i}: particleCount must be an integer in [0, 2^32 - 1]`);
     if (!Number.isInteger(p.seed) || p.seed < 0 || p.seed > 0xffffffff) fail(`plane ${i}: seed must be a u32`);
     if (p.params.length !== LAW_PARAM_COUNT) fail(`plane ${i}: params must have ${LAW_PARAM_COUNT} entries`);
-    if (p.law !== "kepler" && p.law !== "vortex" && p.law !== "lissajous") fail(`plane ${i}: unknown law ${p.law}`);
+    if (!LAW_IDS.includes(p.law)) fail(`plane ${i}: unknown law ${p.law}`);
   });
   // Distinct seeds give every sheet its own particle identities.
   const seeds = new Set(job.planes.map((p) => p.seed));
   if (seeds.size !== job.planes.length) fail("plane seeds must be unique");
+  if (job.window) {
+    const w = job.window;
+    if (!(w.width > 0 && w.height > 0)) fail("window width and height must be positive");
+    if (!(w.x1 > w.x0 && w.y1 > w.y0)) fail("window needs x0 < x1 and y0 < y1");
+  }
   for (let i = 1; i < job.camera.length; i++) {
     if (!(job.camera[i].t > job.camera[i - 1].t)) fail("camera keys must have increasing t");
   }

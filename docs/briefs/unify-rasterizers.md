@@ -1,8 +1,12 @@
 # Brief: one rasterizer for the realtime app
 
-Owner (2026-11-19): unowned. The cleanup threads own `src/render`,
-`src/depth`, `src/passes`, `src/perf`, `src/challenge` and `src/gpu`, so agree
-the plan with them before editing.
+Status (2026-11-19): done. Steps 2 (debug labels), 4 and 5 are decided in
+[docs/perf.md](../perf.md), "Decisions" (PR #128). Steps 1, 3 and 6 are done
+by the brief-executor thread: the compute rasterizer moved to `src/raster`
+and takes `subpixel` and `depth` options (`?subpixel=1`, `?depth=1`), with the
+default shader unchanged byte for byte; `src/raster/raster.verify.ts` checks
+the four kernels on a GPU. Open: menu switches for the two options (the URL
+and `pass.depth` / `pass.subpixel` work today), and a look on a real GPU.
 
 ## Context
 

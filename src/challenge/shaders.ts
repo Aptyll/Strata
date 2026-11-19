@@ -327,7 +327,10 @@ fn fs_canvas(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   // Log shoulder: linear near black, compresses orders of magnitude of
   // density into the visible range without clipping the dense cores to flat white.
   let t = log(1.0 + v * R.curve) / log(1.0 + R.curve);
-  let c = pow(clamp(t, 0.0, 1.0), 1.0 / 2.2);
+  // The log curve is already perceptual, so its output is the display value:
+  // no gamma encode on top, which would lift the mid-greys a second time.
+  // Same rule as the app's density look (contrast 2.2 in src/passes/tonemap.pass.ts).
+  let c = clamp(t, 0.0, 1.0);
   return vec4f(c, c, c, 1.0);
 }
 

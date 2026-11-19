@@ -1,5 +1,8 @@
 # V02: realtime tone curves lift one particle to mid-grey and squeeze dense structure
 
+Status: **done for the app and Challenge.** Noah had the contrast slider added first (Esc > look, PR #131), then chose 2.2 as the default on a decision card (2026-11-19 02:15 UTC). PR #139 sets the app's tonemap pass to contrast 2.2 and drops the `pow(…, 1/2.2)` after Challenge's log curve, so the two still match. `basicTone` (`?tonemap=basic`, the perf engine) keeps its encode on purpose: an exponential curve's output is linear light, so encoding it is right.
+Still open: Challenge's dense cores clip past about 1M particles. At exposure 0.02, `fs_canvas` reaches white at 50 times the light of one evenly spread face-on sheet (`frameScale` in `src/challenge/engine.ts`). With curve 400, dropping the `pow` moved the 250/255 point only from about 39 to 44 sheets' worth (v ≈ 0.77 to ≈ 0.89), while one even sheet went from 162 to 94 of 255. The levers are `curve` (more decades before white) or the exposure; judge either on a picture.
+
 Severity: medium (it sets the whole look of the app and Challenge mode).
 Affects: the app's density look, the `?tonemap=basic` curve and the Challenge resolve. The 1T grade is not affected.
 Lines are as of main `793eefc`.

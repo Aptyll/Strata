@@ -48,8 +48,12 @@ export const DEPTH_DEFAULTS: Readonly<DepthSettings> = Object.freeze({
   nearFade: 4,
 
   focusDist: 20,
-  aperture: 7,
-  maxCocPx: 40,
+  // Small blur by default. Defocus spreads a particle's light over its disc,
+  // so millions of wide discs add up to a grey veil over the black void
+  // (docs/briefs/visual/V04-depth-haze-lifts-the-void.md, measured with 7 and
+  // 40). Raise both for a deliberate close-up.
+  aperture: 3,
+  maxCocPx: 12,
   focusRange: 1,
 
   baseSize: 0.035,

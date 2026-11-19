@@ -20,10 +20,11 @@ import { createAppContext } from "./app/context";
 import { createRenderGraph } from "./app/graph";
 import { mountAppHud } from "./app/hud";
 import { mountIntro } from "./app/intro";
-import { KEYS, createKeyRouter } from "./app/keys";
+import { KEYS, MOVES_CAMERA, createKeyRouter } from "./app/keys";
 import { createFpsMeter, createFrameLoop } from "./app/loop";
 import { readOptions, type AppOptions } from "./app/options";
 import { createSceneHost } from "./app/scene";
+import { mountSound } from "./audio";
 import { mountCapture } from "./capture/app";
 import type { AppContext, GpuContext } from "./core/contracts";
 import { createParallaxCamera } from "./depth";
@@ -37,6 +38,7 @@ import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
+import { mountRecovery, reportBootFailure } from "./ux/recovery";
 import { startStreamingWorld } from "./world";
 
 const options = applyMobileBudget(readOptions(location.search), location.search); // phones get a smaller budget (src/ux/mobile)
@@ -45,7 +47,8 @@ const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 if (options.challenge) {
   void import("./challenge/main").then((m) => m.startChallenge(canvas));
 } else {
-  void startApp(canvas, options);
+  // A throw during boot would otherwise leave a black page with no reason on it.
+  startApp(canvas, options).catch((err) => reportBootFailure(err, { particles: options.particles }));
 }
 
 async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise<void> {
@@ -57,7 +60,10 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     console.warn(err);
     canvas.remove();
     const cap = await detectCapability();
-    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap);
+    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap, {
+      fullCount: options.particles,
+      sheets: options.planes,
+    });
     return;
   }
 
@@ -72,6 +78,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     raster: options.raster,
     interplane: options.interplane,
     brightness: particleLight,
+    depth: options.depth,
+    subpixel: options.subpixel,
   });
   const { graph, sim, depthSprites } = render;
   const budget = createBudgetChoice(options);
@@ -82,7 +90,12 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // distance holds still on screen. `view` is what gets drawn; `camera` is what input and scenes move.
   const view = createParallaxCamera(camera, {
     enabled: options.parallax,
-    focusDist: () => (depthSprites && depthSprites.enabled !== false ? depthSprites.params.focusDist : camera.state.distance),
+    focusDist: () =>
+      depthSprites && depthSprites.enabled !== false
+        ? depthSprites.params.focusDist
+        : render.computeRaster.depth && render.computeRaster.enabled !== false
+          ? render.computeRaster.params.focusDist
+          : camera.state.distance,
   });
   view.attach(canvas);
   const scenes = createSceneHost({ sim, camera, depthSprites, options });
@@ -98,7 +111,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
 
   // ---- people: HUD, pointer forces, the opening ----------------------------
   // Brushes swallow a held pointer's moves, so they must register after the HUD's own pointer listeners.
-  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view });
+  const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view, options });
   mountMobileControls(ui.hud); // tap target for the Esc menu on touch screens
   const brushes = attachBrushes(canvas, view, () => sim.planes);
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.
@@ -131,11 +144,18 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // Auto camera tour: C, the Esc menu or ?autocam=1; any camera input hands control back.
   const autocam = mountAutoCam({
     hud: ui.hud, canvas, camera, planes: () => sim.planes, busy: () => intro?.active, key: KEYS.autoCamera,
+    cameraKeys: keys.cameraTarget, moveKeys: MOVES_CAMERA,
   });
   loop.hooks.push({ beforeCamera: (f) => autocam.step(f.dt) });
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
+
+  // ---- sound: off on every load; M or the Esc menu turns it on (src/audio, docs/audio.md) ----
+  const sound = mountSound({
+    app, hud: ui.hud, viewport: () => ({ width: graph.width, height: graph.height }), key: KEYS.sound,
+  });
+  loop.hooks.push({ afterFrame: (f) => sound.frame(f) });
 
   // ---- capture: P screenshot, V record, stills and offline video in the menu ----
   mountCapture({
@@ -153,6 +173,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       captureGain = size ? (size.height / Math.max(1, graph.height)) ** 2 : 1;
       graph.fixedSize = size;
     },
+    // Videos rendered while the sound is on carry it (src/audio).
+    audio: (fps) => sound.recordingAudio(fps),
     keys: { screenshot: KEYS.screenshot, record: KEYS.record },
   });
 
@@ -163,6 +185,15 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     if (id === "record") loop.offline = running;
   });
   if (options.record) setTimeout(() => record.start(), 500);
+
+  // ---- when the GPU fails later: device lost, or a particle count it cannot hold (src/ux/recovery) ----
+  mountRecovery({
+    device: gpu.device,
+    scenes,
+    notify: (text) => ui.hud.status(text, 8000),
+    onLost: () => (loop.offline = true),
+    busy: () => ui.hud.busy,
+  });
 
   loop.start();
 }

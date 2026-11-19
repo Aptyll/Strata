@@ -8,11 +8,12 @@
  * trip a GPU watchdog, and the frame can be checkpointed between batches.
  */
 import { CameraPath } from "./camera";
-import { ONE, totalParticles, validateJob, type LawId, type OfflineJob } from "./job";
-import { cameraBasis, planeHomography } from "./math";
+import { ONE, totalParticles, validateJob, type LawId, type OfflineJob, type OfflinePlane } from "./job";
+import { cameraBasis, planeHomography, type CameraBasis } from "./math";
 import { BATCH_UNIFORM_BYTES, WORKGROUP_SIZE, accumulateShader } from "./shaders";
 import { TrillionKernel, type TrillionPlane } from "../../trillion/kernel";
 import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
+import { STATELESS_LAWS } from "../../stateless/laws";
 
 /**
  * Which kernel adds particles to the grid.
@@ -21,7 +22,7 @@ import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
  *   trillion  src/trillion's splat kernel: fire-and-forget u32 atomics folded
  *             into u64, shared-memory tiles for small sheets. Flux weighting
  *             becomes a per-sheet keep probability from the sheet center's
- *             depth, and evaluated is counted by the host from dispatch sizes.
+ *             depth. Evaluated and landed are both counted on the GPU.
  *             Camera motion blur is offline only: the trillion kernel projects
  *             every particle with the mid-shutter camera, so an A/B with a
  *             moving camera compares blurred against unblurred camera moves.
@@ -58,19 +59,36 @@ export interface Accumulation {
   /**
    * Particles evaluated for this frame (includes work restored from a
    * checkpoint). Equals the world's total when the frame is done. Counted on
-   * the GPU by the offline kernel; by the host from dispatch sizes with the
-   * trillion kernel (see `evaluatedBy`).
+   * the GPU by both kernels.
    */
   gpuEvaluated: bigint;
+}
+
+/**
+ * The work a frame has cost so far. It travels with a checkpoint, so a frame
+ * that was stopped and continued still reports its whole cost, not only the
+ * last run's share.
+ */
+export interface FrameProgress {
+  /** Wall seconds of rendering, summed over every run of this frame. */
+  seconds: number;
+  /** Dispatches, summed over every run of this frame. */
+  batches: number;
+  /** How many times the frame was continued from a checkpoint. */
+  resumes: number;
 }
 
 export interface FrameHooks {
   /** Called after every batch. */
   onProgress?(done: number, total: number, batchSize: number, batchMs: number): void;
-  /** Start from a saved partial frame instead of from empty. */
-  resume?: { cursor: FrameCursor } & Accumulation;
+  /**
+   * Start from a saved partial frame instead of from empty. Pass the progress
+   * that was saved with it, or the frame's time and batch count start again
+   * from zero and understate the frame.
+   */
+  resume?: { cursor: FrameCursor } & Accumulation & Partial<FrameProgress>;
   /** Save a partial frame every `everyMs` so a crash loses little. */
-  checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation): Promise<void> };
+  checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation, progress: FrameProgress): Promise<void> };
   /**
    * Checked between batches. When aborted, renderFrame saves a checkpoint (if
    * checkpoint is set) and rejects with an AbortError.
@@ -80,13 +98,10 @@ export interface FrameHooks {
   onPartial?: { everyMs: number; show(acc: Accumulation, done: number, total: number): void | Promise<void> };
 }
 
-export interface FrameResult extends Accumulation {
+export interface FrameResult extends Accumulation, FrameProgress {
   frame: number;
   /** Particles evaluated in this call (excludes work restored by a resume). */
   evaluated: number;
-  batches: number;
-  /** Wall seconds spent in this call. */
-  seconds: number;
 }
 
 const now = (): number => performance.now();
@@ -117,9 +132,13 @@ export class StatelessRenderer {
   private tk: TrillionKernel | null = null;
   private tkRead: GPUBuffer | null = null;
   readonly kernel: KernelChoice;
-  /** Who counted `gpuEvaluated`. */
+  /**
+   * Who counted `gpuEvaluated`. Always the GPU now: the trillion kernel has
+   * its own evaluated tally since src/trillion #82. "host" stays in the type
+   * for stats written before that.
+   */
   get evaluatedBy(): "gpu" | "host" {
-    return this.tk ? "host" : "gpu";
+    return "gpu";
   }
 
   private constructor(
@@ -151,7 +170,7 @@ export class StatelessRenderer {
     this.readLo = device.createBuffer({ label: "offline readLo", size: bytes, usage: read });
     this.readHi = device.createBuffer({ label: "offline readHi", size: bytes, usage: read });
     this.tally = device.createBuffer({ label: "offline tally", size: 16, usage: acc });
-    this.readTally = device.createBuffer({ label: "offline readTally", size: 16, usage: read });
+    this.readTally = device.createBuffer({ label: "offline readTally", size: 32, usage: read });
     this.uniform = device.createBuffer({
       label: "offline batch",
       size: BATCH_UNIFORM_BYTES,
@@ -167,7 +186,13 @@ export class StatelessRenderer {
     validateJob(job);
     const r = new StatelessRenderer(device, job, opts);
     if (r.kernel === "trillion") {
-      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws: OFFLINE_LAWS });
+      // Only the laws this job uses, so no pipeline is compiled for nothing.
+      const used = new Set<string>(job.planes.map((p) => p.law));
+      const laws = [
+        ...OFFLINE_LAWS.filter((l) => used.has(l.id)),
+        ...STATELESS_LAWS.filter((l) => used.has(l.id)).map((l) => ({ id: l.id, fn: l.fn, wgsl: l.wgsl })),
+      ];
+      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws });
       r.tkRead = device.createBuffer({
         label: "offline trillion read",
         size: r.gridWidth * r.gridHeight * 8,
@@ -274,11 +299,18 @@ export class StatelessRenderer {
     let batches = 0;
     let lastCheckpoint = now();
     let lastPartial = now();
+    // The frame's whole cost: what a checkpoint brought along plus this call.
+    const before = hooks.resume;
+    const progress = (): FrameProgress => ({
+      seconds: (before?.seconds ?? 0) + (now() - t0) / 1000,
+      batches: (before?.batches ?? 0) + batches,
+      resumes: before ? (before.resumes ?? 0) + 1 : 0,
+    });
 
     while (cursor.plane < job.planes.length) {
       if (hooks.signal?.aborted) {
         // Keep the work done so far: a cancelled frame resumes where it stopped.
-        if (hooks.checkpoint && done > startDone) await hooks.checkpoint.save(cursor, await this.readAccumulation());
+        if (hooks.checkpoint && done > startDone) await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
         throw new DOMException("Render cancelled", "AbortError");
       }
       const plane = job.planes[cursor.plane];
@@ -295,7 +327,7 @@ export class StatelessRenderer {
       const gx = Math.min(groups, 1024);
       const gy = Math.ceil(groups / gx);
 
-      const h = planeHomography(cam, plane, this.gridWidth, this.gridHeight);
+      const h = this.homography(cam, plane);
       if (tk) {
         const enc = device.createCommandEncoder();
         tk.encodeBatch(enc, { plane: this.trillionPlane(plane, h), start: cursor.offset, count });
@@ -315,7 +347,7 @@ export class StatelessRenderer {
           lastPartial = now();
         }
         if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
-          await hooks.checkpoint.save(cursor, await this.readAccumulation());
+          await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
           lastCheckpoint = now();
         }
         continue;
@@ -334,8 +366,8 @@ export class StatelessRenderer {
       f32[29] = shutterSpan;
       f32[30] = job.weighting === "flux" ? job.fluxRef * job.fluxRef : 0;
       f32[31] = job.near;
-      const ho = planeHomography(camOpen, plane, this.gridWidth, this.gridHeight);
-      const hc = planeHomography(camClose, plane, this.gridWidth, this.gridHeight);
+      const ho = this.homography(camOpen, plane);
+      const hc = this.homography(camClose, plane);
       const d = hc.map((v, i) => v - ho[i]);
       f32.set([d[0], d[1], d[2], 0, d[3], d[4], d[5], 0, d[6], d[7], d[8], 0], 32);
       device.queue.writeBuffer(this.uniform, 0, data);
@@ -366,13 +398,13 @@ export class StatelessRenderer {
         lastPartial = now();
       }
       if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
-        await hooks.checkpoint.save(cursor, await this.readAccumulation());
+        await hooks.checkpoint.save(cursor, await this.readAccumulation(), progress());
         lastCheckpoint = now();
       }
     }
 
     const acc = await this.readAccumulation();
-    return { frame, ...acc, evaluated: done - startDone, batches, seconds: (now() - t0) / 1000 };
+    return { frame, ...acc, evaluated: done - startDone, ...progress() };
   }
 
   /** Steer the batch size toward the time target, at most 2x per step. */
@@ -414,9 +446,14 @@ export class StatelessRenderer {
       sum += n;
     }
     this.device.queue.writeBuffer(tk.counts, 0, counts);
-    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view.
+    // Kernel tally: [0..1] counted (the grid sum), [2..3] in view, [4..5]
+    // patch counters (statistics only), [6..7] evaluated on the GPU.
     const split = (v: bigint) => [Number(v & 0xffffffffn), Number(v >> 32n)];
-    this.device.queue.writeBuffer(tk.tallyBuffer, 0, new Uint32Array([...split(sum), ...split(acc.landed)]));
+    this.device.queue.writeBuffer(
+      tk.tallyBuffer,
+      0,
+      new Uint32Array([...split(sum), ...split(acc.landed), 0, 0, ...split(acc.gpuEvaluated)]),
+    );
     tk.evaluated = Number(acc.gpuEvaluated);
   }
 
@@ -427,7 +464,7 @@ export class StatelessRenderer {
     const enc = device.createCommandEncoder();
     tk.fold(enc);
     enc.copyBufferToBuffer(tk.counts, 0, read, 0, cells * 8);
-    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 16);
+    enc.copyBufferToBuffer(tk.tallyBuffer, 0, this.readTally, 0, 32);
     device.queue.submit([enc.finish()]);
     tk.submitted();
     await Promise.all([read.mapAsync(GPUMapMode.READ), this.readTally.mapAsync(GPUMapMode.READ)]);
@@ -444,9 +481,28 @@ export class StatelessRenderer {
     }
     const t = new Uint32Array(this.readTally.getMappedRange());
     const landed = BigInt(t[2]) + (BigInt(t[3]) << 32n);
+    // Counted by the kernel, one atomic per workgroup (src/trillion, #82).
+    const gpuEvaluated = BigInt(t[6]) + (BigInt(t[7]) << 32n);
     read.unmap();
     this.readTally.unmap();
-    return { lo, hi, landed, gpuEvaluated: BigInt(tk.evaluated) };
+    return { lo, hi, landed, gpuEvaluated };
+  }
+
+  /**
+   * Sheet-to-grid homography, with the job's optional off-axis window applied
+   * in doubles: px' = (px - x0) * sx, py' = (py - y0) * sy, depth unchanged.
+   */
+  private homography(cam: CameraBasis, plane: OfflinePlane): number[] {
+    const w = this.job.window;
+    if (!w) return planeHomography(cam, plane, this.gridWidth, this.gridHeight);
+    const h = planeHomography(cam, plane, w.width, w.height);
+    const sx = this.gridWidth / (w.x1 - w.x0);
+    const sy = this.gridHeight / (w.y1 - w.y0);
+    for (let c = 0; c < 9; c += 3) {
+      h[c] = sx * (h[c] - w.x0 * h[c + 2]);
+      h[c + 1] = sy * (h[c + 1] - w.y0 * h[c + 2]);
+    }
+    return h;
   }
 
   /** Copy the accumulation grid and tally back to the CPU. */

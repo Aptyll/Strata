@@ -2,10 +2,35 @@
  * MP4 recording from a canvas, encoded in the browser with WebCodecs and
  * muxed with Mediabunny. No server and no ffmpeg involved.
  */
-import type { BufferTarget, StreamTarget, StreamTargetChunk, VideoCodec, VideoSample } from 'mediabunny';
+import type { AudioBufferSource, BufferTarget, StreamTarget, StreamTargetChunk, VideoCodec, VideoSample } from 'mediabunny';
 import { type AnyCanvas, FilterStage, Resampler, cssFilterOf, downloadBlob, timestampName } from './util';
 
 export type CaptureCodec = 'avc' | 'hevc' | 'vp9' | 'av1';
+
+/** Audio codecs a recording can carry: AAC where the browser can encode it, else Opus. */
+export type CaptureAudioCodec = 'aac' | 'opus';
+
+/**
+ * A soundtrack handed over in step with the video, for fixed timing
+ * recordings. src/audio's createRecordingAudio makes one; any object of this
+ * shape works.
+ */
+export interface RecordingAudio {
+  readonly sampleRate: number;
+  readonly numberOfChannels: number;
+  /**
+   * Called after each video frame with the video time covered so far. Returns
+   * the audio that follows the last buffer it returned, or null when no new
+   * chunk is ready yet. Hand audio over a few seconds at a time as the video
+   * advances: the muxer holds encoded video in memory until audio for the
+   * same time arrives.
+   */
+  pull(videoTime: number): Promise<AudioBuffer | null>;
+  /** Called once when the recording stops. Returns the rest, so the audio ends exactly at `duration`. */
+  finish(duration: number): Promise<AudioBuffer | null>;
+  /** Called if the recording is cancelled or fails. It may come more than once, and after finish. */
+  cancel?(): void;
+}
 
 export interface RecordingOptions {
   /** Frames per second of the output file. Default 60. */
@@ -62,6 +87,14 @@ export interface RecordingOptions {
    * change shows up in the video. Null records the raw canvas pixels.
    */
   filter?: string | null;
+  /**
+   * A soundtrack to mux in, as an AAC track (Opus where the browser cannot
+   * encode AAC). Needs fixed timing. The recorder pulls audio after every
+   * frame and asks for the rest when it stops. Default: no audio track.
+   */
+  audio?: RecordingAudio | null;
+  /** Audio bitrate in bits per second. Default 192000 (Windows' AAC encoder takes 96, 128, 160 or 192 kbit/s). */
+  audioBitrate?: number;
 }
 
 /** Anything a 2D canvas can draw that knows its own pixel size. */
@@ -85,6 +118,8 @@ export interface RecordingResult {
   bitrate: number;
   frames: number;
   droppedFrames: number;
+  /** The audio track's codec, or null for a silent file. */
+  audioCodec: CaptureAudioCodec | null;
   /** Duration of the video in seconds. */
   duration: number;
   /** Wall clock seconds spent between start and stop. */
@@ -97,6 +132,8 @@ export interface Recorder {
   readonly height: number;
   readonly fps: number;
   readonly bitrate: number;
+  /** The audio track's codec, or null when the recording has no soundtrack. */
+  readonly audioCodec: CaptureAudioCodec | null;
   /** Frames added so far. */
   readonly frames: number;
   readonly droppedFrames: number;
@@ -162,6 +199,15 @@ export function pickOutputFile(suggestedName = timestampName('strata', 'mp4')): 
  * ```
  */
 export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions = {}): Promise<Recorder> {
+  try {
+    return await openRecording(canvas, opts);
+  } catch (err) {
+    opts.audio?.cancel?.(); // the soundtrack will never be asked for, so let its owner know
+    throw err;
+  }
+}
+
+async function openRecording(canvas: AnyCanvas, opts: RecordingOptions): Promise<Recorder> {
   if (!isRecordingSupported()) {
     throw new Error('capture: WebCodecs VideoEncoder is not available in this browser.');
   }
@@ -176,14 +222,20 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
   const wanted = opts.codec ? (Array.isArray(opts.codec) ? opts.codec : [opts.codec]) : DEFAULT_CODECS;
   const timing = opts.timing ?? 'fixed';
   const latencyMode = timing === 'realtime' ? 'realtime' : 'quality';
+  const audio = opts.audio ?? null;
+  if (audio && timing !== 'fixed') {
+    throw new Error('capture: a soundtrack needs fixed timing; realtime recordings have no audio track.');
+  }
 
   // Mediabunny is about 220 kB of script that only a recording needs, so it is
   // fetched here, when the first recording starts, and not with the page.
-  const { BufferTarget, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSource, getFirstEncodableVideoCodec } =
-    await import('mediabunny').catch((cause) => {
-      // Offline, or the tab is older than the last deploy and the file moved.
-      throw new Error('capture: could not load the video encoder. Check the connection, or reload the page.', { cause });
-    });
+  const {
+    AudioBufferSource, BufferTarget, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSource,
+    getFirstEncodableAudioCodec, getFirstEncodableVideoCodec,
+  } = await import('mediabunny').catch((cause) => {
+    // Offline, or the tab is older than the last deploy and the file moved.
+    throw new Error('capture: could not load the video encoder. Check the connection, or reload the page.', { cause });
+  });
 
   const codec = (await getFirstEncodableVideoCodec(wanted as VideoCodec[], {
     width,
@@ -196,6 +248,17 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
       `capture: this browser cannot encode ${wanted.join('/')} at ${width}x${height}. ` +
         `Try a smaller size or another codec.`,
     );
+  }
+  const audioBitrate = opts.audioBitrate ?? 192_000;
+  const audioCodec = audio
+    ? ((await getFirstEncodableAudioCodec(['aac', 'opus'], {
+        numberOfChannels: audio.numberOfChannels,
+        sampleRate: audio.sampleRate,
+        bitrate: audioBitrate,
+      })) as CaptureAudioCodec | null)
+    : null;
+  if (audio && !audioCodec) {
+    throw new Error(`capture: this browser cannot encode the soundtrack as AAC or Opus at ${audio.sampleRate} Hz.`);
   }
 
   const toDisk = opts.output && opts.output !== 'memory' ? opts.output : null;
@@ -230,6 +293,14 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
     alpha: 'discard',
   });
   output.addVideoTrack(source, timing === 'fixed' ? { frameRate: fps } : {});
+  // The muxer interleaves by time, so it holds encoded video until audio for
+  // the same time arrives. The soundtrack is therefore pulled after every
+  // frame, a few seconds at a time, rather than added at the end.
+  let audioSource: AudioBufferSource | null = null;
+  if (audio && audioCodec) {
+    audioSource = new AudioBufferSource({ codec: audioCodec, bitrate: audioBitrate });
+    output.addAudioTrack(audioSource);
+  }
   await output.start();
 
   const startedAt = performance.now();
@@ -241,12 +312,35 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
   let lastTimestamp = -Infinity;
   let failure: unknown = null;
 
+  /**
+   * Encodes the soundtrack's next piece, if it has one, once the piece before
+   * it is done, so pieces never overlap. A failure here fails the recording,
+   * like a video one.
+   */
+  let audioQueue: Promise<void> = Promise.resolve();
+  const feedAudio = (next: () => Promise<AudioBuffer | null>): Promise<void> => {
+    const run = audioQueue.then(async () => {
+      if (!audioSource) return;
+      if (failure) throw failure;
+      try {
+        const buffer = await next();
+        if (buffer) await audioSource.add(buffer);
+      } catch (err) {
+        failure ??= err;
+        throw err;
+      }
+    });
+    audioQueue = run.catch(() => {});
+    return run;
+  };
+
   const recorder: Recorder = {
     codec,
     width,
     height,
     fps,
     bitrate,
+    audioCodec,
     get frames() {
       return frames;
     },
@@ -308,6 +402,8 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
           busy = false;
           sample.close();
           closeInput();
+          // Whatever audio the video now covers goes in too.
+          if (audio) return feedAudio(() => audio.pull(timestamp + frameDuration));
         },
         (err) => {
           busy = false;
@@ -322,7 +418,11 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
     async stop(): Promise<RecordingResult> {
       if (!active) throw new Error('capture: recording is not active.');
       active = false;
+      const duration = timing === 'fixed' ? frames * frameDuration : lastTimestamp + frameDuration;
+      // The rest of the soundtrack, ending exactly with the last frame. A failure lands in `failure`.
+      if (audio && !failure) await feedAudio(() => audio.finish(duration)).catch(() => {});
       if (failure) {
+        audio?.cancel?.();
         await output.cancel().catch(() => {});
         throw failure;
       }
@@ -343,7 +443,8 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
         bitrate,
         frames,
         droppedFrames: dropped,
-        duration: timing === 'fixed' ? frames * frameDuration : lastTimestamp + frameDuration,
+        audioCodec,
+        duration,
         elapsed: (performance.now() - startedAt) / 1000,
       };
     },
@@ -351,6 +452,7 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
     async cancel(): Promise<void> {
       if (!active) return;
       active = false;
+      audio?.cancel?.();
       await output.cancel();
     },
   };

@@ -85,6 +85,12 @@ fn draw(key: Key, k: u32) -> u32 {
   if (k == 1u) { return key.y; }
   return pcg(key.x ^ (key.y * (2u * k + 1u)) ^ (k * 0x9e3779b9u));
 }
+
+// Continuous coordinates in [0, 1)^3 for laws written against q (see
+// src/stateless/laws). q.xy are the key words, so all 64 bits reach the law.
+fn qFromKey(key: Key) -> vec3f {
+  return vec3f(u01(key.x), u01(key.y), u01(draw(key, 2u)));
+}
 `;
 
 /** A particle key: two u32 words, [x, y] as in the WGSL `Key`. */
@@ -148,6 +154,9 @@ export function draw(key: Key, k: number): number {
   if (k === 1) return key[1] >>> 0;
   return pcg((key[0] ^ Math.imul(key[1], 2 * k + 1) ^ Math.imul(k, 0x9e3779b9)) >>> 0);
 }
+
+/** Mirror of the WGSL `qFromKey`: a key as continuous coordinates in [0, 1)^3. */
+export const qFromKey = (key: Key): [number, number, number] => [u01(key[0]), u01(key[1]), u01(draw(key, 2))];
 
 /**
  * The 32-bit key scheme this replaces, kept for the comparison in the check

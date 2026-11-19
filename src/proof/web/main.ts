@@ -10,8 +10,8 @@ import { totalParticles, type OfflineJob } from "../../offline/core/job";
 import { cameraBasis } from "../../offline/core/math";
 import { CameraPath } from "../../offline/core/camera";
 import { StatelessRenderer } from "../../offline/core/renderer";
-import { gradeJob, loadStats, renderJob, type FileStore } from "../../offline/core/session";
-import { DEFAULT_LOOK, exposureTrack } from "../../offline/core/grade";
+import { gradeJob, jobFingerprint, loadStats, renderJob, type FileStore } from "../../offline/core/session";
+import { DEFAULT_LOOK, drawLabel, exposureTrack } from "../../offline/core/grade";
 import { browserZlib, canPickFolder, directoryStore, memoryStore, pickFolder } from "../../offline/web/platform";
 import {
   baseWorld,
@@ -32,6 +32,9 @@ import {
   pullBackLabel,
   pullBackPasses,
   rollPixel,
+  LOUPE_MAX,
+  LOUPE_MIN,
+  LOUPE_SIZE,
   type Pass,
   type ShotOptions,
 } from "../shots";
@@ -112,25 +115,77 @@ async function renderPass(device: GPUDevice, pass: Pass, i: number, n: number): 
   return !r.stopped;
 }
 
-/** Loupe: render the full frame, read one pixel's exact 64-bit count, then render that pixel opened up. */
+/** Saved loupe pick. The file name carries the range so a pick from an older rule is not reused. */
+const LOUPE_PIXEL_FILE = `loupe-pixel-interior-${LOUPE_MIN}-${LOUPE_MAX}.json`;
+/** Raw 64-bit count grid of the main loupe frame, kept so a new dice roll costs no re-render. */
+const loupeGridFile = (main: OfflineJob) => `loupe-main-grid-${jobFingerprint(main).toString(16)}.bin`;
+
+interface LoupePixel {
+  x: number;
+  y: number;
+  count: string;
+  landed: string;
+  evaluated: number;
+  dice: number;
+  /** False when no pixel met the range and flatness rules and the nearest one was taken. */
+  interior?: boolean;
+}
+
+// "window": the exact off-axis loupe. Older loupe frames in the folder are left alone.
+const loupeKey = (p: { x: number; y: number }) => `loupe-window-${p.x}-${p.y}-`;
+
+async function readLoupePixel(): Promise<LoupePixel | null> {
+  const f = await store.read(LOUPE_PIXEL_FILE);
+  return f ? (JSON.parse(untext.decode(f)) as LoupePixel) : null;
+}
+
+/**
+ * Loupe: render the full frame, read one pixel's exact 64-bit count, then
+ * render that pixel opened up. The pick holds LOUPE_MIN to LOUPE_MAX particles
+ * so the opened view shows separate dots, not static.
+ */
 async function renderLoupe(device: GPUDevice, o: ShotOptions): Promise<void> {
   const main = baseWorld(o);
-  let pixel = await store.read("loupe-pixel.json").then((f) => (f ? JSON.parse(untext.decode(f)) : null));
-  if (!pixel) {
-    // Exact counts need the raw grid, so the main frame uses the renderer directly.
-    const renderer = await StatelessRenderer.create(device, main, { targetBatchMs: 120 });
-    const res = await renderer.renderFrame(0, {
-      signal: undefined,
-      onProgress: (d, t, b, ms) => setStatus(`loupe main frame: ${((100 * d) / t).toFixed(1)}%\n${fmtRate(b / Math.max(ms / 1000, 1e-6))}`),
-    });
-    renderer.dispose();
-    const p = rollPixel(res.lo, res.hi, main.width, main.height, o.dice);
-    pixel = { x: p.x, y: p.y, count: p.count.toString(), landed: res.landed.toString(), evaluated: res.evaluated };
-    await store.write("loupe-pixel.json", text.encode(JSON.stringify(pixel)));
+  let pixel = await readLoupePixel();
+  if (!pixel || pixel.dice !== o.dice) {
+    const cells = main.width * main.height;
+    let grid = await store.read(loupeGridFile(main));
+    let landed = "";
+    let evaluated = 0;
+    if (grid && grid.byteLength === 8 * cells + 16) {
+      const head = new DataView(grid.buffer, grid.byteOffset, 16);
+      landed = (BigInt(head.getUint32(0, true)) + (BigInt(head.getUint32(4, true)) << 32n)).toString();
+      evaluated = head.getFloat64(8, true);
+    } else {
+      // Exact counts need the raw grid, so the main frame uses the renderer directly.
+      const renderer = await StatelessRenderer.create(device, main, { targetBatchMs: 120 });
+      const res = await renderer.renderFrame(0, {
+        onProgress: (d, t, b, ms) => setStatus(`loupe main frame: ${((100 * d) / t).toFixed(1)}%\n${fmtRate(b / Math.max(ms / 1000, 1e-6))}`),
+      });
+      renderer.dispose();
+      landed = res.landed.toString();
+      evaluated = res.evaluated;
+      grid = new Uint8Array(16 + 8 * cells);
+      const head = new DataView(grid.buffer);
+      head.setUint32(0, Number(res.landed & 0xffffffffn), true);
+      head.setUint32(4, Number(res.landed >> 32n), true);
+      head.setFloat64(8, res.evaluated, true);
+      grid.set(new Uint8Array(res.lo.buffer, res.lo.byteOffset, res.lo.byteLength), 16);
+      grid.set(new Uint8Array(res.hi.buffer, res.hi.byteOffset, res.hi.byteLength), 16 + 4 * cells);
+      await store.write(loupeGridFile(main), grid);
+    }
+    const lo = new Uint32Array(grid.slice(16, 16 + 4 * cells).buffer);
+    const hi = new Uint32Array(grid.slice(16 + 4 * cells).buffer);
+    const p = rollPixel(lo, hi, main.width, main.height, o.dice);
+    pixel = { x: p.x, y: p.y, count: p.count.toString(), landed, evaluated, dice: o.dice, interior: p.interior };
+    await store.write(LOUPE_PIXEL_FILE, text.encode(JSON.stringify(pixel)));
   }
-  const size = Math.min(o.height, 2160);
-  await renderPass(device, { key: "loupe-", job: loupeJob(main, pixel.x, pixel.y, size), hold: 1 }, 1, 2);
-  setStatus(`Loupe pixel (${pixel.x}, ${pixel.y}) holds ${pixel.count} particles (GPU count). Export to see it opened up.`);
+  await renderPass(device, { key: loupeKey(pixel), job: loupeJob(main, pixel.x, pixel.y, LOUPE_SIZE), hold: 1 }, 1, 2);
+  setStatus(
+    `Loupe pixel (${pixel.x}, ${pixel.y}) holds ${pixel.count} particles (GPU count).` +
+      (pixel.interior === false ? " No pixel met the 10k to 50k sheet-interior rule; this is the nearest." : "") +
+      " Export to see it opened up.",
+  );
 }
 
 $<HTMLButtonElement>("folder").addEventListener("click", async () => {
@@ -188,6 +243,54 @@ async function lockedWhite(pass: Pass, list: Pass[]): Promise<number | undefined
   return exposureTrack([s], DEFAULT_LOOK)[0] * pass.lock.scale;
 }
 
+/**
+ * The label on one solid dark box, so it reads on grey static as well as on
+ * bright sheets. Same glyphs and layout as drawLabel (offline/core/grade.ts).
+ * `top` puts it in the top-left corner instead (the loupe: dots fill the frame).
+ */
+function boxedLabel(gray: Uint8Array, w: number, h: number, lines: string[], top = false): void {
+  if (!lines.length) return;
+  const scale = Math.max(1, Math.round(h / 540));
+  const margin = 12 * scale;
+  const lineHeight = 10 * scale;
+  const pad = 4 * scale;
+  const longest = Math.max(...lines.map((l) => l.length));
+  const x0 = Math.max(0, margin - pad);
+  const x1 = Math.min(w, margin + longest * 6 * scale + pad);
+  const y0 = Math.max(0, h - margin - lines.length * lineHeight + 3 * scale - pad);
+  const y1 = Math.min(h, h - margin + pad);
+  // drawLabel only draws at the bottom, so for the top draw on a scratch frame and move the box up.
+  const target = top ? new Uint8Array(w * h) : gray;
+  const shift = top ? y0 - Math.max(0, margin - pad) : 0;
+  if (top) for (let y = y0; y < y1; y++) target.set(gray.subarray((y - shift) * w + x0, (y - shift) * w + x1), y * w + x0);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) target[y * w + x] = Math.round(target[y * w + x] * 0.08);
+  drawLabel(target, w, h, lines, 0.85);
+  if (top) for (let y = y0; y < y1; y++) gray.set(target.subarray(y * w + x0, y * w + x1), (y - shift) * w + x0);
+}
+
+/**
+ * Loupe only: draw every dot as a 3x3 square (a 3x3 max filter), so single
+ * particles survive YouTube's downscale to 1080p. Display only: the counts
+ * come from the GPU tally, one dot per particle.
+ */
+function growDots(gray: Uint8Array, w: number, h: number): void {
+  const src = gray.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx >= 0 && xx < w && src[yy * w + xx] > m) m = src[yy * w + xx];
+        }
+      }
+      gray[y * w + x] = m;
+    }
+  }
+}
+
 /** A thin ring around a tracked particle, drawn into the graded frame. */
 function ring(gray: Uint8Array, w: number, h: number, cx: number, cy: number, r: number): void {
   for (let a = 0; a < 720; a++) {
@@ -204,9 +307,11 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
   try {
     const o = options();
     const id = shot();
+    const pixel = id === "loupe" ? await readLoupePixel() : null;
+    if (id === "loupe" && !pixel) throw new Error("Render the loupe first.");
     const list: Pass[] =
-      id === "loupe"
-        ? [{ key: "loupe-", job: loupeJob(baseWorld(o), 0, 0, Math.min(o.height, 2160)), hold: Math.round(o.fps * 5) }]
+      id === "loupe" && pixel
+        ? [{ key: loupeKey(pixel), job: loupeJob(baseWorld(o), pixel.x, pixel.y, LOUPE_SIZE), hold: Math.round(o.fps * 5) }]
         : passes(o);
     const first = list[0].job;
     const width = first.width;
@@ -220,8 +325,6 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
     const rec = await startRecording(canvas, { fps: o.fps, width, height, timing: "fixed", output: handle });
     const secondsFile = await store.read(`${id}-seconds.json`);
     const seconds = secondsFile ? Number(untext.decode(secondsFile)) : NaN;
-    const pixelFile = await store.read("loupe-pixel.json");
-    const pixel = pixelFile ? JSON.parse(untext.decode(pixelFile)) : null;
     const findTarget = id === "find" ? particlePosition(first, o.findIndex, first.timeOffset) : null;
     let written = 0;
     try {
@@ -236,7 +339,11 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
           return pixel ? loupeLabel({ x: pixel.x, y: pixel.y, count: BigInt(pixel.count) }, s.landed) : [];
         };
         const white = await lockedWhite(pass, list);
+        // gradeJob asks for the label just before handing over the frame; draw it ourselves on a solid box.
+        let lines: string[] = [];
         await gradeJob(prefixed(store, pass.key), browserZlib, async (f, gray, job) => {
+          if (id === "loupe") growDots(gray, job.width, job.height);
+          boxedLabel(gray, job.width, job.height, lines, id === "loupe");
           if (findTarget) {
             const cam = cameraBasis(new CameraPath(job.camera).atFrame(f, job.frames));
             const p = project(cam, findTarget, job.width, job.height);
@@ -255,7 +362,13 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
           }
           preview.putImageData(image, 0, 0);
           setStatus(`encoding: ${written} video frames (${rec.codec})`);
-        }, { label, look: white !== undefined ? { white } : undefined });
+        }, {
+          label: (s, job) => {
+            lines = label(s, job);
+            return [];
+          },
+          look: white !== undefined ? { white } : undefined,
+        });
       }
       const result = await rec.stop();
       setStatus(`Saved ${handle.name}: ${result.duration.toFixed(2)} s, ${result.codec}. Total in world: ${totalParticles(baseWorld(o))}`);

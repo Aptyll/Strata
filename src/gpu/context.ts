@@ -40,7 +40,9 @@ export async function requestGpuDevice(opts: GpuDeviceOptions = {}): Promise<GPU
 }
 
 export async function initGpu(canvas: HTMLCanvasElement): Promise<GpuContext> {
-  const device = await requestGpuDevice();
+  // Timestamps cost nothing until a query is written. The Esc menu's perf page uses them
+  // to show GPU time per pass (src/ux/perf-hud); without the feature it shows frame time only.
+  const device = await requestGpuDevice({ timestamps: true });
   device.lost.then((info) => console.error("WebGPU device lost:", info.message));
 
   const context = canvas.getContext("webgpu");

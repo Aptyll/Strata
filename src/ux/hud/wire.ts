@@ -18,6 +18,11 @@ export interface MountHudOptions {
   transition?: RollTransitionOptions;
   /** Seconds between stat and menu refreshes. Default 0.25. */
   statsInterval?: number;
+  /**
+   * Add the particle count slider, which scales every plane of the scene. Default true. Turn it off
+   * for a streamed world: its scene lists no planes, so the slider would have nothing to scale.
+   */
+  particles?: boolean;
   /** Ends of the particle count slider. Defaults 10 thousand and 16 million. */
   minParticles?: number;
   maxParticles?: number;
@@ -67,7 +72,8 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
   // ---- particle count: rebuild the world with every plane scaled -------------
   const minParticles = opts.minParticles ?? 10_000;
   const maxParticles = Math.max(opts.maxParticles ?? 16_000_000, capacity());
-  hud.registerParam({
+  const particles = opts.particles ?? true;
+  if (particles) hud.registerParam({
     id: PARTICLES, label: "particles", min: minParticles, max: maxParticles, step: 1000, scale: "log",
     value: capacity(), live: false, persist: false,
     onChange: (wanted: number) => {
@@ -139,7 +145,7 @@ export function mountHud(app: AppContext, opts: MountHudOptions = {}): MountedHu
         if (first) for (const name of Object.keys(b.params)) hud.setParam(paramId(b, name), paramOf(first, name), { silent: true });
       }
     }
-    if (hud.panelOpen) hud.setParam(PARTICLES, capacity(), { silent: true });
+    if (particles && hud.panelOpen) hud.setParam(PARTICLES, capacity(), { silent: true });
     hud.setStat("behavior", list.length ? labelOf(list[0]) : null);
   };
   syncMenu();
