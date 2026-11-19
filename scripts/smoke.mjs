@@ -45,6 +45,8 @@ const PAGES = [
   { url: "/?challenge&count=20000&planes=4&res=320x180", frames: 30, what: "Challenge mode from the app" },
   { url: "/src/challenge/?count=20000&planes=4&res=320x180", frames: 30, what: "Challenge mode page" },
   { url: "/src/perf/bench/?n=20k&planes=4&res=320x180", frames: 30, what: "bench page" },
+  { url: "/src/color-life/demo/?n=20000", frames: 30, what: "color life page" },
+  { url: "/src/stateless/demo/?n=20000", frames: 30, what: "stateless laws page" },
   { url: "/src/offline/web/", frames: 0, what: "offline renderer page" },
   { url: "/src/proof/web/", frames: 0, what: "proof shots page" },
 ];
