@@ -33,6 +33,7 @@ build (`vite.config.ts`).
 | `/src/depth/demo/` | `src/depth/demo/demo.ts` | depth cues demo |
 | `/src/interplane/demo/` | `src/interplane/demo/demo.ts` | particles crossing between sheets |
 | `/src/capture/demo/` | `src/capture/demo/main.ts` | stills and video capture |
+| `/src/audio/demo/` | `src/audio/demo/main.ts` | the soundtrack on its own: a pretend scene with sliders, offline render to WAV, no WebGPU |
 | `/src/trillion/demo/` | `src/trillion/demo/demo.ts` | trillion splat kernel demo |
 | `/src/proof/web/` | `src/proof/web/` | trillion proof shots (count-up, loupe, dive, ...) |
 | `/src/world/demo/` | `src/world/demo/index.html` | world layouts and streaming |
@@ -59,6 +60,7 @@ build (`vite.config.ts`).
 | `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
+| `src/audio` | generative soundtrack: a Web Audio drone driven by the scene, off by default (M); offline render in step with video frames, WAV | `docs/audio.md` |
 | `src/stateless` | 64-bit particle keys and randomness for stateless particles | `README.md` |
 | `src/color-life` | particle life with color species: rule matrix rolls, GPU grid sort for neighbors, colored additive render; standalone | `README.md` |
 | `src/trillion` | trillion particle splat kernel: exact per-pixel counts, nothing stored | `index.ts` |
@@ -383,7 +385,7 @@ is what input, scenes, the intro and the world move.
 
 Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module`.
 
-### `src/world`, `src/interplane`, `src/capture`
+### `src/world`, `src/interplane`, `src/capture`, `src/audio`
 
 - **World** (`docs/world.md`): `startStreamingWorld(app, options)` streams an
   endless seeded world through `AppContext.addPlane` and `removePlane` around
@@ -399,3 +401,8 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
   resolution). The record job (`src/record`) is separate: it renders
   stateless particles with `src/offline` and borrows only the HUD and the
   offline flag.
+- **Audio** (`docs/audio.md`): `mountSound(host)` in `src/audio/app.ts` adds M
+  and the "sound" menu section and is ticked by an `afterFrame` hook. It is off
+  on every load and only realtime frames drive the live sound;
+  `recordingAudio(fps)` collects an offline video's frames into its own
+  soundtrack. Tests: `npm test -- audio`.

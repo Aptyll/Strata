@@ -26,7 +26,8 @@ export type KeyOwner =
   | "capture" // registered by src/capture/app.ts with the rows main.ts passes in
   | "theme" // src/ux/theme/index.ts registers it itself; keep the row in sync
   | "autocam" // src/ux/autocam/index.ts registers the row main.ts passes in
-  | "panels"; // src/ui/index.ts, only while a src/ui/*.panel.ts exists
+  | "panels" // src/ui/index.ts, only while a src/ui/*.panel.ts exists
+  | "sound"; // src/audio/app.ts registers the row main.ts passes in
 
 export interface KeyBinding {
   /** KeyboardEvent.key, as the HUD names it: "g", "]", "escape", "?". */
@@ -57,6 +58,8 @@ export const KEYS = {
   nextTheme: { key: "t", code: "KeyT", owner: "theme", label: "next color theme" },
 
   autoCamera: { key: "c", code: "KeyC", owner: "autocam", label: "auto camera tour" },
+
+  sound: { key: "m", code: "KeyM", owner: "sound", label: "sound on or off" },
 
   panels: { key: "tab", code: "Tab", owner: "panels", label: "panels" },
 } as const satisfies Record<string, KeyBinding>;
