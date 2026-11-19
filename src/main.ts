@@ -30,6 +30,7 @@ import { createParallaxCamera } from "./depth";
 import { initGpu } from "./gpu/context";
 import { mountRecord } from "./record";
 import { mountPanels } from "./ui";
+import { mountAutoCam } from "./ux/autocam";
 import { attachCameraInput, createCamera } from "./ux/camera";
 import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
@@ -123,6 +124,11 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       },
     });
   }
+  // Auto camera tour: C, the Esc menu or ?autocam=1; any camera input hands control back.
+  const autocam = mountAutoCam({
+    hud: ui.hud, canvas, camera, planes: () => sim.planes, busy: () => intro?.active, key: KEYS.autoCamera,
+  });
+  loop.hooks.push({ beforeCamera: (f) => autocam.step(f.dt) });
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });
