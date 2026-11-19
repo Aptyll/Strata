@@ -1,8 +1,9 @@
+import { mountIntro } from "./app/intro";
 import { createKeyRouter } from "./app/keys";
 import { mountCapture } from "./capture/app";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
-import { TOKENS, type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
+import { type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
 import type { DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
 import { initGpu, writeGlobals } from "./gpu/context";
@@ -15,8 +16,10 @@ import { createDensitySplatPass } from "./render/passes";
 import { Simulation } from "./sim/simulation";
 import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
+import { detectCapability } from "./ux/experience/capability";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { formatCount } from "./ux/hud/index.js";
+import { mountFallback } from "./ux/experience/fallback";
 import { mountHud } from "./ux/hud/wire";
 import { startStreamingWorld, type StreamingWorld } from "./world";
 import { scatterLayout, scatterRadius } from "./world/layout";
@@ -28,6 +31,7 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 //   &raster=splat    sub-pixel splats
 //   &tonemap=basic   plain exponential tone map instead of the density look (bloom, trails)
 //   &interplane=0    no particles crossing between planes
+//   &intro=0         skip the opening
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
 //   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
@@ -53,18 +57,6 @@ function buildScene(particles: number, planes: number, brightness: number): Scen
   };
 }
 
-/** Centered text for the one case with nothing else to show: no WebGPU. */
-function showMessage(text: string): void {
-  const el = document.createElement("div");
-  el.textContent = text;
-  Object.assign(el.style, {
-    position: "fixed", inset: "0", display: "grid", placeItems: "center", textAlign: "center",
-    whiteSpace: "pre-line", pointerEvents: "none", font: TOKENS.font, letterSpacing: TOKENS.letterSpacing,
-    color: TOKENS.color.foreground, opacity: String(TOKENS.opacityDim),
-  });
-  document.body.appendChild(el);
-}
-
 async function start(): Promise<void> {
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
@@ -72,7 +64,11 @@ async function start(): Promise<void> {
   try {
     gpu = await initGpu(canvas);
   } catch (err) {
-    showMessage(`${(err as Error).message}\nStrata needs a WebGPU browser (recent Chrome, Edge or Safari).`);
+    // No WebGPU: a small CPU-drawn plane and a note on how to get the real thing.
+    console.warn(err);
+    canvas.remove();
+    const cap = await detectCapability();
+    mountFallback(document.body, cap.status === "ok" ? { ...cap, status: "device-failed" } : cap);
     return;
   }
 
@@ -275,6 +271,12 @@ async function start(): Promise<void> {
 
   const pointerBrushes = attachBrushes(canvas, camera, () => sim.planes);
 
+  // ---- opening: one plane ignites, then the world (skip with any input, or ?intro=0) ----
+  const intro =
+    query.get("intro") !== "0" && worldSeed === null
+      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height))
+      : null;
+
   // ---- frame loop --------------------------------------------------------
   let last = performance.now();
   let time = 0;
@@ -288,12 +290,13 @@ async function start(): Promise<void> {
     time += dt;
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
+    const exposure = !offline && intro?.active ? intro.step(dt, sim.planes) : 1;
     camera.update(dt);
     streaming?.tick(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
     // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
     const brushes = pointerBrushes.update(dt, performance.now());
-    writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness, brushes });
+    writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness * exposure, brushes });
 
     // Offline renders are not in a hurry, so they always draw every particle.
     const counts = (offline ? fullBudget : budget).allocate({
@@ -301,6 +304,7 @@ async function start(): Promise<void> {
       fps: fps || targetFps,
       targetFps,
     });
+    if (!offline) intro?.reveal(counts);
     sim.planes.forEach((plane, i) => (plane.activeCount = counts[i]));
 
     graph.run({ planes: sim.planes, camera, time, dt, frame });
