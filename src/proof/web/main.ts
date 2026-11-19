@@ -10,16 +10,21 @@ import { totalParticles, type OfflineJob } from "../../offline/core/job";
 import { cameraBasis } from "../../offline/core/math";
 import { CameraPath } from "../../offline/core/camera";
 import { StatelessRenderer } from "../../offline/core/renderer";
-import { gradeJob, renderJob, type FileStore } from "../../offline/core/session";
+import { gradeJob, loadStats, renderJob, type FileStore } from "../../offline/core/session";
+import { DEFAULT_LOOK, exposureTrack } from "../../offline/core/grade";
 import { browserZlib, canPickFolder, directoryStore, memoryStore, pickFolder } from "../../offline/web/platform";
 import {
   baseWorld,
+  collapseLabel,
+  collapsePasses,
   countUpLabel,
   countUpPasses,
   diveJob,
   diveLabel,
   findJob,
   findLabel,
+  ladderLabel,
+  ladderPasses,
   loupeJob,
   loupeLabel,
   particlePosition,
@@ -77,6 +82,10 @@ function passes(o: ShotOptions): Pass[] {
       return [{ key: "dive-", job: diveJob(o), hold: 1 }];
     case "find":
       return [{ key: "find-", job: findJob(o), hold: 1 }];
+    case "ladder":
+      return ladderPasses(o);
+    case "collapse":
+      return collapsePasses(o, num("collapse"));
     case "loupe":
       return [];
   }
@@ -166,6 +175,19 @@ $<HTMLButtonElement>("stop").addEventListener("click", () => {
   setStatus("Stopping after this batch...");
 });
 
+/**
+ * White point for a pass whose exposure is locked to another pass (ladder,
+ * collapse): the automatic white of that pass's first frame times the scale.
+ */
+async function lockedWhite(pass: Pass, list: Pass[]): Promise<number | undefined> {
+  if (!pass.lock) return undefined;
+  const ref = list.find((p) => p.key === pass.lock!.key);
+  if (!ref) throw new Error(`Pass ${pass.key} locks to a missing pass ${pass.lock.key}`);
+  const [s] = await loadStats(prefixed(store, ref.key), ref.job);
+  if (!s) throw new Error(`Render "${ref.job.name}" before exporting: the exposure is locked to it.`);
+  return exposureTrack([s], DEFAULT_LOOK)[0] * pass.lock.scale;
+}
+
 /** A thin ring around a tracked particle, drawn into the graded frame. */
 function ring(gray: Uint8Array, w: number, h: number, cx: number, cy: number, r: number): void {
   for (let a = 0; a < 720; a++) {
@@ -209,8 +231,11 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
           if (id === "pullBack") return pullBackLabel(s);
           if (id === "dive") return diveLabel(s);
           if (id === "find") return findLabel(s, o.findIndex, job);
+          if (id === "ladder") return ladderLabel(s);
+          if (id === "collapse") return collapseLabel(s);
           return pixel ? loupeLabel({ x: pixel.x, y: pixel.y, count: BigInt(pixel.count) }, s.landed) : [];
         };
+        const white = await lockedWhite(pass, list);
         await gradeJob(prefixed(store, pass.key), browserZlib, async (f, gray, job) => {
           if (findTarget) {
             const cam = cameraBasis(new CameraPath(job.camera).atFrame(f, job.frames));
@@ -230,7 +255,7 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
           }
           preview.putImageData(image, 0, 0);
           setStatus(`encoding: ${written} video frames (${rec.codec})`);
-        }, { label });
+        }, { label, look: white !== undefined ? { white } : undefined });
       }
       const result = await rec.stop();
       setStatus(`Saved ${handle.name}: ${result.duration.toFixed(2)} s, ${result.codec}. Total in world: ${totalParticles(baseWorld(o))}`);
