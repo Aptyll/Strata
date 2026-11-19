@@ -154,3 +154,13 @@ test("reopening is bounded: a cliff the linear model cannot see ends the ramp af
   assert.ok(ramp.record > 0.9 * 200e6 && ramp.record <= 200e6, `record ${ramp.record}`);
   assert.ok(windows < 120, `${windows} windows`);
 });
+
+test("a climb from a small count always moves on", () => {
+  // 1.25 times one, two or three quanta rounds back down to the same count,
+  // which the climb used to try for ever (reachable with ?start=).
+  const slow = { overheadMs: 0, msPerMillion: 1000 / TARGET / 2, refresh: 36 }; // holds 2M at the target
+  for (const start of [ROW, 2 * ROW, 3 * ROW]) {
+    const { ramp } = run(slow, (fps) => fps, start);
+    assert.ok(ramp.record > 0.95 * 2e6 && ramp.record <= 2e6, `start ${start}: record ${ramp.record}`);
+  }
+});
