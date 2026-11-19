@@ -69,7 +69,7 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues (sprites `?depth=1`, parallax `?parallax=1`, off by default) |
-| `ux/` | `camera/`, `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `challenge/` | self-contained Challenge mode: max particles at target fps, tiers |
@@ -131,7 +131,7 @@ a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
-  owner (HUD, app, capture, theme, panels) and label; the camera gets every key not
+  owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
 - **Integer adds commute**, so offline frames are bit-identical however they
   are batched and resume exactly after a stop. Keep it that way: no float

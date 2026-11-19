@@ -37,6 +37,7 @@ build (`vite.config.ts`).
 | `/src/proof/web/` | `src/proof/web/` | trillion proof shots (count-up, loupe, dive, ...) |
 | `/src/world/demo/` | `src/world/demo/index.html` | world layouts and streaming |
 | `/src/ux/camera/demo/`, `/src/ux/experience/demo/`, `/src/ux/hud/demo/` | each folder | camera, first-run experience and HUD on their own |
+| `/src/ux/autocam/demo/` | `src/ux/autocam/demo/main.ts` | auto camera tour flying over dot-cloud sheets, no WebGPU |
 
 ## Folders
 
@@ -53,7 +54,7 @@ build (`vite.config.ts`).
 | `src/depth` | depth cues: fog, depth of field, size falloff, parallax, depth sprites | `docs/depth.md` |
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
-| `src/ux` | camera rig and input, first-run experience, HUD, dice roll | `docs/ux/` |
+| `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll | `docs/ux/` |
 | `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |

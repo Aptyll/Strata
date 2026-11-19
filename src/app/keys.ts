@@ -22,6 +22,7 @@ export type KeyOwner =
   | "app" // registered from these rows by src/app/hud.ts
   | "capture" // registered by src/capture/app.ts with the rows main.ts passes in
   | "theme" // src/ux/theme/index.ts registers it itself; keep the row in sync
+  | "autocam" // src/ux/autocam/index.ts registers the row main.ts passes in
   | "panels"; // src/ui/index.ts, only while a src/ui/*.panel.ts exists
 
 export interface KeyBinding {
@@ -51,6 +52,8 @@ export const KEYS = {
   record: { key: "v", code: "KeyV", owner: "capture", label: "record video" },
 
   nextTheme: { key: "t", code: "KeyT", owner: "theme", label: "next color theme" },
+
+  autoCamera: { key: "c", code: "KeyC", owner: "autocam", label: "auto camera tour" },
 
   panels: { key: "tab", code: "Tab", owner: "panels", label: "panels" },
 } as const satisfies Record<string, KeyBinding>;
