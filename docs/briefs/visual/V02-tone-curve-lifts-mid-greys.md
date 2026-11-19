@@ -29,7 +29,7 @@ The 1T grade (`src/offline/core/grade.ts`) does not encode (gamma 1), so the sam
 
 1. App: set `tone.contrast` (it already exists and is applied at `src/render/common.ts:56`) to about 2.2 for the log curve in `tonemap.pass.ts`. That cancels the second lift, giving 55 / 84 / 116 / 150 / 185 / 220 / 244 for 1 to 64 hits (bottom row of the image). 1.6 is a softer middle ground (86 / 115 / 144 / 174 / 202 / 229 / 244).
 2. Expose it as a "contrast" range (1 to 3) in the Esc menu's look group next to "white point" (`src/app/hud.ts:104`, where `white` is registered), so Noah can tune it on his display.
-3. Challenge: drop the `pow(…, 1/2.2)` after the log curve, or apply it only to non-log curves.
+3. Challenge uses the same chain (log curve, soft shoulder, then `pow(…, 1/2.2)`). Change both curves in one PR, or the app and Challenge will stop matching. Drop the `pow` after the log curve, or apply it only to non-log curves.
 4. Match the 1T grade: both should mean "log output is the display value".
 
 ## How to confirm
@@ -41,6 +41,6 @@ The 1T grade (`src/offline/core/grade.ts`) does not encode (gamma 1), so the sam
 ## Owner
 
 - `src/render`, `src/passes`: the rendering and 1T cleanup thread (the design came from the "Render density beyond screen resolution" thread).
-- `src/challenge`: the challenge and perf review thread.
+- `src/challenge`: change it in the same PR as `src/render`, which is the render owner's call. The challenge and perf review thread reviews it.
 
 Related: `docs/briefs/accumulation-and-tonemap.md` step 1 ("make the tone mappers agree").

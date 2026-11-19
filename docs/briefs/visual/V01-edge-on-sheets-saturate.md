@@ -1,6 +1,6 @@
 # V01: sheets seen edge-on collapse into saturated needles
 
-Severity: medium (looks like a bug in stills, and it crawls on camera motion).
+Severity: medium, and a **look decision for Noah** (see "Decision" below). It looks like a bug in stills, and it crawls on camera motion.
 Affects: every renderer (app, Challenge, 1T).
 Lines are as of main `665a6cb`.
 
@@ -33,7 +33,11 @@ No renderer has a view-angle term. Each one weights a hit by brightness, and at 
 | Challenge | `src/challenge/shaders.ts:107` weight `a.x / w^2` (distance only), set at `src/challenge/engine.ts:745` |
 | 1T offline | `src/offline/core/shaders.ts:119,133` flux `min(1, ref^2 / z^2)` (distance only; `weighting=count` has none) |
 
-## Proposed fix
+## Decision
+
+This is a look choice, not a bug fix. An edge-on sheet really does put more particles on each pixel, so the needle is true density, and the project's rule is that density reads as brightness. Capping it trades some of that for a calmer image (the challenge and perf review thread raised this). Until Noah chooses, keep true density, with no change. The fix below is for when he chooses a cap.
+
+## Proposed fix (if Noah chooses a cap)
 
 Multiply each sheet's weight by an angle gain, computed once per sheet per frame on the CPU:
 
@@ -44,7 +48,7 @@ gain = min(1, c / C0)        // C0 = 0.2: an edge-on line is at most 5x a face-o
 
 - **App:** fold `gain` into the per-plane brightness the rasterizers already read (`plane.brightness`), without touching `desc.brightness`. World streaming fades also use that field, so multiply the two rather than overwrite.
 - **Challenge and offline:** both already build a per-sheet homography (`planeHomography`, Batch `c0..c2`), so put `gain` in the per-sheet weight numerator. The exact per-particle version is `|det J|` of the homography, which removes both distance and angle. The per-sheet `cos` is enough unless a sheet is very close and large.
-- **Make it a setting, on by default in the app.** The "Video: edge-on lines of light" thread uses edge-on sheets as a look, so keep a way to turn the gain off.
+- **Make it a setting**, with the default set by Noah's choice. The "Video: edge-on lines of light" thread uses edge-on sheets as a look, so keep a way to turn the gain off.
 - **Offline count mode:** the honest tally counts hits, not weights. Keep the count exact and apply `gain` only to the light grid, or run the gain in grade. Do not let it change the "in frame" number.
 
 ## How to confirm
@@ -55,6 +59,6 @@ gain = min(1, c / C0)        // C0 = 0.2: an edge-on line is at most 5x a face-o
 
 ## Owner
 
-- `src/perf`, `src/challenge`: the challenge and perf review thread.
+- `src/perf`, `src/challenge`: written by the "Scale to tens of millions of particles" and "Build challenge mode for record particle counts" threads. The challenge and perf review thread reviews PRs there.
 - `src/render`, `src/passes`, `src/depth`: the rendering and 1T cleanup thread.
 - `src/offline`: offline renderer thread. Not before the record render: this changes pixels, so it needs a re-render.

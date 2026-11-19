@@ -23,4 +23,4 @@ A bench screenshot taken at 800M particles shows every stats line legible, inclu
 
 ## Owner
 
-`src/perf`: the challenge and perf review thread.
+`src/perf`: the challenge and perf review thread takes it after the 7:55 PM freeze. The bench was written by the "Scale to tens of millions of particles" thread.
