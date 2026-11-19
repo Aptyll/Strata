@@ -908,12 +908,17 @@ def fig_kernels(out: str) -> None:
     so, st = mo["stats"], mt["stats"]
     go, gt = gray(names[0]), gray(names[1])
     co, ct = codes(names[0]), codes(names[1])
-    light_o, light_t = int(so["unitSum"]) / 65536, int(st["unitSum"]) / 65536
-    whole = int(st["unitSum"]) % 65536 == 0
+    # Grid units per particle: 65536 unless the stats say otherwise (finer flux weights since PR #166).
+    upp_o, upp_t = int(so.get("unitsPerParticle") or 65536), int(st.get("unitsPerParticle") or 65536)
+    light_o, light_t = int(so["unitSum"]) / upp_o, int(st["unitSum"]) / upp_t
+    whole = int(st["unitSum"]) % upp_t == 0
+    bits_o = round(math.log2(upp_o))
+    drawn_o, drawn_t = so.get("drawn"), st.get("drawn")
     pt = (2.0 ** (ct / 1024) - 1) / 65536
     lit_t = pt > 0.5
     one = float((np.round(pt[lit_t]) == 1).mean() * 100)
-    landed = int(so["landed"])
+    landed = landed_o = int(so["landed"])
+    landed_t = int(st["landed"])
     full = [r for r in flux_keep().get("rows", []) if r["particles"] >= 1e12]
     f = figure(1800, 960, 11, "The trillion kernel in the offline renderer turns flux weighting into a sparse subsample",
                f"src/offline StatelessRenderer, kernel 'offline' (default) vs 'trillion' (PR #80), trillion shot at 40M particles, frame {mo['frame']}, shutter 0, one tone table  |  owner: Build the trillion-particle splat kernel; FYI offline renderer",
@@ -928,9 +933,13 @@ def fig_kernels(out: str) -> None:
         f.draw.rectangle([x + crop[1].start * s, 150 + crop[0].start * s, x + crop[1].stop * s, 150 + crop[0].stop * s], outline=CYAN, width=2)
     lines = [
         "Same light, different picture.",
-        f"- Light: the trillion kernel's grid sums to {light_t:,.0f} particles, the offline kernel's to {light_o:,.0f} ({(light_t / light_o - 1) * 100:+.2f}%, about one standard deviation of the kept count's {100 / math.sqrt(light_t):.2f}% shot noise). Its grid holds a whole number of particles in every pixel{'' if whole else ' (NOT a whole number: check)'}.",
-        f"- Picture: under flux weighting the offline kernel adds every particle at weight min(1, (fluxRef / depth)^2), rounded at random in 1/65,536ths. The trillion kernel keeps each sheet's particles with that probability, taken at the sheet's centre, and adds the kept ones at full weight. Here it drew {light_t:,.0f} of the {landed:,} particles in frame ({light_t / landed * 100:.1f}%), so it lights {(ct > 0).mean() * 100:.0f}% of the frame's pixels and the offline kernel {(co > 0).mean() * 100:.0f}%, and {one:.0f}% of its lit pixels hold exactly one particle.",
+        f"- Light: the trillion kernel's grid sums to {light_t:,.0f} particles, the offline kernel's to {light_o:,.0f} ({(light_t / light_o - 1) * 100:+.2f}%, {abs(light_t / light_o - 1) * math.sqrt(light_t):.1f} standard deviations of the kept count's {100 / math.sqrt(light_t):.2f}% shot noise). Its grid holds a whole number of particles in every pixel{'' if whole else ' (NOT a whole number: check)'}.",
+        f"- Picture: under flux weighting the offline kernel adds every particle at weight min(1, (fluxRef / depth)^2), " + (f"in units of 2^-{bits_o} of a particle (PR #166; it was 1/65,536 before, and a particle dimmer than that added one unit or nothing at random)." if bits_o > 16 else "rounded at random in 1/65,536ths.") + f" The trillion kernel keeps each sheet's particles with that probability, taken at the sheet's centre, and adds the kept ones at full weight. Here it drew {light_t:,.0f} of the {landed_t:,} particles in frame ({light_t / landed_t * 100:.1f}%), so it lights {(ct > 0).mean() * 100:.0f}% of the frame's pixels and the offline kernel {(co > 0).mean() * 100:.0f}%, and {one:.0f}% of its lit pixels hold exactly one particle.",
     ]
+    if drawn_o is not None and drawn_t is not None:
+        lines.append(f"- The GPU's own drawn tally (PR #166: particles in frame that added any light) agrees: {int(drawn_t):,} of {landed_t:,} for the trillion kernel{'' if int(drawn_t) == round(light_t) else ' (not its light sum: check)'}, and {int(drawn_o):,} of {landed_o:,} for the offline kernel{', every particle in frame' if int(drawn_o) == landed_o else ''}. The label claims that every particle added light only when the two are equal.")
+        if landed_o != landed_t:
+            lines.append(f"- The two in-frame counts differ by {abs(landed_o - landed_t):,} ({abs(landed_o - landed_t) / landed_o * 100:.3f}%): the offline kernel tests each particle's position, the trillion kernel the pixel its splat picked, so particles on the frame's edge can fall either way.")
     if full:
         r0 = next(r for r in full if r["frame"] == 0)
         r150 = next((r for r in full if r["frame"] == 150), r0)
@@ -939,8 +948,8 @@ def fig_kernels(out: str) -> None:
         lines.append(f"- At 1T (the real job, computed from its sheets and camera, nothing rendered): fluxRef shrinks with the count ({r0['fluxRef']:.2f} at 1T in 4K), so in the wide opening, where every sheet is in view, the kernel would keep about {r0['kept'] / 1e6:.1f} million of 1e12 particles at frame 0 and {r150['kept'] / 1e6:.1f} million at frame 150, about {r0['kept'] / px:.2f} and {r150['kept'] / px:.2f} per 4K pixel: dots, not a density field. Later frames keep more as near sheets fill the view (" + ", ".join(f"{r['share'] * 100:.0f}%" for r in later) + " of all particles, in view or not, at frames " + ", ".join(str(r["frame"]) for r in later) + ").")
     lines += [
         "- The film is not affected: docs/perf.md makes src/offline the film's 1T kernel. But 'trillion' is not a drop-in there under flux weighting, and an A/B under flux compares every particle against a few percent of them, in look and in atomics written.",
-        "- Fix (suggested): run A/Bs with weighting 'count', where both kernels draw every particle. To render the film with this kernel, give it fractional weights (add round(keep x 65,536) units per hit with dither, as the offline kernel does) instead of a keep probability.",
-        "Shutter 0 for both: when this was rendered the trillion kernel had no camera blur (PR #174 has since added it). PRs #171 and #174 left the per-sheet keep probability as it was.",
+        "- Fix (suggested): run A/Bs with weighting 'count', where both kernels draw every particle. To render the film with this kernel, give it fractional weights (keep x units per particle on each hit, rounded at random, as the offline kernel does) instead of a keep probability.",
+        ("Shutter 0 for both, so they differ only in how they weight light (both blur camera moves since PR #174)." if bits_o > 16 else "Shutter 0 for both: when this was rendered the trillion kernel had no camera blur (PR #174 has since added it). PRs #171 and #174 left the per-sheet keep probability as it was."),
     ]
     text_block(f, 1210, 150, lines, 560, font_=F_SMALL)
     save(f, out, "11-trillion-kernel-flux.jpg")

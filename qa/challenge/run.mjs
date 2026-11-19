@@ -58,7 +58,9 @@ try {
   await page.goto(`${base}qa/challenge/index.html`);
   await page.waitForFunction(() => window.qa, undefined, { timeout: 60_000 });
   const info = await page.evaluate(() => window.qa.info());
-  // The commit the frames come from, so every figure can say which code it shows.
+  // The commit the frames' code comes from, so every figure can say which code
+  // it shows: the last commit that changed src/, so the harness's own commits
+  // on a QA branch do not hide the main commit underneath them.
   const git = (...a) => {
     try {
       return execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
@@ -66,7 +68,7 @@ try {
       return null;
     }
   };
-  const commit = git('rev-parse', '--short', 'HEAD');
+  const commit = git('log', '-1', '--format=%h', 'HEAD', '--', 'src') || git('rev-parse', '--short', 'HEAD');
   const dirty = git('status', '--porcelain', '--untracked-files=no', '--', 'src') ? true : false;
   writeFileSync(join(out, 'info.json'), JSON.stringify({ ...info, hardware, commit, dirty, date: new Date().toISOString() }, null, 2));
   console.log(`adapter: ${JSON.stringify(info.adapter)}, max particles per buffer ${info.maxCount}`);

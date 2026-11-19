@@ -559,9 +559,10 @@ const scenarios = {
   /**
    * One moment of the trillion shot through both kernels the offline renderer
    * offers: its own (the default) and src/trillion's (PR #80, the web UI's
-   * "kernel" menu). Shutter 0 by default, because the trillion kernel has no
-   * camera blur and the offline kernel does (PR #92), so with a shutter the two
-   * differ by blur alone. Both frames are graded with one tone table (the
+   * "kernel" menu). Shutter 0 by default, so the two differ only in how they
+   * weight light (both blur camera moves since PR #174, but a blur would hide
+   * the grain this compares). Flux weights are what clusterJob gives the job
+   * (fluxBits since PR #166). Both frames are graded with one tone table (the
    * offline kernel's own white point) and saved without the label.
    */
   async offlineKernels(o: { particles?: number; frame?: number; width?: number; height?: number; shutter?: number } = {}) {
@@ -590,10 +591,10 @@ const scenarios = {
           lut = toneTable(white, look);
         }
         const tag = `kernels-${kernel}-${short(particles)}`;
-        const meta = { scenario: 'offlineKernels', kernel, width: job.width, height: job.height, frame: f, shutter: job.shutter, white, ownWhite: own, stats };
+        const meta = { scenario: 'offlineKernels', kernel, width: job.width, height: job.height, frame: f, shutter: job.shutter, weighting: job.weighting, fluxBits: job.fluxBits ?? null, white, ownWhite: own, stats };
         await save(`${tag}.codes`, new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), meta);
         await save(`${tag}.gray`, gradeFrame(samples, lut, f), meta);
-        out[kernel] = { landed: stats.landed, evaluated: stats.evaluated, evaluatedBy: stats.evaluatedBy ?? 'gpu', unitSum: stats.unitSum, ownWhite: own };
+        out[kernel] = { landed: stats.landed, drawn: stats.drawn ?? null, evaluated: stats.evaluated, evaluatedBy: stats.evaluatedBy ?? 'gpu', unitSum: stats.unitSum, unitsPerParticle: stats.unitsPerParticle ?? 65536, ownWhite: own };
         log(`saved ${tag}`);
       } finally {
         dev.destroy();

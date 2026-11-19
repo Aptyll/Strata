@@ -24,15 +24,15 @@ at or below 400M particles per frame.
 | [08](08-tone-ramps.jpg) | No banding on smooth density ramps with dither on; the dither adds no bias | ok | Render density beyond screen resolution (FYI) | checked |
 | [09](09-trillion-kernel.jpg) | Trillion kernel: counter sums equal the landed tally, the self test passes, the stochastic splat is unbiased | ok | Build the trillion-particle splat kernel | checked; tile path not exercised |
 | [10](10-short-jobs-smear.jpg) | Since camera blur (PR #92), a short offline job smears the whole camera move | minor | Render offline record-scale particle video | open |
-| [11](11-trillion-kernel-flux.jpg) | In the offline renderer, kernel 'trillion' turns flux weighting into a subsample: same light, but a few percent of the particles at full weight (about 2 million of 1e12 in the 1T opening) | minor | Build the trillion-particle splat kernel; FYI offline renderer | open; the film uses kernel 'offline' |
+| [11](11-trillion-kernel-flux.jpg) | In the offline renderer, kernel 'trillion' turns flux weighting into a subsample: same light, but only a few percent of the particles in frame add it, at full weight (2.2% in the test frame by the GPU's own drawn count; about 2 million of 1e12 in the 1T opening) | minor | Build the trillion-particle splat kernel; FYI offline renderer | open; the film uses kernel 'offline' |
 
 ## Which code each image saw
 
 Main moves fast, so each figure's footer names the commit it was rendered
-from. Unless noted, that is `df80a27` (the "before" captures in 02 and 04 are
-from `c42ceda`, and the real 1T frames in 05 are the RTX 2070 stills in
-`docs/record/`). Changes merged after `df80a27` that touch what a finding
-looked at, up to `8bb79e9`:
+from. Unless noted, that is `df80a27` (11 is from `cf36c3f`, the "before"
+captures in 02 and 04 are from `c42ceda`, and the real 1T frames in 05 are the
+RTX 2070 stills in `docs/record/`). Changes merged after `df80a27` that touch
+what a finding looked at, up to `8827aad`:
 
 - **01, 08** (`src/render`): none.
 - **02, 03** (`src/capture`): PR #144 adds an audio track to recordings and PR
@@ -42,9 +42,16 @@ looked at, up to `8bb79e9`:
   before the Feistel rounds and gives `tri()` 24-bit resolution, so every
   particle moved (statistically the same). It also removed about 20.6M twin
   trajectories from the 1T preset, which a spectrum cannot see: 05's "no
-  repetition" is about lattices and tiling, not duplicate particles. PR #149
+  repetition" is about lattices and tiling, not duplicate particles
+  (`docs/record` now gives the share of distinct paths, PR #187). PR #149
   adds new laws and presets and takes the trillion kernel's evaluated count
-  from the GPU.
+  from the GPU. PR #166 makes flux weights as fine as the grid allows (2^-31
+  of a particle up to 4 billion particles, 2^-23 at 1T; they were 1/65,536,
+  and a dimmer particle added one unit or nothing at random) and has the GPU
+  count the particles that added light. 05's lattice and void checks do not
+  depend on the weights; how faint far sheets look does (05, and 03's line on
+  the 1T shot's dust), and was not checked again. The label's wording changed with it (it says whether every particle
+  in frame added light), not how it is drawn, so 04 stands.
 - **06** (`src/challenge`): PR #139 dropped the 1/2.2 power after the log curve
   (brief V02), so Challenge renders darker. 06 was rendered again at `1820b1d`,
   after it, and compares the two (07's Challenge panel is from `1820b1d` too).
@@ -54,8 +61,9 @@ looked at, up to `8bb79e9`:
   on very wide frames. PRs #171 and #174 add camera blur to the trillion kernel,
   keep its salt constant across frames (09's per-frame grain no longer
   changes), and add a `trillion-strata` kernel choice, which none of these
-  figures ran. The per-sheet keep probability behind 11 is unchanged at
-  `8bb79e9`.
+  figures ran. 11 was rendered again at `cf36c3f`, after them and after PR
+  #166: the per-sheet keep probability is unchanged, and the new drawn count
+  shows it.
 
 ## Related briefs
 

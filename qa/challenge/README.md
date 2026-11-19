@@ -28,8 +28,8 @@ npx tsc -p qa/challenge/tsconfig.json        # type-check page.ts against src/
 not reload the page), opens `index.html`, and calls `window.qa.run(name, opts)`
 per scenario. A failing scenario is logged and recorded in `results.json`; the
 others still run. Each output folder gets an `info.json` with the adapter, the
-`main` commit and whether `src/` had local changes, and `annotate.py` prints
-that commit in every figure's footer.
+last commit that changed `src/` and whether `src/` had local changes, and
+`annotate.py` prints that commit in every figure's footer.
 
 `annotate.py` needs Python 3 with numpy and Pillow, plus ffmpeg and ffprobe for
 the MP4 figure. With several `--in` folders the first one holding a file wins,
