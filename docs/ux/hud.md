@@ -122,6 +122,22 @@ picks the value up.
 
 ## Wiring it to the engine
 
+The short way is `mountHud` in `src/ux/hud/wire.ts`. It creates the HUD with
+the shared `TOKENS`, hooks the die to `rollScene` and `startRoll` from
+`src/ux/behavior-ui/roll.ts`, and feeds `app.stats()` to the stats line:
+
+```ts
+import { mountHud } from './ux/hud/wire';
+
+const ui = mountHud(app);          // app: AppContext
+// in the frame loop
+ui.update(dt);
+// more controls and keys go on ui.hud
+ui.hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() });
+```
+
+The long way, for anything `mountHud` does not cover:
+
 ```ts
 import { createHud } from './ux/hud/index.js';
 import { TOKENS } from './core/contracts';
