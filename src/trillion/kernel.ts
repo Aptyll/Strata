@@ -8,14 +8,20 @@ export interface TrillionLaw {
   id: string;
   /** Name of the WGSL function. */
   fn: string;
-  /** WGSL source. May call pcg, u01, tri, draw and TAU. Must return a sheet-local position in [-1, 1]^2. */
+  /** WGSL source. May call pcg, u01, tri, draw, strat and TAU. Must return a sheet-local position in [-1, 1]^2. */
   wgsl: string;
+  /**
+   * True when the law takes its two main coordinates from `strat(key)`, so
+   * neighbouring ids land near each other. Such planes use the strata path:
+   * a shared memory tile per workgroup, whatever the plane's size on screen.
+   */
+  coherent?: boolean;
 }
 
 export interface TrillionPlane {
   /** Law id. */
   law: string;
-  /** Particles on this plane, at most 2^32 (keys are 32 bit, more would repeat positions). */
+  /** Particles on this plane, at most 2^32 (the per-plane index is a u32). */
   count: number;
   /** u32. Different seeds give different particles. */
   seed: number;
@@ -31,6 +37,11 @@ export interface TrillionPlane {
   near?: number;
   /** Probability 0..1 that a landed particle is counted (brightness). Default 1. */
   keep?: number;
+  /**
+   * Stratified grid of patches for coherent laws, [gu, gv]; gu * gv patches,
+   * one workgroup each. Default: square, about 2^17 particles per patch.
+   */
+  strata?: [number, number];
 }
 
 /** Plane-local particle ids [start, start + count). */
@@ -65,17 +76,28 @@ export interface TrillionFrameSettings {
    * default: the record claim is that every particle is evaluated.
    */
   cull: boolean;
+  /**
+   * Bench modes. 'full' (default) renders. 'math' evaluates and projects
+   * every particle but writes no counters (plain path). 'noTile' runs the
+   * strata path with run merging but without the shared memory tile.
+   */
+  mode: 'full' | 'math' | 'noTile';
 }
 
 export interface TrillionTally {
-  /** Particles whose position was computed. */
+  /** Particles whose position was computed, counted on the host at encode time. */
   evaluated: number;
+  /** The same, counted on the GPU (one atomic per workgroup). Must equal `evaluated`. */
+  evaluatedGpu: number;
   /** Particles skipped as whole batches because their plane is out of view (only with settings.cull). */
   culled: number;
   /** Evaluated particles that fell inside the frame. */
   inView: number;
   /** Particles counted: equals the sum of all pixel counters. */
   landed: number;
+  /** Strata path only: workgroups (patches) run, and how many found a shared memory tile. Tells whether a law is coherent enough. */
+  patches: number;
+  tiledPatches: number;
 }
 
 export interface PixelRect { x: number; y: number; w: number; h: number }
@@ -93,14 +115,14 @@ export class TrillionKernel {
   acc!: GPUBuffer;
   /** Exact 64 bit counters, CountToneMapper words = 2 layout (lo at 2i, hi at 2i + 1). Valid after `fold`. */
   counts!: GPUBuffer;
-  /** Landed and in-view totals as 64 bit (lo, hi) pairs. */
+  /** Landed and in-view totals as 64 bit (lo, hi) pairs, strata patches run and tiled (u32), evaluated (64 bit). */
   readonly tallyBuffer: GPUBuffer;
-  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false };
+  readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false, mode: 'full' };
   /** CPU side tally since the last `clear`. GPU side counts come from `readTally`. */
   evaluated = 0;
   culled = 0;
 
-  private pipelines = new Map<string, { direct: GPUComputePipeline; tiled: GPUComputePipeline }>();
+  private pipelines = new Map<string, { direct: GPUComputePipeline; tiled: GPUComputePipeline; strata: GPUComputePipeline; coherent: boolean }>();
   private layout: GPUBindGroupLayout;
   private ring: GPUBuffer;
   private slot = 0;
@@ -120,7 +142,8 @@ export class TrillionKernel {
 
   private constructor(device: GPUDevice, opts: TrillionKernelOptions) {
     this.device = device;
-    const maxBins = Math.floor(device.limits.maxComputeWorkgroupStorageSize / 4) - 16;
+    // Each other workgroup variable takes 16 bytes after padding; keep 128 bytes for them.
+    const maxBins = Math.floor(device.limits.maxComputeWorkgroupStorageSize / 4) - 32;
     this.tileBins = Math.max(256, Math.min(opts.tileBins ?? 8192, maxBins, 8192));
     this.layout = device.createBindGroupLayout({
       entries: [
@@ -130,7 +153,7 @@ export class TrillionKernel {
       ],
     });
     this.ring = device.createBuffer({ size: RING_SLOTS * SLOT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.tallyBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+    this.tallyBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
     this.foldPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: device.createShaderModule({ code: FOLD_WGSL }), entryPoint: 'fold' },
@@ -143,11 +166,12 @@ export class TrillionKernel {
     const layout = this.device.createPipelineLayout({ bindGroupLayouts: [this.layout] });
     await Promise.all(laws.map(async (law) => {
       const module = this.device.createShaderModule({ code: splatWgsl(law, this.tileBins, prelude), label: `trillion:${law.id}` });
-      const [direct, tiled] = await Promise.all([
+      const [direct, tiled, strata] = await Promise.all([
         this.device.createComputePipelineAsync({ layout, compute: { module, entryPoint: 'direct' } }),
         this.device.createComputePipelineAsync({ layout, compute: { module, entryPoint: 'tiled' } }),
+        this.device.createComputePipelineAsync({ layout, compute: { module, entryPoint: 'strata' } }),
       ]);
-      this.pipelines.set(law.id, { direct, tiled });
+      this.pipelines.set(law.id, { direct, tiled, strata, coherent: !!law.coherent });
     }));
   }
 
@@ -183,10 +207,14 @@ export class TrillionKernel {
     this.unfolded = 0;
   }
 
-  /** Zeroes all counters and the tally. */
-  clear(encoder: GPUCommandEncoder): void {
+  /**
+   * Zeroes the counters and the GPU tally. With `keepCounts`, the 64 bit
+   * `counts` are left as they are, for resuming from a checkpoint written
+   * into them with queue.writeBuffer (fold only ever adds to them).
+   */
+  clear(encoder: GPUCommandEncoder, opts: { keepCounts?: boolean } = {}): void {
     encoder.clearBuffer(this.acc);
-    encoder.clearBuffer(this.counts);
+    if (!opts.keepCounts) encoder.clearBuffer(this.counts);
     encoder.clearBuffer(this.tallyBuffer);
     this.unfolded = 0;
     this.evaluated = 0;
@@ -240,7 +268,9 @@ export class TrillionKernel {
     if (end <= start) return 0;
     const rect = this.footprint(plane);
     if (!rect && this.settings.cull) { this.culled += end - start; return 0; }
-    const tiled = !!rect && rect.w * rect.h <= this.tileBins;
+    const math = this.settings.mode === 'math';
+    if (pipes.coherent && !math) return this.encodeStrata(encoder, plane, pipes.strata, start, end);
+    const tiled = !math && !!rect && rect.w * rect.h <= this.tileBins;
     const pipe = tiled ? pipes.tiled : pipes.direct;
     // Shared memory flushes cost up to tileBins atomics: give each workgroup
     // at least 8 particles per counter. Direct: 64 per invocation.
@@ -280,9 +310,9 @@ export class TrillionKernel {
 
   /** GPU tally (landed, inView) plus the CPU one (evaluated, culled). Waits for the queue. */
   async readTally(): Promise<TrillionTally> {
-    const staging = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    const staging = this.device.createBuffer({ size: 32, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     const enc = this.device.createCommandEncoder();
-    enc.copyBufferToBuffer(this.tallyBuffer, 0, staging, 0, 16);
+    enc.copyBufferToBuffer(this.tallyBuffer, 0, staging, 0, 32);
     this.device.queue.submit([enc.finish()]);
     await staging.mapAsync(GPUMapMode.READ);
     const u = new Uint32Array(staging.getMappedRange().slice(0));
@@ -292,6 +322,9 @@ export class TrillionKernel {
       culled: this.culled,
       landed: u[0] + u[1] * U32_LIMIT,
       inView: u[2] + u[3] * U32_LIMIT,
+      patches: u[4],
+      tiledPatches: u[5],
+      evaluatedGpu: u[6] + u[7] * U32_LIMIT,
     };
   }
 
@@ -319,8 +352,54 @@ export class TrillionKernel {
     this.foldUniform.destroy();
   }
 
+  /** Patch layout of a plane on the strata path. */
+  strataLayout(plane: TrillionPlane): { gu: number; gv: number; patches: number; base: number; rem: number } {
+    let [gu, gv] = plane.strata ?? [0, 0];
+    if (!(gu >= 1 && gv >= 1)) {
+      const side = Math.max(1, Math.round(Math.sqrt(plane.count / 2 ** 17)));
+      gu = side;
+      gv = side;
+    }
+    gu = Math.floor(gu);
+    gv = Math.floor(gv);
+    const patches = gu * gv;
+    return { gu, gv, patches, base: Math.floor(plane.count / patches), rem: plane.count % patches };
+  }
+
+  private encodeStrata(encoder: GPUCommandEncoder, plane: TrillionPlane, pipe: GPUComputePipeline, start: number, end: number): number {
+    const L = this.strataLayout(plane);
+    // First patch holding id: the first `rem` patches hold base + 1.
+    const big = L.rem * (L.base + 1);
+    const patchOf = (id: number): number => (id < big ? Math.floor(id / (L.base + 1)) : L.rem + Math.floor((id - big) / L.base));
+    const patchStart = (c: number): number => c * L.base + Math.min(c, L.rem);
+    const perDispatch = Math.max(1, Math.floor(MAX_DISPATCH / (L.base + 1)));
+    let c = patchOf(start);
+    const cEnd = patchOf(end - 1) + 1;
+    let total = 0;
+    while (c < cEnd) {
+      const groups = Math.min(cEnd - c, perDispatch, 65535 * 65535);
+      const a = Math.max(start, patchStart(c));
+      const b = Math.min(end, patchStart(c + groups));
+      const n = b - a;
+      if (this.unfolded + n > U32_LIMIT - 1) this.fold(encoder);
+      const gridX = Math.min(groups, 65535);
+      const gridY = Math.ceil(groups / gridX);
+      const offset = this.writeSlot(plane, a, n, 0, gridX, groups, null, [c, L.base, L.rem, L.gu, L.gv]);
+      const pass = encoder.beginComputePass({ label: `trillion:${plane.law}:strata` });
+      pass.setPipeline(pipe);
+      pass.setBindGroup(0, this.bind, [offset]);
+      pass.dispatchWorkgroups(gridX, gridY);
+      pass.end();
+      this.unfolded += n;
+      this.evaluated += n;
+      total += n;
+      c += groups;
+    }
+    return total;
+  }
+
   private writeSlot(plane: TrillionPlane, start: number, count: number, perThread: number,
-    gridX: number, groups: number, tile: PixelRect | null): number {
+    gridX: number, groups: number, tile: PixelRect | null, strata: number[] = [0, 0, 0, 1, 1]): number {
     if (this.slotsSinceSubmit >= RING_SLOTS) {
       throw new Error(`TrillionKernel: more than ${RING_SLOTS} dispatches in one submit; call submitted() after each submit`);
     }
@@ -342,15 +421,16 @@ export class TrillionKernel {
     u[27] = keep >= 1 ? 0x1000000 : Math.max(0, Math.floor(keep * 0x1000000));
     u[28] = this.width;
     u[29] = this.height;
-    u[30] = this.settings.stochastic ? 1 : 0;
+    u[30] = (this.settings.stochastic ? 1 : 0) | (this.settings.mode === 'math' ? 2 : 0) | (this.settings.mode === 'noTile' ? 4 : 0);
     u[31] = 0;
     f[32] = this.settings.time;
     f[33] = this.settings.shutter;
     f[34] = 0;
     f[35] = 0;
     i.set(tile ? [tile.x, tile.y, tile.w, tile.h] : [0, 0, 0, 0], 36);
+    u.set([strata[0] >>> 0, strata[1] >>> 0, strata[2] >>> 0, strata[3] >>> 0, strata[4] >>> 0, 0, 0, 0], 40);
     const offset = this.slot * SLOT_BYTES;
-    this.device.queue.writeBuffer(this.ring, offset, this.scratch, 0, 160);
+    this.device.queue.writeBuffer(this.ring, offset, this.scratch, 0, 192);
     this.slot = (this.slot + 1) % RING_SLOTS;
     this.slotsSinceSubmit++;
     return offset;

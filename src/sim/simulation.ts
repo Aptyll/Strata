@@ -9,6 +9,7 @@ import type {
   PlaneHost,
   PlaneInstance,
 } from "../core/contracts";
+import { compileComputePipeline } from "../gpu/context";
 import {
   buildSimShader,
   dispatchSize,
@@ -20,7 +21,7 @@ import {
   PLANE_SEED_OFFSET,
   PLANE_UNIFORM_SIZE,
 } from "../gpu/shaderLib";
-import { fromTRS, seededRandom } from "../math";
+import { planeModelMatrix, seededRandom } from "../math";
 
 interface PlaneGpu extends PlaneInstance {
   pipeline: GPUComputePipeline;
@@ -136,7 +137,7 @@ export class Simulation implements Pass, PlaneHost {
     const { desc, behavior } = plane;
     const buf = new ArrayBuffer(PLANE_UNIFORM_SIZE);
     const f32 = new Float32Array(buf);
-    f32.set(fromTRS(desc.position, desc.rotation, [desc.halfSize[0], desc.halfSize[1], 1]), 0);
+    planeModelMatrix(desc, f32);
     paramSlotNames(behavior).forEach((name, i) => {
       f32[PLANE_PARAMS_OFFSET / 4 + i] = desc.params?.[name] ?? behavior.params[name]?.default ?? 0;
     });
@@ -201,20 +202,7 @@ export class Simulation implements Pass, PlaneHost {
   private pipelineFor(behavior: Behavior): GPUComputePipeline {
     let pipeline = this.pipelines.get(behavior.id);
     if (!pipeline) {
-      const module = this.gpu.device.createShaderModule({
-        label: `sim:${behavior.id}`,
-        code: buildSimShader(behavior),
-      });
-      module.getCompilationInfo().then((info) => {
-        for (const m of info.messages) {
-          if (m.type === "error") console.error(`[behavior ${behavior.id}] line ${m.lineNum}: ${m.message}`);
-        }
-      });
-      pipeline = this.gpu.device.createComputePipeline({
-        label: `sim:${behavior.id}`,
-        layout: this.pipelineLayout,
-        compute: { module, entryPoint: "main" },
-      });
+      pipeline = compileComputePipeline(this.gpu.device, `sim:${behavior.id}`, buildSimShader(behavior), this.pipelineLayout);
       this.pipelines.set(behavior.id, pipeline);
     }
     return pipeline;
