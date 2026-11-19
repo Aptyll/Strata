@@ -1,7 +1,7 @@
 import { createKeyRouter } from "./app/keys";
+import { mountCapture } from "./capture/app";
 import { behaviors, getBehavior } from "./behaviors";
 import { measurePlanes, VisibleOnlyBudget } from "./core/budget";
-import { createCapturePass } from "./capture/capturePass";
 import { TOKENS, type AppContext, type PassStage, type ParticleBudget, type Scene } from "./core/contracts";
 import type { DepthSpritePass } from "./depth";
 import { FrameGraph } from "./core/frameGraph";
@@ -247,21 +247,6 @@ async function start(): Promise<void> {
     value: interplane.passes[0].enabled !== false, onChange: setInterplane,
   });
 
-  // ---- capture: P saves a PNG, V records an MP4 ---------------------------
-  // The HUD owns the keys (R is the dice), so the controller's own hotkeys are off.
-  const capture = createCapturePass(canvas, {
-    screenshotKey: null,
-    recordKey: null,
-    onStatus: (text) => hud.announce(text),
-  });
-  graph.add(capture);
-  hud.registerShortcut({ key: "p", label: "save image", run: () => capture.controller.requestScreenshot() });
-  hud.registerShortcut({
-    key: "v", label: "record video",
-    run: (e) => {
-      if (!e.repeat) void capture.controller.toggleRecording().catch(() => {});
-    },
-  });
   hud.registerParam({
     id: "adaptive", label: "hold frame rate", type: "toggle", group: "performance", value: budget === adaptiveBudget,
     onChange: (on) => (budget = on ? adaptiveBudget : fullBudget),
@@ -288,19 +273,12 @@ async function start(): Promise<void> {
   let time = 0;
   let frame = 0;
 
-  const tick = (now: number) => {
-    // Clamp dt so a background tab or a hitch does not explode the simulation.
-    const dt = Math.min((now - last) / 1000, 1 / 30);
-    last = now;
+  /** True while an offline render owns the loop: the realtime tick stops drawing. */
+  let offline = false;
+
+  /** Simulate and draw one frame, `dt` seconds after the previous one. */
+  const renderFrame = (dt: number) => {
     time += dt;
-
-    fpsFrames++;
-    if (now - fpsSince >= 250) {
-      fps = (fpsFrames * 1000) / (now - fpsSince);
-      fpsFrames = 0;
-      fpsSince = now;
-    }
-
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
     camera.update(dt);
@@ -310,7 +288,8 @@ async function start(): Promise<void> {
     const brushes = pointerBrushes.update(dt, now);
     writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness, brushes });
 
-    const counts = budget.allocate({
+    // Offline renders are not in a hurry, so they always draw every particle.
+    const counts = (offline ? fullBudget : budget).allocate({
       planes: measurePlanes(sim.planes, camera, viewProj),
       fps: fps || targetFps,
       targetFps,
@@ -322,6 +301,33 @@ async function start(): Promise<void> {
 
     updateHud(dt);
     hud.setStat("total", total);
+  };
+
+  // ---- capture: P screenshot, V record, stills and offline video in the menu ----
+  mountCapture({
+    canvas,
+    hud,
+    maxTextureSize: gpu.device.limits.maxTextureDimension2D,
+    addPass: (pass) => graph.add(pass),
+    frame: renderFrame,
+    flush: () => gpu.device.queue.onSubmittedWorkDone(),
+    setOffline: (on) => (offline = on),
+    setResolution: (size) => (graph.fixedSize = size),
+  });
+
+  const tick = (now: number) => {
+    // Clamp dt so a background tab or a hitch does not explode the simulation.
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    last = now;
+
+    fpsFrames++;
+    if (now - fpsSince >= 250) {
+      fps = (fpsFrames * 1000) / (now - fpsSince);
+      fpsFrames = 0;
+      fpsSince = now;
+    }
+
+    if (!offline) renderFrame(dt);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

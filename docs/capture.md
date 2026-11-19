@@ -19,6 +19,29 @@ import {
 } from '../capture';
 ```
 
+## In the app
+
+Capture is already wired into the app by `src/capture/app.ts`:
+
+- `P` saves a screenshot of the current frame.
+- `V` starts and stops a live recording.
+- The settings menu (`Esc`) has a **capture** section: resolution (1080p to
+  8K, limited by the GPU), frame rate, length, 2x supersampling, save straight
+  to disk, and two buttons. **save still** renders one frame at the chosen
+  resolution. **render video** renders offline at a fixed time step, so the
+  result is smooth however slowly it renders; pressing it again cancels.
+
+While a still or an offline video renders, the app's realtime loop stops
+drawing, the drawing buffer is fixed at the render size
+(`FrameGraph.fixedSize`), and every plane draws its full particle count
+regardless of the adaptive budget. The camera keeps doing whatever it was
+doing (idle drift, a flight in progress), advanced by the same fixed step, and
+you can still steer it during the render. Progress shows in one line at the
+bottom of the screen.
+
+The rest of this document describes the module underneath, for use from other
+code.
+
 ## The one rule
 
 **Capture in the same task that rendered.** A WebGPU canvas only holds its
