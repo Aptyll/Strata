@@ -52,31 +52,3 @@ export function mat4LookAt(out: Mat4, eye: ArrayLike<number>, target: ArrayLike<
   out[15] = 1;
   return out;
 }
-
-/**
- * Model matrix for a "paper" plane: unit square in local XY (z = 0), scaled to
- * `size`, rotated by Euler angles (X then Y then Z) and moved to `position`.
- */
-export function mat4PlaneModel(
-  out: Mat4,
-  position: ArrayLike<number>,
-  size: number | [number, number],
-  rotX = 0,
-  rotY = 0,
-  rotZ = 0,
-): Mat4 {
-  const sx = typeof size === 'number' ? size : size[0];
-  const sy = typeof size === 'number' ? size : size[1];
-  const cx = Math.cos(rotX), sxr = Math.sin(rotX);
-  const cy = Math.cos(rotY), syr = Math.sin(rotY);
-  const cz = Math.cos(rotZ), szr = Math.sin(rotZ);
-  // R = Rz * Ry * Rx
-  const r00 = cz * cy, r01 = cz * syr * sxr - szr * cx, r02 = cz * syr * cx + szr * sxr;
-  const r10 = szr * cy, r11 = szr * syr * sxr + cz * cx, r12 = szr * syr * cx - cz * sxr;
-  const r20 = -syr, r21 = cy * sxr, r22 = cy * cx;
-  out[0] = r00 * sx; out[1] = r10 * sx; out[2] = r20 * sx; out[3] = 0;
-  out[4] = r01 * sy; out[5] = r11 * sy; out[6] = r21 * sy; out[7] = 0;
-  out[8] = r02; out[9] = r12; out[10] = r22; out[11] = 0;
-  out[12] = position[0]; out[13] = position[1]; out[14] = position[2]; out[15] = 1;
-  return out;
-}

@@ -1,7 +1,8 @@
 /**
  * Per-plane frustum culling and level of detail, on the CPU.
  *
- * A plane is the unit square [-0.5, 0.5]^2 at z = 0 in its local space. Given
+ * A plane is the square [-1, 1]^2 at z = 0 in its local space (the shared
+ * engine's sheet convention; the model matrix carries the half size). Given
  * its model-view-projection matrix we classify it once per frame:
  *
  *  - visible:      false when all four corners are outside one frustum plane.
@@ -54,8 +55,8 @@ export interface PlaneClass {
   areaPx: number;
 }
 
-const CX = [-0.5, 0.5, 0.5, -0.5];
-const CY = [-0.5, -0.5, 0.5, 0.5];
+const CX = [-1, 1, 1, -1];
+const CY = [-1, -1, 1, 1];
 const sx = new Float64Array(4);
 const sy = new Float64Array(4);
 

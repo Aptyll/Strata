@@ -1,12 +1,13 @@
 # Performance path: tens of millions of particles
 
-Everything here lives in `src/perf/` and is self-contained. It has two uses:
+Everything here lives in `src/perf/`. It plugs into the shared engine in two ways:
 
-1. **`PerfEngine`**: a complete high-count simulation and renderer with its own
-   compact storage. This is the path for the particle-count challenge.
-2. **Adapters for the shared engine** (`src/core/contracts.ts`): a compute
-   rasterizer `Pass` and a `ParticleBudget` that work on the standard 16-byte
-   particle buffers with no other changes.
+1. **`PerfEngine`**: a complete simulation and renderer for very high counts.
+   It takes the shared `PlaneDesc` and `Behavior` types unchanged, so every
+   behavior in `src/behaviors/` and every scene runs on it as is. Particles are
+   8 bytes instead of 16. This is the path for the particle-count challenge.
+2. **Drop-in parts for the main app**: the compute rasterizer pass (the app's
+   default rasterizer) and a `ParticleBudget` (its "hold frame rate" option).
 
 ## Try it
 
@@ -17,11 +18,11 @@ npm run dev
 
 | URL | What it does |
 | --- | --- |
-| `?n=50M&planes=64` | Live view. Drag to orbit, wheel to zoom, `[` `]` exposure. |
+| `?n=50M&planes=64` | Live view of the real behaviors on a scatter layout. Drag to orbit, wheel to zoom, `[` `]` brightness. |
 | `?bench=1` | Automated sweep from 1M to 100M, with and without culling and LOD. Prints ms per frame. |
-| `?selftest=1` | 23 correctness checks on the real GPU device. |
+| `?selftest=1` | 25 correctness checks on the real GPU device, including every registered behavior. |
 
-More switches (`cull`, `lod`, `hidden`, `bilinear`, `density`, `sim`, `res`,
+More switches (`behaviors`, `seed`, `brightness`, `cull`, `lod`, `hidden`, `bilinear`, `density`, `sim`, `res`,
 `offscreen`, `timer`, `counts`, `batch`) are listed at the top of
 `src/perf/bench/main.ts`.
 
@@ -35,7 +36,7 @@ and not a capped 60 fps.
 so everything was run on Chromium's software WebGPU (SwiftShader, 4 CPU cores).
 That proves correctness, not speed:
 
-- Self test: 23 of 23 pass.
+- Self test: 25 of 25 pass.
 - 50M particles in 64 planes allocate (7 pages, 448 MB), simulate and render
   with no validation errors.
 - Software throughput is about 18M particles per second, which says nothing
@@ -49,7 +50,7 @@ number this document is missing.
 ### 8 bytes per particle
 
 ```
-word 0  position  x:u16 | y:u16 << 16   unorm over the plane's [0, 1) square
+word 0  position  x:u16 | y:u16 << 16   unorm over the sheet's [-1, 1) square
 word 1  velocity  x:i16 | y:i16 << 16   snorm, scaled by the plane's velMax
 ```
 
@@ -63,33 +64,51 @@ precision away from the origin. u16 addition also wraps for free, so planes are
 toroidal with no branch.
 
 Motion smaller than one quantum per step would be lost by plain rounding. The
-shader uses dithered rounding (a per-particle, per-frame hash decides whether
-to round up), so slow drift is correct on average.
+shader rounds up with probability equal to the fractional part, so slow drift
+is correct on average and particles at rest stay exactly at rest. The self
+test checks a drift of half a quantum per frame.
+
+Velocity is clamped to `velMax` (default 4 sheet units per second, settable
+per behavior in the engine options).
 
 ### Paged storage
 
 Default WebGPU limits allow 256 MB per buffer and 128 MB per storage binding.
 `ParticlePool` keeps particles in 64 MB pages (8.4M particles) and gives each
 plane one contiguous range in one page. It works on default limits and scales
-by adding pages. A single plane is limited to one page.
+by adding pages. A single plane is limited to one page. Removed planes return
+their range to a free list, so a streaming world does not grow.
 
-Particles are seeded by a compute shader, so nothing is ever uploaded from the
-CPU. Seeding 50M particles is one dispatch per plane.
+Planes whose behavior has no `init()` are seeded by a compute shader (uniform,
+at rest, the same default as the core engine), so nothing is uploaded from the
+CPU. Behaviors with `init()` run it on the CPU and the result is packed and
+uploaded in chunks.
+
+### Behaviors run unchanged
+
+The compute shader is derived from the core engine's own `buildSimShader`: same
+prelude, same helpers (`rand`, `noise2`, `wrap`, `respawn`, ...), same
+`globals` and `plane` uniforms. Only the particle storage and the entry point
+are swapped. The entry point unpacks a particle to the standard
+`Particle { pos, vel }`, calls the behavior's `update`, and packs the result.
+If the core shader changes shape, the derivation fails loudly instead of
+silently drifting.
 
 ### One pass: simulate and rasterize together
 
 Each active plane is one compute dispatch. Per particle the shader unpacks,
-integrates, packs, projects, and does `atomicAdd` into a `u32` framebuffer.
+runs the behavior, packs, projects, and does `atomicAdd` into a `u32` framebuffer.
 Simulation and drawing share one read of the particle data. Updates are in
 place (no ping-pong buffers), which is safe because behaviors read fields, not
 other particles.
 
-A fullscreen triangle then resolves the framebuffer with an exponential tone
-curve. There are no vertex buffers and no point draw calls. Additive counting
+A fullscreen triangle then resolves the framebuffer, either with the same tone
+curve as the core tonemap pass or as linear light added to an HDR target
+(`output: 'hdr'`). There are no vertex buffers and no point draw calls. Additive counting
 is order independent, so no depth or sorting is needed.
 
-Per-plane data (matrix, params, counts, flags) sits in one uniform buffer
-addressed with dynamic offsets: one `writeBuffer` and one bind group per page.
+Per-plane data sits in one uniform buffer addressed with dynamic offsets: one
+`writeBuffer` per frame, one bind group per page, one pipeline per behavior.
 
 ### Culling
 
@@ -114,47 +133,45 @@ addressed with dynamic offsets: one `writeBuffer` and one bind group per page.
 ## API
 
 ```ts
-import { PerfEngine, requestPerfDevice, mat4PlaneModel } from './perf';
+import { getBehavior } from './behaviors';
+import { PerfEngine, requestPerfDevice } from './perf';
 
 const device = await requestPerfDevice();          // or any GPUDevice
 const engine = new PerfEngine(device, { format }); // format of the target views
 engine.resize(canvas.width, canvas.height);
-engine.addPlane({ count: 1_000_000, model, behavior: 'orbit' });
+engine.brightness = scene.render.brightness;
+
+engine.setPlanes(scene.planes, getBehavior);       // a whole Scene
+const id = engine.addPlane(desc, behavior);        // or one plane at a time
+engine.updatePlane(id, nextDesc);                  // transform or params changed
+engine.removePlane(id);                            // streaming
 
 engine.frame({ viewProj, dt, time, target: context.getCurrentTexture().createView() });
 ```
 
 `frame()` returns stats (visible planes, drawn and simulated particles, GPU
 pass times when `timestamp-query` is available). The target can be any texture
-view, which is what offline capture needs.
+view, which is what offline capture needs. `encode(encoder, params)` does the
+same into a caller-owned encoder, for frame graphs.
 
-Custom behaviors are WGSL bodies returning an acceleration, passed in
-`options.behaviors`. See `BUILTIN_BEHAVIORS` in `src/perf/shaders.ts` for five
-examples (flow, orbit, vortex, wave, attractors).
+## In the main app
 
-## Using it from the shared engine
-
-Both adapters build against `src/core/contracts.ts` and add no shared edits.
-
-```ts
-import { createAtomicRasterPass, PerfBudget } from './perf';
-
-passes.push(createAtomicRasterPass(gpu));   // replaces a point-list rasterize pass
-const budget = new PerfBudget({ width, height });
-```
-
-- `createAtomicRasterPass(gpu)` is a `rasterize` stage `Pass`. It reads the
-  standard f32 particle buffers through each plane's `simBindGroup`, counts
-  hits per pixel in a compute shader, and adds `count * globals.brightness` to
-  the HDR target. It was tested against a stand-in `GpuContext` built from
-  `docs/architecture.md`, not against the real core engine, which had not
-  landed when this was written. It assumes the globals layout is visible to
-  compute and fragment stages, and the plane uniform layout in that document.
-- `PerfBudget` implements `ParticleBudget`: a density cap per plane from
-  `screenCoverage`, zero for culled planes, and a global governor that backs
-  off when fps drops below target and recovers slowly. Note that the shared
-  renderer does not brighten thinned planes, so a throttled plane gets dimmer.
-  `PerfEngine` does compensate.
+- **Compute rasterizer.** `createAtomicRasterPass` is the app's default
+  rasterizer (`?raster=points` switches back to point lists). It reads the
+  standard f32 particle buffers through each plane's `simBindGroup` and adds
+  light per pixel in fixed point, honouring per-plane brightness.
+- **`PerfBudget`** implements `ParticleBudget` and is the app's "hold frame
+  rate" option (`?adaptive=1`): a density cap per plane from `screenCoverage`,
+  zero for culled planes, and a global governor that backs off when fps drops
+  below target and recovers slowly. Note that the shared renderer does not
+  brighten thinned planes, so a throttled plane gets dimmer. `PerfEngine` does
+  compensate.
+- **`PerfEngine` as the main simulation** is not wired into `src/main.ts` yet.
+  It has the same plane operations as `PlaneHost` (add, update, remove), takes
+  the same brushes (`engine.brushes`) and per-plane brightness, and can add
+  into the HDR target (`output: 'hdr'`), so the switch is mostly choosing it in
+  place of `Simulation` plus the rasterize pass. Until then it runs on the
+  benchmark page.
 
 ## Not done yet
 
@@ -166,8 +183,9 @@ const budget = new PerfBudget({ width, height });
   prefix LOD), so framebuffer writes are scattered. A coarse spatial sort would
   trade that for locality. Worth testing on real hardware first.
 - **4 bytes per particle.** Behaviors whose velocity is a pure function of
-  position do not need stored velocity. That would halve memory again.
-- **Freeing planes.** `ParticlePool` is a bump allocator, ranges are not
-  recycled. Needed for plane streaming.
-- **Particle interaction.** Behaviors here are field based. Neighbor
+  position do not need stored velocity. That would halve memory again, but it
+  needs a flag on `Behavior`.
+- **Depth passes.** `PerfEngine` writes light only. Depth-aware effects need a
+  second atomic buffer (nearest depth per pixel).
+- **Particle interaction.** Behaviors are field based. Neighbor
   interaction needs a density grid per plane, built in the same pass.

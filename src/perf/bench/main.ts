@@ -1,9 +1,13 @@
 /**
  * Standalone benchmark for the perf path. Open /src/perf/bench/ in the dev server.
+ * It runs the real behaviors (src/behaviors) on a real layout (src/world/layout).
  *
  * URL parameters:
  *   n=50M        total particles (suffix K or M)
  *   planes=64    number of planes
+ *   behaviors=flow,galaxy  behavior ids to cycle through (default: all registered)
+ *   seed=1       layout seed
+ *   brightness=0.1  light per particle (default scales with density)
  *   cull=0|1     per-plane frustum culling
  *   lod=0|1      particle and rate LOD
  *   hidden=0|1   simulate particles LOD is not drawing (1 = exact, 0 = cheaper)
@@ -18,9 +22,16 @@
  *   selftest=1   run correctness checks
  */
 
+import { behaviors, getBehavior } from '../../behaviors';
+import { scatterLayout, scatterRadius } from '../../world/layout';
 import { mat4LookAt, mat4Multiply, mat4Perspective, PerfEngine, requestPerfDevice } from '../index';
 import { runSelfTest } from './selftest';
-import { buildWorld, type BenchWorld } from './world';
+
+interface BenchWorld {
+  radius: number;
+  planes: number;
+  particles: number;
+}
 
 const q = new URLSearchParams(location.search);
 const flag = (k: string, d: boolean) => (q.has(k) ? q.get(k) !== '0' : d);
@@ -114,7 +125,10 @@ async function setup(
   });
   // A plane must fit in one page; use more planes when the request needs it.
   const needed = Math.max(planes, Math.ceil(n / engine.pool.maxRange));
-  const world = buildWorld(engine, n, needed);
+  const ids = q.get('behaviors')?.split(',') ?? behaviors.map((b) => b.id);
+  const descs = scatterLayout({ planes: needed, totalParticles: n, behaviorIds: ids, seed: count(q.get('seed'), 1) });
+  engine.setPlanes(descs, getBehavior);
+  const world: BenchWorld = { radius: scatterRadius(needed), planes: needed, particles: engine.particleCount };
   const oom = await device.popErrorScope();
   if (oom) {
     engine.destroy();
@@ -124,8 +138,11 @@ async function setup(
   engine.bilinear = cfg.bilinear;
   engine.resize(canvas.width, canvas.height);
   // Keep the picture readable as density grows: dimmer particles, same look.
-  engine.exposure = Math.min(1, Math.max(0.01, (1.2 * canvas.width * canvas.height) / world.particles));
-  camera.dist = Math.max(1.4, world.radius * 0.75);
+  engine.brightness = q.has('brightness')
+    ? parseFloat(q.get('brightness')!)
+    : Math.min(0.3, Math.max(0.004, (0.5 * canvas.width * canvas.height) / world.particles));
+  // Closer than the main app's framing, so part of the world is always off screen.
+  camera.dist = 1.3 * world.radius;
   return { engine, world };
 }
 
@@ -206,8 +223,8 @@ async function main(): Promise<void> {
     { passive: false },
   );
   addEventListener('keydown', (e) => {
-    if (e.key === '[') engine.exposure *= 0.8;
-    if (e.key === ']') engine.exposure *= 1.25;
+    if (e.key === '[') engine.brightness *= 0.8;
+    if (e.key === ']') engine.brightness *= 1.25;
   });
 
   // --- loop ---------------------------------------------------------------
@@ -243,8 +260,8 @@ async function main(): Promise<void> {
         `${(1000 / frameMs).toFixed(0)} fps   frame ${frameMs.toFixed(1)} ms   cpu ${cpuMs.toFixed(2)} ms   ` +
         (engine.hasGpuTimer ? `gpu ${gpuMs.toFixed(2)} ms (compute ${s.gpuComputeMs.toFixed(2)}, resolve ${s.gpuResolveMs.toFixed(2)})\n` : 'gpu timer unavailable\n') +
         `visible ${s.visiblePlanes}/${s.planes} planes   drawn ${fmt(s.drawnParticles)}   simulated ${fmt(s.simulatedParticles)}   dispatches ${s.dispatches}\n` +
-        `particle memory ${(engine.particleBytes / 2 ** 20).toFixed(0)} MB in ${engine.pool.pages.length} pages   exposure ${engine.exposure.toFixed(3)}\n` +
-        `drag to orbit, wheel to zoom, [ ] exposure`;
+        `particle memory ${(engine.particleBytes / 2 ** 20).toFixed(0)} MB in ${engine.pool.pages.length} pages   brightness ${engine.brightness.toFixed(3)}\n` +
+        `drag to orbit, wheel to zoom, [ ] brightness`;
       (window as unknown as Record<string, unknown>).__stats = { ...s, frameMs, cpuMs, world };
     }
     requestAnimationFrame(tick);
