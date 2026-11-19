@@ -15,6 +15,7 @@ import { chooseTier, detectCapability, explainUnsupported, parseUserAgent } from
 import { ForceBrush, brushForce, packBrushes } from '../force-brush';
 import { GestureCore } from '../gestures';
 import { HintScheduler } from '../hints';
+import { APP_HINTS } from '../app-hints';
 import { INTRO_DURATION, IntroDirector, ignitionRanks, introState, planeIgnition } from '../intro';
 import { m4 } from '../math';
 import { intersectPlane, pickPlane, screenToRay } from '../pointer-ray';
@@ -337,4 +338,29 @@ test('capability: user agents, tiers and explanations', async () => {
   const ok = await detectCapability({ navigator: { gpu: { requestAdapter: async () => ({ limits: { maxBufferSize: 2 ** 32 } }) }, hardwareConcurrency: 16, deviceMemory: 8 }, matchMedia: () => ({ matches: false }) });
   assert.equal(ok.webgpu, true);
   assert.equal(ok.tier, 'high');
+});
+
+test('app hints: nothing during the opening, then the drag hint, then the die before the rest', () => {
+  const h = new HintScheduler(APP_HINTS, { gap: 1 });
+  for (let i = 0; i < 60; i++) assert.equal(h.update(0.5, false), null, 'nothing while ineligible');
+  let first = null;
+  for (let i = 0; i < 40 && !first; i++) first = h.update(0.5, true);
+  assert.equal(first?.id, 'orbit');
+  h.learn('orbit');
+  let next = null;
+  for (let i = 0; i < 40 && !next; i++) next = h.update(0.5, true);
+  assert.equal(next?.id, 'roll', 'the die comes right after the first drag');
+  assert.equal(next.text, '', 'the die hint has no text line');
+});
+
+test('app hints: the die never jumps the queue ahead of the first drag', () => {
+  const h = new HintScheduler(APP_HINTS, { gap: 0 });
+  const seen = [];
+  for (let i = 0; i < 400; i++) {
+    const cur = h.update(0.25, true);
+    if (cur && seen[seen.length - 1] !== cur.id) seen.push(cur.id);
+  }
+  assert.equal(seen[0], 'orbit');
+  assert.equal(seen[1], 'roll');
+  assert.deepEqual([...new Set(seen)], seen, 'each hint shows once per visit');
 });

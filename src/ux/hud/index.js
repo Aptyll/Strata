@@ -10,6 +10,7 @@
 import { CSS } from './styles.js';
 import { MENU_CSS } from './menu-styles.js';
 import { createMenu } from './menu.js';
+import { attachMenuA11y } from './a11y.js';
 import { formatCount, formatExact, formatValue, formatTime, decimalsFor } from './format.js';
 
 export { formatCount, formatExact, formatValue, formatTime };
@@ -612,17 +613,23 @@ export function createHud(options = {}) {
    */
   // First visit: if the die goes untouched, let it breathe so it gets found. Stops for good at the first roll.
   const ROLLED_KEY = opt.persist ? opt.persist + '.rolled' : null;
+  let rolled = false;
+  if (ROLLED_KEY) { try { rolled = localStorage.getItem(ROLLED_KEY) === '1'; } catch { /* private mode */ } }
   let hintTimer = 0;
   const stopHint = () => {
     clearTimeout(hintTimer);
     dice.classList.remove('is-hinting');
+    rolled = true;
     if (ROLLED_KEY) { try { localStorage.setItem(ROLLED_KEY, '1'); } catch { /* private mode */ } }
   };
-  if (opt.dice && opt.diceHintMs > 0) {
-    let rolledBefore = false;
-    if (ROLLED_KEY) { try { rolledBefore = localStorage.getItem(ROLLED_KEY) === '1'; } catch { /* private mode */ } }
-    if (!rolledBefore) hintTimer = setTimeout(() => dice.classList.add('is-hinting'), opt.diceHintMs);
+  if (opt.dice && opt.diceHintMs > 0 && !rolled) {
+    hintTimer = setTimeout(() => dice.classList.add('is-hinting'), opt.diceHintMs);
   }
+  /** Start or stop the breathing by hand, for an app that schedules its own hints (pass diceHintMs: 0). */
+  const hintDice = (on = true) => {
+    clearTimeout(hintTimer);
+    dice.classList.toggle('is-hinting', !!on && !!opt.dice);
+  };
 
   const randomize = (seed) => {
     if (activeJob) return { seed: 0, face: shownFace }; // the world belongs to the job until it ends
@@ -781,6 +788,7 @@ export function createHud(options = {}) {
     onChange: (on) => menu.setCorner(root, on),
   });
   if (opt.panelOpen) setPanel(true);
+  disposers.push(attachMenuA11y(root)); // dialog roles, focus, keyboard, readable sizes (a11y.js)
   wake();
 
   return {
@@ -811,6 +819,9 @@ export function createHud(options = {}) {
      * Returns an unsubscribe function.
      */
     onRandomize: (fn) => { listeners.randomize.add(fn); return () => listeners.randomize.delete(fn); },
+    hintDice,
+    /** True once the die has been rolled on this device (remembered when persist is on). */
+    get rolled() { return rolled; },
     resetTimer,
     /** Subscribe to 'change' (id, value), 'panel' (open), 'stats' (on), 'randomize' (roll) or 'job' (id, running). Returns an unsubscribe function. */
     on: (type, fn) => { listeners[type].add(fn); return () => listeners[type].delete(fn); },

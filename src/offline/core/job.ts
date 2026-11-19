@@ -56,9 +56,9 @@ export interface OfflineJob {
   fps: number;
   /** Number of frames in the clip. */
   frames: number;
-  /** Simulated seconds per second of video. */
+  /** Law time (seconds) per second of video. Rendered, not simulated: motion is closed-form. */
   timeScale: number;
-  /** Simulated time at frame 0, in seconds. */
+  /** Law time at frame 0, in seconds. */
   timeOffset: number;
   /** Supersampling factor per axis. The accumulation grid is ssaa times larger. */
   ssaa: number;

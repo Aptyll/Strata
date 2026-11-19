@@ -1,16 +1,9 @@
 import type { FrameContext, GpuContext, Pass } from "../core/contracts";
-import { GLOBALS_WGSL, PARTICLE_STRIDE } from "../gpu/shaderLib";
+import { GLOBALS_WGSL, PARTICLE_STRIDE, PLANE_STRUCT_WGSL } from "../gpu/shaderLib";
 
-const WGSL = /* wgsl */ `
+export const POINTS_WGSL = /* wgsl */ `
 ${GLOBALS_WGSL}
-struct Plane {
-  model: mat4x4f,
-  params0: vec4f,
-  params1: vec4f,
-  count: u32,
-  seed: f32,
-  brightness: f32,
-}
+${PLANE_STRUCT_WGSL}
 @group(1) @binding(0) var<uniform> plane: Plane;
 
 struct VsOut {
@@ -39,7 +32,7 @@ fn fs(in: VsOut) -> @location(0) vec4f {
  */
 export default function createPointsPass(gpu: GpuContext): Pass {
   const { device, layouts } = gpu;
-  const module = device.createShaderModule({ label: "points", code: WGSL });
+  const module = device.createShaderModule({ label: "points", code: POINTS_WGSL });
   const pipeline = device.createRenderPipeline({
     label: "points",
     layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.globals, layouts.planeRender] }),

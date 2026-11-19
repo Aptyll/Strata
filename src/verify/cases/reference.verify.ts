@@ -8,7 +8,7 @@
 import { expectClose, expectEqual, expectUniform01 } from "../compare";
 import { output, runCompute } from "../gpu";
 import { DISPATCH_INDEX_WGSL, planDispatch } from "../limits";
-import { PCG_WGSL, UNIT_FLOAT_WGSL, WRAP_WGSL, pcg, seededRandom, unitFloat, wrapSheet, wrappedDistance } from "../reference";
+import { PCG_WGSL, U01_WGSL, WRAP_WGSL, pcg, seededRandom, u01, wrapSheet, wrappedDistance } from "../reference";
 import { VerifyError, type VerifyCase } from "../types";
 
 const f = Math.fround;
@@ -165,7 +165,7 @@ const cases: VerifyCase[] = [
         label: "hash",
         code: /* wgsl */ `
           ${PCG_WGSL}
-          ${UNIT_FLOAT_WGSL}
+          ${U01_WGSL}
           @group(0) @binding(0) var<storage, read_write> hashes: array<u32>;
           @group(0) @binding(1) var<storage, read_write> floats: array<f32>;
           @compute @workgroup_size(64)
@@ -175,7 +175,7 @@ const cases: VerifyCase[] = [
             // Indices far above 2^24, where a float based hash would repeat.
             let h = pcg(pcg(i + 4000000000u) ^ 0x9e3779b9u);
             hashes[i] = h;
-            floats[i] = unitFloat(h);
+            floats[i] = u01(h);
           }`,
         bindings: [
           { binding: 0, access: "read_write", data: count * 4 },
@@ -186,8 +186,8 @@ const cases: VerifyCase[] = [
       const expectedHashes = new Uint32Array(count).map((_, i) => pcg((pcg((i + 4_000_000_000) >>> 0) ^ 0x9e3779b9) >>> 0));
       expectEqual(new Uint32Array(output(outputs, 0)), expectedHashes, "hashes");
       const floats = new Float32Array(output(outputs, 1));
-      expectEqual(floats, Float32Array.from(expectedHashes, unitFloat), "unit floats");
-      const stats = expectUniform01(floats, "unitFloat(pcg)");
+      expectEqual(floats, Float32Array.from(expectedHashes, u01), "unit floats");
+      const stats = expectUniform01(floats, "u01(pcg)");
       t.note(`mean ${stats.mean.toFixed(4)}, chi2/dof ${stats.chi2PerDof.toFixed(2)}, serial correlation ${stats.serialCorrelation.toFixed(4)}`);
     },
   },

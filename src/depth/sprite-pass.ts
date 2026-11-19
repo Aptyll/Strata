@@ -9,6 +9,7 @@
 // itself, so it also works when it is the only rasterize pass.
 
 import type { FrameContext, GpuContext, Pass, PlaneInstance, Vec3 } from '../core/contracts';
+import { GLOBALS_WGSL, PLANE_STRUCT_WGSL } from '../gpu/shaderLib';
 import { depthWGSL } from './depth.wgsl';
 import { DepthParams, DEPTH_PARAMS_BYTES, type DepthSettings } from './params';
 import { FocusTracker, focusPlaneFromDesc, type FocusTrackerOptions } from './focus';
@@ -75,29 +76,15 @@ export interface DepthSpritePass extends Pass {
   fitWorld(source: number | readonly PlaneInstance[]): void;
 }
 
-const shader = depthWGSL + /* wgsl */ `
-struct Globals {
-  viewProj: mat4x4f,
-  time: f32,
-  dt: f32,
-  frame: u32,
-  brightness: f32,
-};
-struct Plane {
-  model: mat4x4f,
-  params0: vec4f,
-  params1: vec4f,
-  count: u32,
-  seed: f32,
-  brightness: f32, // multiplies globals.brightness for this plane
-};
+// group(0) Globals and group(1) Plane are the engine's own declarations
+// (src/gpu/shaderLib.ts); group(2) belongs to this pass.
+export const DEPTH_SPRITE_WGSL = depthWGSL + GLOBALS_WGSL + PLANE_STRUCT_WGSL + /* wgsl */ `
 struct DepthView {
   eye: vec3f,
   pad0: f32,
   viewport: vec2f,
   pad1: vec2f,
 };
-@group(0) @binding(0) var<uniform> globals: Globals;
 @group(1) @binding(0) var<uniform> plane: Plane;
 @group(2) @binding(0) var<uniform> dp: DepthParams;
 @group(2) @binding(1) var<uniform> dv: DepthView;
@@ -186,7 +173,7 @@ export function createDepthSpritePass(gpu: GpuContext, options: DepthSpritePassO
       { binding: 1, resource: { buffer: viewBuffer } },
     ],
   });
-  const module = device.createShaderModule({ label: 'depth-sprites', code: shader });
+  const module = device.createShaderModule({ label: 'depth-sprites', code: DEPTH_SPRITE_WGSL });
   const pipeline = device.createRenderPipeline({
     label: 'depth-sprites',
     layout: device.createPipelineLayout({

@@ -26,7 +26,8 @@
 //                   by counterResolveWgsl (shared with CountToneMapper).
 //   batch uniform   one 112 byte Batch block per batch, layout below.
 
-import { ADDITIVE_BLEND, COUNTER_LAYOUT_BYTES, HASH_WGSL, counterResolveWgsl, packCounterLayout, pickHdrFormat } from './common';
+import { PCG_WGSL, U01_WGSL } from '../gpu/wgsl';
+import { ADDITIVE_BLEND, COUNTER_LAYOUT_BYTES, counterResolveWgsl, packCounterLayout, pickHdrFormat } from './common';
 
 /** Byte size of the Batch uniform: 28 four-byte fields. */
 const UBO_SIZE = 112;
@@ -113,7 +114,7 @@ struct Out {
 }
 `;
 
-const computeWgsl = (strideWords: number, offsetWords: number, dims: 2 | 3): string => BATCH_WGSL + HASH_WGSL + /* wgsl */ `
+const computeWgsl = (strideWords: number, offsetWords: number, dims: 2 | 3): string => BATCH_WGSL + PCG_WGSL + U01_WGSL + /* wgsl */ `
 @group(0) @binding(1) var<storage, read> particles: array<f32>;
 @group(0) @binding(2) var<storage, read_write> grid: array<atomic<u32>>;
 

@@ -12,6 +12,7 @@
 
 import type { Mat4, PlaneDesc, Vec3 } from "../core/contracts";
 import {
+  COUNT_SLOTS,
   DISPATCH_STRIDE,
   GLOBALS_BYTES,
   GLOBALS_HEADER_BYTES,
@@ -255,6 +256,15 @@ export class ChallengeEngine {
   memoryLimited = false;
   /** Last measured GPU time of the compute pass in milliseconds, or null without timestamp queries. */
   gpuMs: number | null = null;
+  /**
+   * Particles the GPU itself counted in the latest checked frame, or null
+   * before the first check. Frames are checked by `afterSubmit`, one at a time.
+   */
+  gpuCount: number | null = null;
+  /** The count the checked frame was encoded with. `gpuCount` must equal it. */
+  gpuCountExpected = 0;
+  /** Checked frames whose GPU count differed from the encoded count, since `resetCountCheck`. */
+  countMismatches = 0;
 
   private width: number;
   private height: number;
@@ -300,6 +310,13 @@ export class ChallengeEngine {
   private readonly queryRead: GPUBuffer | null = null;
   private queryState: "idle" | "copied" | "mapping" = "idle";
 
+  private readonly countBuffer: GPUBuffer;
+  private readonly countRead: GPUBuffer;
+  private readonly countZeros = new Uint32Array(COUNT_SLOTS);
+  private countMapping = false;
+  private countGeneration = 0;
+  private encodedCount = 0;
+
   constructor(options: EngineOptions) {
     const device = options.device;
     this.device = device;
@@ -334,6 +351,7 @@ export class ChallengeEngine {
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
       ],
     });
     const dispatchEntry: GPUBindGroupLayoutEntry = {
@@ -402,6 +420,17 @@ export class ChallengeEngine {
       });
     }
 
+    this.countBuffer = device.createBuffer({
+      label: "challenge gpu count",
+      size: COUNT_SLOTS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    this.countRead = device.createBuffer({
+      label: "challenge gpu count readback",
+      size: COUNT_SLOTS * 4,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
     this.setPlanes(options.planes);
     this.createFramebuffer();
   }
@@ -424,7 +453,10 @@ export class ChallengeEngine {
 
   /** The most particles this mode can ever process per frame on this device. */
   get maxCount(): number {
-    return (this.mode === "sim" ? this.slabParticles : this.procChunk) * MAX_DISPATCHES;
+    if (this.mode === "proc") return this.procChunk * MAX_DISPATCHES;
+    // Simulated ids are u32 (D.base + i). Past 2^32 they would wrap, and two
+    // particles with one id share their seed and every random number after.
+    return Math.min(MAX_DISPATCHES, Math.floor(2 ** 32 / this.slabParticles)) * this.slabParticles;
   }
 
   /** Bytes of particle state on the GPU. */
@@ -551,6 +583,7 @@ export class ChallengeEngine {
       entries: [
         { binding: 0, resource: { buffer: this.globalsBuffer } },
         { binding: 1, resource: { buffer: this.fb } },
+        { binding: 2, resource: { buffer: this.countBuffer } },
       ],
     });
     this.resolveBindGroup = device.createBindGroup({
@@ -575,6 +608,11 @@ export class ChallengeEngine {
     this.frameUnits = units;
     this.writeGlobals(input, units, count);
     this.writeDispatches(count);
+    // Zero the GPU count with a queue write, not encoder.clearBuffer: if this
+    // frame's command buffer is dropped (a validation error runs none of it),
+    // the count must read zero, not the previous frame's total.
+    this.device.queue.writeBuffer(this.countBuffer, 0, this.countZeros);
+    this.encodedCount = count;
 
     encoder.clearBuffer(this.fb);
     const timed = this.querySet !== null && this.queryState === "idle";
@@ -601,8 +639,56 @@ export class ChallengeEngine {
     }
   }
 
-  /** Call after submitting the encoder from `encode`, to collect GPU timings. */
+  /**
+   * Call after submitting the encoder from `encode`: collects the GPU timing
+   * and checks the frame's GPU particle count against the encoded count.
+   */
   afterSubmit(): void {
+    this.checkCount();
+    this.readTimestamps();
+  }
+
+  /** Forget earlier count checks, for example when a new run starts. */
+  resetCountCheck(): void {
+    this.countGeneration++;
+    this.countMismatches = 0;
+    this.gpuCount = null;
+    this.gpuCountExpected = 0;
+  }
+
+  /**
+   * Copy the just-submitted frame's GPU count back and compare. The copy is
+   * its own submit, so it runs even when the frame's command buffer was
+   * invalid, and then reads the zeros written in `encode`.
+   */
+  private checkCount(): void {
+    if (this.countMapping) return; // the previous check is still in flight
+    this.countMapping = true;
+    const expected = this.encodedCount;
+    const generation = this.countGeneration;
+    const encoder = this.device.createCommandEncoder({ label: "challenge gpu count readback" });
+    encoder.copyBufferToBuffer(this.countBuffer, 0, this.countRead, 0, COUNT_SLOTS * 4);
+    this.device.queue.submit([encoder.finish()]);
+    const read = this.countRead;
+    read.mapAsync(GPUMapMode.READ).then(
+      () => {
+        const slots = new Uint32Array(read.getMappedRange());
+        let sum = 0;
+        for (let k = 0; k < slots.length; k++) sum += slots[k];
+        read.unmap();
+        this.countMapping = false;
+        if (generation !== this.countGeneration) return;
+        this.gpuCount = sum;
+        this.gpuCountExpected = expected;
+        if (sum !== expected) this.countMismatches++;
+      },
+      () => {
+        this.countMapping = false;
+      },
+    );
+  }
+
+  private readTimestamps(): void {
     if (this.queryState !== "copied" || !this.queryRead) return;
     this.queryState = "mapping";
     const read = this.queryRead;
@@ -831,5 +917,7 @@ export class ChallengeEngine {
     this.querySet?.destroy();
     this.queryResolve?.destroy();
     this.queryRead?.destroy();
+    this.countBuffer.destroy();
+    this.countRead.destroy();
   }
 }

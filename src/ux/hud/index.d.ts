@@ -33,7 +33,10 @@ export interface HudOptions {
   /** Show the randomize dice. Default true. */
   dice?: boolean;
   onRandomize?: RandomizeHandler | null;
-  /** On a first visit, start a slow pulse on the die after this long, until the first roll. 0 disables. Default 6000. */
+  /**
+   * On a first visit, start a slow pulse on the die after this long, until the first roll. 0 disables.
+   * Default 6000. Pass 0 when the app schedules the hint itself with hintDice().
+   */
   diceHintMs?: number;
   /** Fade the dice and menu dot after this long without input. 0 disables. Default 2500. */
   idleMs?: number;
@@ -205,6 +208,13 @@ export interface Hud {
   randomize(seed?: number): Roll;
   /** Subscribe to rolls. Returns an unsubscribe function. */
   onRandomize(fn: RandomizeHandler): () => void;
+  /**
+   * Start (default) or stop the die's breathing hint by hand, for an app that runs its own
+   * hint schedule (src/ux/experience/app-hints.ts). Pair with diceHintMs: 0. A roll stops it.
+   */
+  hintDice(on?: boolean): void;
+  /** True once the die has been rolled on this device (remembered when persist is on). */
+  readonly rolled: boolean;
 
   /** Returns a function that removes the shortcut. */
   registerShortcut(spec: ShortcutSpec): () => void;

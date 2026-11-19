@@ -11,11 +11,12 @@
 // density. encode() returns level 0, the sum of every octave, which the tone
 // map samples with a linear filter.
 
-import { ADDITIVE_BLEND, FULLSCREEN_VS, TONE_WGSL } from './common';
+import { FULLSCREEN_VS_WGSL } from '../gpu/wgsl';
+import { ADDITIVE_BLEND, TONE_WGSL } from './common';
 
 const FORMAT: GPUTextureFormat = 'r16float';
 
-const PREFILTER_WGSL = FULLSCREEN_VS + TONE_WGSL + /* wgsl */ `
+const PREFILTER_WGSL = FULLSCREEN_VS_WGSL + TONE_WGSL + /* wgsl */ `
 @group(0) @binding(0) var<uniform> t: Tone;
 @group(0) @binding(1) var src: texture_2d<f32>;
 fn tap(c: vec2i, hi: vec2i) -> f32 {
@@ -31,7 +32,7 @@ fn tap(c: vec2i, hi: vec2i) -> f32 {
 }
 `;
 
-const DOWN_WGSL = FULLSCREEN_VS + /* wgsl */ `
+const DOWN_WGSL = FULLSCREEN_VS_WGSL + /* wgsl */ `
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {
@@ -44,7 +45,7 @@ const DOWN_WGSL = FULLSCREEN_VS + /* wgsl */ `
 }
 `;
 
-const UP_WGSL = FULLSCREEN_VS + /* wgsl */ `
+const UP_WGSL = FULLSCREEN_VS_WGSL + /* wgsl */ `
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {

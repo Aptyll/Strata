@@ -255,6 +255,7 @@ hud.registerShortcut({ key: 'space', label: 'pause', run: () => togglePause() })
 | `registerParam(spec)`, `registerParams(specs)` | Add controls. Returns handles with `get`, `set`, `reset`, `remove`. |
 | `getParam(id)`, `setParam(id, v, { silent })`, `getParams()`, `resetParams()`, `removeParam(id)` | Read and write values from the engine side. A silent set is ignored while the person is dragging that slider, so an engine echo never yanks it. |
 | `onRandomize(fn)`, `randomize(seed?)` | The die. |
+| `hintDice(on?)`, `rolled` | Start or stop the die's breathing hint by hand, for an app that schedules its own hints (create the HUD with `diceHintMs: 0`); `rolled` is true once the die has been rolled on this device. |
 | `registerJob({ id, label, group, run })`, `status(text, holdMs?)`, `busy` | Long jobs and the status line. See above. |
 | `registerShortcut({ key, label, run })` | Add a key. Returns a remover. |
 | `on('change' \| 'panel' \| 'stats' \| 'randomize', fn)` | Events. Returns an unsubscribe function. |

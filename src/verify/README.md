@@ -52,7 +52,7 @@ after being joined with other source.
 | `compare.ts` | `expectClose`, `expectEqual`, `expectFinite`, `expectInRange`, `expectUniform01` |
 | `limits.ts` | `planDispatch`, `particleScaleLimits`, `checkLimits` (usable from app code) |
 | `lint.ts` | `lintWgsl`: static rules for mistakes that still compile |
-| `reference.ts` | CPU twins of small WGSL blocks (PCG hash, unit float, sheet wrap) |
+| `reference.ts` | CPU twins of small WGSL blocks: the shared `pcg` and `u01` from `src/gpu/wgsl.ts`, sheet wrap |
 | `cases/` | self-tests and worked examples |
 
 Lint rules: `workgroup-size`, `rand-reaches-one`, `index-to-f32`,

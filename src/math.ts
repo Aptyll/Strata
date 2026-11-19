@@ -1,57 +1,85 @@
-// Minimal column-major 4x4 matrix helpers (WebGPU clip space, depth 0..1).
+/**
+ * CPU math for the engine and the perf path: column-major 4x4 matrices in
+ * WebGPU clip space (depth 0..1), quaternions [x, y, z, w], and a seeded
+ * random.
+ *
+ * Matrix functions write into `out` and return it, so per-frame code can
+ * reuse one array. Where `out` is optional it defaults to a new
+ * Float32Array(16).
+ */
 
-import type { Mat4, Quat, Vec3 } from "./core/contracts";
+import type { Mat4, PlaneDesc, Quat, Vec3 } from "./core/contracts";
 
-export function perspective(fovY: number, aspect: number, near: number, far: number): Mat4 {
-  const f = 1 / Math.tan(fovY / 2);
-  const m = new Float32Array(16);
-  m[0] = f / aspect;
-  m[5] = f;
-  m[10] = far / (near - far);
-  m[11] = -1;
-  m[14] = (near * far) / (near - far);
-  return m;
+export function mat4Identity(out: Mat4 = new Float32Array(16)): Mat4 {
+  out.fill(0);
+  out[0] = out[5] = out[10] = out[15] = 1;
+  return out;
 }
 
-export function lookAt(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
-  const z = normalize(sub(eye, target));
-  const x = normalize(cross(up, z));
-  const y = cross(z, x);
-  // prettier-ignore
-  return new Float32Array([
-    x[0], y[0], z[0], 0,
-    x[1], y[1], z[1], 0,
-    x[2], y[2], z[2], 0,
-    -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
-  ]);
-}
-
-export function multiply(a: Mat4, b: Mat4): Mat4 {
-  const out = new Float32Array(16);
+/** out = a * b (column-major). `out` may not alias `a` or `b`. */
+export function mat4Multiply(out: Mat4, a: ArrayLike<number>, b: ArrayLike<number>): Mat4 {
   for (let c = 0; c < 4; c++) {
-    for (let r = 0; r < 4; r++) {
-      let s = 0;
-      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
-      out[c * 4 + r] = s;
-    }
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    out[c * 4] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3;
+    out[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3;
+    out[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    out[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
   }
   return out;
 }
 
+/** Right-handed perspective, depth 0..1. */
+export function mat4Perspective(out: Mat4, fovY: number, aspect: number, near: number, far: number): Mat4 {
+  const f = 1 / Math.tan(fovY / 2);
+  out.fill(0);
+  out[0] = f / aspect;
+  out[5] = f;
+  out[10] = far / (near - far);
+  out[11] = -1;
+  out[14] = (near * far) / (near - far);
+  return out;
+}
+
+/** View matrix of a camera at `eye` looking at `target`. */
+export function mat4LookAt(out: Mat4, eye: ArrayLike<number>, target: ArrayLike<number>, up: ArrayLike<number>): Mat4 {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let l = Math.hypot(zx, zy, zz) || 1;
+  zx /= l; zy /= l; zz /= l;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  l = Math.hypot(xx, xy, xz) || 1;
+  xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+  out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+  out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+  out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+  out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+  out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+  out[15] = 1;
+  return out;
+}
+
 /** Translation * rotation * scale. */
-export function fromTRS(t: Vec3, q: Quat, s: Vec3): Mat4 {
+export function fromTRS(t: Vec3, q: Quat, s: Vec3, out: Mat4 = new Float32Array(16)): Mat4 {
   const [x, y, z, w] = q;
   const x2 = x + x, y2 = y + y, z2 = z + z;
   const xx = x * x2, xy = x * y2, xz = x * z2;
   const yy = y * y2, yz = y * z2, zz = z * z2;
   const wx = w * x2, wy = w * y2, wz = w * z2;
-  // prettier-ignore
-  return new Float32Array([
-    (1 - (yy + zz)) * s[0], (xy + wz) * s[0], (xz - wy) * s[0], 0,
-    (xy - wz) * s[1], (1 - (xx + zz)) * s[1], (yz + wx) * s[1], 0,
-    (xz + wy) * s[2], (yz - wx) * s[2], (1 - (xx + yy)) * s[2], 0,
-    t[0], t[1], t[2], 1,
-  ]);
+  out[0] = (1 - (yy + zz)) * s[0]; out[1] = (xy + wz) * s[0]; out[2] = (xz - wy) * s[0]; out[3] = 0;
+  out[4] = (xy - wz) * s[1]; out[5] = (1 - (xx + zz)) * s[1]; out[6] = (yz + wx) * s[1]; out[7] = 0;
+  out[8] = (xz + wy) * s[2]; out[9] = (yz - wx) * s[2]; out[10] = (1 - (xx + yy)) * s[2]; out[11] = 0;
+  out[12] = t[0]; out[13] = t[1]; out[14] = t[2]; out[15] = 1;
+  return out;
+}
+
+/**
+ * A plane's model matrix: plane-local [-1, 1]^2 to world, with the half size
+ * baked in as scale and local z kept at unit length. This is `Plane.model`
+ * in every engine uniform (src/gpu/shaderLib.ts).
+ */
+export function planeModelMatrix(d: PlaneDesc, out: Mat4 = new Float32Array(16)): Mat4 {
+  return fromTRS(d.position, d.rotation, [d.halfSize[0], d.halfSize[1], 1], out);
 }
 
 export function quatFromAxisAngle(axis: Vec3, angle: number): Quat {

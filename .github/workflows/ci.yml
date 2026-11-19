@@ -1,0 +1,51 @@
+# Builds and runs the light tests on every pull request and on every push to
+# main, so a merge that breaks the build shows up as a red X within a minute.
+#
+# This is a safety net, not a gate: nothing here blocks a merge, and threads
+# still run `npm ci && npm run build` themselves right before merging.
+# A pull request is checked as it would look merged into main at push time,
+# which catches two PRs that are each fine alone but break together.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR replaces its older run. Every commit on main keeps its own
+# run, so the commit that broke the build is the first one with a red X.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build and light tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Same command every thread runs before merging: tsc --noEmit + vite build.
+      - name: Type check and build
+        run: npm run build
+
+      # Seconds each, no GPU needed. Shader checks (npm run verify) need a
+      # browser with WebGPU and are not run here yet.
+      - name: World tests
+        run: node src/world/test/run.mjs
+      - name: Depth tests
+        run: node src/depth/test/run.mjs
+      - name: Stateless particle key tests
+        run: node src/stateless/test/run.mjs
