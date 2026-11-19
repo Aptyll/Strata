@@ -32,6 +32,10 @@ fn srgb(x: f32) -> f32 {
   if (x <= 0.0031308) { return x * 12.92; }
   return 1.055 * pow(x, 1.0 / 2.4) - 0.055;
 }
+fn srgbToLinear(x: f32) -> f32 {
+  if (x <= 0.04045) { return x / 12.92; }
+  return pow((x + 0.055) / 1.055, 2.4);
+}
 
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {
   let c = vec2u(i.pos.xy);
@@ -43,12 +47,20 @@ fn srgb(x: f32) -> f32 {
     case 1u { v = filmic(l); }
     default { v = clamp(l, 0.0, 1.0); }
   }
-  if (t.encodeSrgb == 1u) { v = srgb(v); }
-  // Triangular dither. Smooth dark gradients on pure black band badly in 8 bit.
+  // Triangular dither, because smooth dark gradients on pure black band badly
+  // in 8 bit. It is added to the sRGB encoded value, the space the 8 bit target
+  // stores, so one unit of dither is one code value on every target format.
+  // The amplitude never exceeds the distance to black or to white: clamped
+  // noise would lift black and dim white on average, and the empty void stays
+  // exactly 0 instead of sparkling (which also costs video bitrate).
+  var e = srgb(v);
   let h = pcg(c.x + pcg(c.y + pcg(t.frame)));
   let n = u01(h) + u01(pcg(h)) - 1.0;
-  v = clamp(v + n * t.dither / 255.0, 0.0, 1.0);
-  return vec4f(v, v, v, 1.0);
+  let a = min(t.dither, min(e, 1.0 - e) * 255.0);
+  e = clamp(e + n * a / 255.0, 0.0, 1.0);
+  // An -srgb target encodes on write, so hand it the linear value.
+  if (t.encodeSrgb == 0u) { e = srgbToLinear(e); }
+  return vec4f(e, e, e, 1.0);
 }
 `;
 
@@ -67,7 +79,10 @@ export interface ToneSettings {
    * log curve has to span many orders of magnitude.
    */
   contrast?: number;
-  /** Dither amplitude in 8 bit steps. 0 turns it off. */
+  /**
+   * Dither amplitude in 8 bit steps. 0 turns it off. Near black and white it
+   * shrinks to the distance from the end, so black stays exactly black.
+   */
   dither: number;
 }
 
