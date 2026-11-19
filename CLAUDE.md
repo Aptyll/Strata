@@ -25,11 +25,13 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  Per 4K frame on the 2070: 26 to 52 s with flux weighting when the sheets
-  fill part of the frame, 161 to 205 s with flux when they fill it
-  (composition A), about 160 to 193 s with count weighting (exactly one unit
-  per particle in view, the proof shots). Flux draws far particles only on
-  average; the record stills were most likely flux.
+  Per 4K frame on the 2070: about 160 to 193 s with count weighting (exactly
+  one unit per particle in view, the proof shots), 161 to 205 s with flux when
+  the sheets fill the frame (composition A), and 26 to 52 s for the first
+  record stills, most likely flux with 16-bit weights (`fluxBits: 16`, now the
+  "flux, quick" choice), where most far particles add no light, which is why
+  it is quick. Flux jobs built now keep every far particle's light
+  (`fluxBits`), so expect count-like times for them; not yet timed on the 2070.
 
 ## Rules (Noah's, non-negotiable)
 
@@ -50,7 +52,8 @@ Two very different modes, and the wording must keep them apart:
   Noah's GPU.
 - **Honest counting.** Only claim what the GPU actually did. A count shown on
   screen must come from a GPU tally (landed / evaluated), not from a config
-  value. Simulated vs procedural/rendered is always labelled.
+  value. "Every particle drawn" needs the GPU's `drawn` count to equal
+  `landed`. Simulated vs procedural/rendered is always labelled.
 - **Questions to Noah** are tap-to-answer decision cards (2 to 4 options, one
   recommended), never open-ended text. Prefer a stated assumption over a
   question.

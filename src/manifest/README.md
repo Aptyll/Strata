@@ -23,7 +23,9 @@ the GPU did, so anyone can check or reproduce a frame. Brief:
 | `job` | name, sha256 of the exact job JSON, size, fps, splat, weighting, sheet count, seed range, camera keys; `fullJob` embeds the whole job |
 | `particlesPerFrame` | the job's configured count, kept apart from the tallies |
 | `frames[]` | per frame, copied from the GPU-written stats: `evaluated`, `landed`, `outside`, exact grid `unitSum`, `litPixels`, `maxCode`, GPU seconds, particles/s, `gridHash`, sha256 of the 16-bit PNG |
-| `drawing` | `weighting` and `splat`, and what they mean: `count` = exactly one unit per particle in frame; `flux` = randomly rounded weights, drawn on average only |
+| `drawing` | `weighting` and `splat`, and what they mean: `count` = exactly one unit per particle in frame; `flux` = light falls with distance, and the sentence says whether every particle in frame added light, from the GPU's `drawn` counts |
+| `frames[].drawn`, `everyLandedDrawn` | the GPU's count of landed particles that added light to the grid, and whether it equals `landed`. `null` in manifests of frames rendered before the count existed, where far flux particles were drawn on average only |
+| `frames[].unitsPerParticle` | grid units one full-weight particle adds: 65536, or more for flux frames with finer weights. `lightParticles` is `unitSum` divided by it |
 | `frames[].eachLandedAddedOnce` | count + point only: `unitSum == landed x 65536`, proving every landed particle added exactly one unit. `null` when not provable |
 | `totals` | frames complete, `allEvaluated` (GPU tally equals the job in every frame), summed evaluated, GPU seconds, measured particles/s |
 | `gpu`, `host`, `grade` | adapter info, platform, the Look used for the picture |
