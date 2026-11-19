@@ -130,6 +130,13 @@ What the engine has to provide:
   is set to `width * supersample` by `height * supersample` for the duration
   and restored afterwards, so the engine must size its targets from
   `canvas.width/height` each frame rather than from the window.
+- Keep the light per pixel. Particles drawn as points or small splats light a
+  fixed number of pixels, so a render taller than the window spreads the same
+  light over more pixels and comes out darker than what was on screen. Scale
+  particle light by `(render height / window height)^2` while the size is fixed
+  (the vertical field of view stays the same, so pixels per radian follow the
+  height). The app does this in `setResolution` in `src/main.ts`. Sprites sized
+  from the target height, like the depth sprites, need nothing.
 - `flush` (optional but recommended) keeps the loop from queueing GPU work
   faster than the GPU executes it.
 
