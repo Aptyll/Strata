@@ -30,7 +30,7 @@ import { attachCameraInput, cameraMath, createCamera } from "../ux/camera";
 import { BYTES_PER_PARTICLE, ChallengeEngine } from "./engine";
 import type { ChallengeMode } from "./engine";
 import { Ramp } from "./ramp";
-import { measureRefresh, screenLimit } from "./refresh";
+import { capDisproved, measureRefresh, screenLimit } from "./refresh";
 import { ROW } from "./shaders";
 import { describeGpu, mountChallengeViewer } from "./viewer";
 import { adapterOptions } from "../gpu/adapter-options";
@@ -298,7 +298,8 @@ export async function startChallenge(
   // and the search would end far too low. There, holding the frame rate means
   // showing every refresh, and the result says which screen it was measured on.
   const refreshHz = await refreshing;
-  const { screenHz, passFps } = screenLimit(refreshHz, targetFps);
+  // Not const: a window faster than this screen was thought to allow undoes the cap (onWindow).
+  let { screenHz, passFps } = screenLimit(refreshHz, targetFps);
 
   const restart = () => {
     engine.resetCountCheck();
@@ -354,6 +355,14 @@ export async function startChallenge(
 
   const onWindow = (measured: number) => {
     fps = measured;
+    if (capDisproved(screenHz, measured)) {
+      // This screen showed more frames than the refresh measured at startup, so it is not
+      // capped: the startup reading was late frames. Search again against the plain target,
+      // or a 60 Hz screen would be held to 28.5 fps and its record could never reach Tier 1.
+      ({ screenHz, passFps } = screenLimit(0, targetFps));
+      if (ramp) restart();
+      return;
+    }
     if (!ramp || ramp.phase === "hold") return;
     const applied = engine.count;
     const ceiling = applied < requested || applied >= engine.maxCount;
