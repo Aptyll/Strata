@@ -5,6 +5,7 @@
 //   node tools/montage/record-looks.mjs <looks.json> <outDir> [--only i,j]
 //
 // looks.json: { width, height, fps, particles, warmup, frames, looks: [
+//   (fps below 30 runs several sim steps per frame; "steps" overrides)
 //   { name, seed, theme, camera: { focusPlane?, rotate?: [yaw, pitch], zoom?, orbitRate? } } ] }
 //
 // Software GPU: this shows the look and motion, never real-GPU speed.
@@ -52,7 +53,11 @@ const browser = await chromium.launch({
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=swiftshader', '--use-webgpu-adapter=swiftshader', '--ignore-gpu-blocklist'],
 });
 const shim = readFileSync(join(here, 'shim.js'), 'utf8');
-const dtMs = 1000 / cfg.fps;
+// The app clamps each step to 1/30 s, so a lower output fps (24) would play slow.
+// Run `steps` sim steps per output frame instead (24 fps -> 2 steps of 1/48 s).
+const steps = cfg.steps ?? Math.ceil(30 / cfg.fps - 1e-9);
+const dtMs = 1000 / (cfg.fps * steps);
+const warmupMs = 1000 / 30;
 
 try {
   for (const [i, look] of cfg.looks.entries()) {
@@ -80,7 +85,7 @@ try {
       if (cam.rotate) rig.rotate(cam.rotate[0], cam.rotate[1]);
       if (cam.zoom) rig.zoom(cam.zoom);
     }, look.camera ?? {});
-    for (let f = 0; f < cfg.warmup; f++) await page.evaluate((ms) => window.__step(ms), dtMs);
+    for (let f = 0; f < cfg.warmup; f++) await page.evaluate((ms) => window.__step(ms), warmupMs);
 
     const scene = await page.evaluate(() =>
       window.strata.planes.map((p) => ({ behavior: p.desc.behaviorId, params: p.desc.params, capacity: p.capacity, active: p.activeCount })),
@@ -92,7 +97,7 @@ try {
     const counts = [];
     let lit = 0;
     for (let f = 0; f < cfg.frames; f++) {
-      await page.evaluate((ms) => window.__step(ms), dtMs);
+      for (let k = 0; k < steps; k++) await page.evaluate((ms) => window.__step(ms), dtMs);
       const g = await page.evaluate(() => window.__grab());
       counts.push(await page.evaluate(() => window.strata.stats().particles));
       const px = Buffer.from(g.b64, 'base64');
@@ -112,7 +117,7 @@ try {
     await new Promise((r) => ff.on('close', r));
     const meta = {
       index: i, ...look, url: `/${query}#r=${look.seed}`, adapter, width: cfg.width, height: cfg.height, fps: cfg.fps,
-      warmupFrames: cfg.warmup, frames: cfg.frames,
+      warmupFrames: cfg.warmup, frames: cfg.frames, simStepsPerFrame: steps, simDtSeconds: dtMs / 1000,
       particlesSteppedPerFrame: { min: Math.min(...counts), max: Math.max(...counts) },
       litFractionLastFrame: +(lit / (cfg.width * cfg.height)).toFixed(4),
       planes: scene, seconds: (Date.now() - t0) / 1000,
