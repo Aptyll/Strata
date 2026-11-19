@@ -13,12 +13,19 @@ sizes only; menu structure (tabs, pages, summary header) belongs to
 | `Tab` / `Shift+Tab` | menu open | walks the menu's controls and wraps inside the menu |
 | `Left` / `Right`, `Home` / `End` | on a tab | moves between tabs; the page follows (automatic activation) |
 | arrows, `Page Up/Down`, `Home/End`, `Space` | on a control | stay with that control (slider, select, button) and do not fly the camera |
-| arrows, WASD | menu open, no control focused | still fly the camera |
+| arrows, WASD, `Space` | menu open, no control focused | still fly the camera; `Space` toggles the idle drift |
+| `Space`, `Enter` | on the die or the menu dot, reached with `Tab` | press it (roll, open the menu) |
 | `?` | anywhere | keys sheet; `Esc`, `Enter`, `Space` or a click close it |
 
 Opening the menu focuses the menu itself, not its first control, so an arrow
 press meant for the camera can never nudge a slider. Closing hands focus back
-to whatever had it before (the menu dot, if it was opened from there).
+to whatever had it before (the menu dot, if it was reached with `Tab`).
+
+A mouse or touch press never focuses the die or the menu dot, so after
+clicking them `Space` still reaches the camera. Key releases are never held
+back: the camera acts only on presses, and a release it missed would leave it
+flying. Outside the menu, the app's key router (`src/app/keys.ts`) applies the
+same rule to any focused control.
 
 ## Semantics
 

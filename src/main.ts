@@ -32,13 +32,14 @@ import { mountRecord } from "./record";
 import { mountPanels } from "./ui";
 import { mountAutoCam } from "./ux/autocam";
 import { attachCameraInput, createCamera } from "./ux/camera";
+import { applyMobileBudget, mountMobileControls } from "./ux/mobile";
 import { detectCapability } from "./ux/experience/capability";
 import { mountAppHints } from "./ux/experience/app-hints";
 import { attachBrushes } from "./ux/experience/engine-brushes";
 import { mountFallback } from "./ux/experience/fallback";
 import { startStreamingWorld } from "./world";
 
-const options = readOptions(location.search);
+const options = applyMobileBudget(readOptions(location.search), location.search); // phones get a smaller budget (src/ux/mobile)
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
 if (options.challenge) {
@@ -98,11 +99,14 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
   // ---- people: HUD, pointer forces, the opening ----------------------------
   // Brushes swallow a held pointer's moves, so they must register after the HUD's own pointer listeners.
   const ui = mountAppHud({ app, canvas, scenes, render, budget, camera, view });
+  mountMobileControls(ui.hud); // tap target for the Esc menu on touch screens
   const brushes = attachBrushes(canvas, view, () => sim.planes);
   // One plane ignites, then the world. Skipped with any input, ?intro=0, or ?world.
   const intro =
     options.intro && options.world === null
-      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height))
+      ? mountIntro(canvas, camera, sim.planes, () => graph.width / Math.max(1, graph.height), {
+          cameraKeys: keys.cameraTarget,
+        })
       : null;
 
   // One-line gesture hints and the die's breathing, on one schedule; never during the opening.

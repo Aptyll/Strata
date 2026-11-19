@@ -72,6 +72,10 @@ export const CSS = `
   opacity: 0;
   transition: opacity 1400ms ease-in !important;
 }
+/* Text over the field: a soft dark halo keeps it legible over bright sheets without any visible chrome. */
+.sh-announce, .sh-job-text, .sh-message {
+  text-shadow: 0 0 6px rgba(var(--hud-bg), 0.9), 0 0 12px rgba(var(--hud-bg), 0.9);
+}
 .sh-announce.is-on { opacity: 1; transition: opacity 500ms ease-out !important; }
 .sh-announce .sh-a-title {
   /* The one place tracking opens up: a title card, not a label. */

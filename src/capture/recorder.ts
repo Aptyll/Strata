@@ -2,17 +2,7 @@
  * MP4 recording from a canvas, encoded in the browser with WebCodecs and
  * muxed with Mediabunny. No server and no ffmpeg involved.
  */
-import {
-  BufferTarget,
-  Mp4OutputFormat,
-  Output,
-  StreamTarget,
-  VideoSample,
-  VideoSampleSource,
-  type StreamTargetChunk,
-  type VideoCodec,
-  getFirstEncodableVideoCodec,
-} from 'mediabunny';
+import type { BufferTarget, StreamTarget, StreamTargetChunk, VideoCodec, VideoSample } from 'mediabunny';
 import { type AnyCanvas, FilterStage, Resampler, cssFilterOf, downloadBlob, timestampName } from './util';
 
 export type CaptureCodec = 'avc' | 'hevc' | 'vp9' | 'av1';
@@ -186,6 +176,14 @@ export async function startRecording(canvas: AnyCanvas, opts: RecordingOptions =
   const wanted = opts.codec ? (Array.isArray(opts.codec) ? opts.codec : [opts.codec]) : DEFAULT_CODECS;
   const timing = opts.timing ?? 'fixed';
   const latencyMode = timing === 'realtime' ? 'realtime' : 'quality';
+
+  // Mediabunny is about 220 kB of script that only a recording needs, so it is
+  // fetched here, when the first recording starts, and not with the page.
+  const { BufferTarget, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSource, getFirstEncodableVideoCodec } =
+    await import('mediabunny').catch((cause) => {
+      // Offline, or the tab is older than the last deploy and the file moved.
+      throw new Error('capture: could not load the video encoder. Check the connection, or reload the page.', { cause });
+    });
 
   const codec = (await getFirstEncodableVideoCodec(wanted as VideoCodec[], {
     width,
