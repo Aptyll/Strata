@@ -122,6 +122,9 @@ export function validateJob(job: OfflineJob): void {
     if (p.params.length !== LAW_PARAM_COUNT) fail(`plane ${i}: params must have ${LAW_PARAM_COUNT} entries`);
     if (p.law !== "kepler" && p.law !== "vortex" && p.law !== "lissajous") fail(`plane ${i}: unknown law ${p.law}`);
   });
+  // Distinct seeds give every sheet its own particle identities.
+  const seeds = new Set(job.planes.map((p) => p.seed));
+  if (seeds.size !== job.planes.length) fail("plane seeds must be unique");
   for (let i = 1; i < job.camera.length; i++) {
     if (!(job.camera[i].t > job.camera[i - 1].t)) fail("camera keys must have increasing t");
   }

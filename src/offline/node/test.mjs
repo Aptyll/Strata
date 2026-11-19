@@ -93,7 +93,32 @@ for (const splat of ["point", "bilinear"]) {
   const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
   const out = await renderOnce(job);
   const sum = accumulationSum(out.lo, out.hi);
-  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE), `${sum / BigInt(ONE)} of ${n} particles`);
+  check(`conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n), `${sum / BigInt(ONE)} of ${n} particles, tally ${out.landed}`);
+}
+
+// ---- tally matches the grid with part of the world off frame ----------------
+{
+  const job = testJob();
+  job.camera = [{ t: 0, target: [0.4, 0.2, 0], yaw: 0.3, pitch: -0.2, distance: 1.6, fovY: 0.7 }];
+  const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
+  const out = await renderOnce(job);
+  const inGrid = accumulationSum(out.lo, out.hi) / BigInt(ONE);
+  check("tally equals grid count, partly off frame", out.landed === inGrid && inGrid > 0n && inGrid < BigInt(n), `${out.landed} landed of ${n}`);
+}
+
+// ---- cancel ---------------------------------------------------------------------
+{
+  const controller = new AbortController();
+  let error = null;
+  try {
+    await renderOnce(testJob(), { initialBatch: 50_000, maxBatch: 50_000 }, 1, {
+      signal: controller.signal,
+      onProgress: () => controller.abort(),
+    });
+  } catch (e) {
+    error = e;
+  }
+  check("cancel rejects with AbortError", error?.name === "AbortError", error?.message ?? "no error");
 }
 
 // ---- batch invariance -------------------------------------------------------
@@ -156,8 +181,8 @@ for (const law of LAWS) {
     await renderOnce(job, { initialBatch: 100_000, maxBatch: 100_000 }, 1, {
       checkpoint: {
         everyMs: 0,
-        save: async (cursor, lo, hi) => {
-          saved = { cursor, lo, hi };
+        save: async (cursor, acc) => {
+          saved = { cursor, ...acc };
           // Stop partway, like a crash would.
           if (cursor.plane >= 1) throw new Error("stop");
         },
@@ -167,7 +192,7 @@ for (const law of LAWS) {
     if (/** @type {Error} */ (e).message !== "stop") throw e;
   }
   const resumed = await renderOnce(job, { initialBatch: 77_777, maxBatch: 77_777 }, 1, { resume: saved });
-  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi), `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
+  check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
 }
 
 // ---- PNG round trip ---------------------------------------------------------
