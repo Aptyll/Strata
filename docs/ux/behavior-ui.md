@@ -43,6 +43,15 @@ frame until it returns true.
 - If an engine does not provide `setPlaneBehavior` (it is optional in the
   contracts), or `opts.swapBehavior` is `false`, changed planes go through a
   single `app.loadScene` at the start, which is a hard cut.
+- Which planes change is decided once, when the roll starts. The engine's
+  scene shares its `PlaneDesc` objects with the live planes and a swap
+  rewrites them, so re-checking mid-flight would glide a swapped plane with
+  the old behavior's param names (NaN params on the GPU).
+- Target planes are matched to the live `app.planes` by index. A streamed
+  world (`?world=`) lists none of its planes in its scene, so the dice rolls
+  the live planes instead of loading a copy, which would wipe the stream.
+  Planes that disappear mid-roll (a rebuild, streaming) are skipped, and
+  planes that arrive later are left alone.
 
 ## Wiring the dice
 

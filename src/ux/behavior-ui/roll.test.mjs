@@ -149,3 +149,63 @@ test("author hints on a param are honoured: randomize false and randomRange", ()
     assert.ok(p.narrow >= 8 && p.narrow <= 9);
   }
 });
+
+// The engine hands out its live PlaneDesc objects from getScene() and a swap rewrites them
+// (Simulation.setBehavior), so a roll must not re-read "did this plane change?" mid-flight.
+function engineLikeApp(start) {
+  const app = fakeApp(start);
+  app.bad = [];
+  app.updatePlane = (p) => {
+    app.updates++;
+    for (const [name, v] of Object.entries(p.desc.params ?? {})) {
+      if (!Number.isFinite(v) || !(name in p.behavior.params)) app.bad.push(`${p.desc.behaviorId}.${name}=${v}`);
+    }
+  };
+  app.swaps = 0;
+  app.setPlaneBehavior = (plane, change) => {
+    app.swaps++;
+    plane.behavior = byId[change.behaviorId];
+    plane.desc.behaviorId = change.behaviorId;
+    plane.desc.params = change.params;
+    if (change.seed !== undefined) plane.desc.seed = change.seed;
+  };
+  return app;
+}
+
+test("a swapped plane never glides with the old behavior's params", () => {
+  const app = engineLikeApp(scene(["drift", "drift", "drift"]));
+  const target = structuredClone(app.getScene());
+  target.planes[0] = { ...target.planes[0], behaviorId: "bloom", params: { rate: 1 } };
+  target.planes[1].params = { speed: 1.5, scale: 4 };
+  target.planes[2].params = { speed: 0.1, scale: 1 };
+  const tr = startRoll(app, target, { duration: 1, stagger: 0.2 });
+  for (let f = 0; f < 600 && !tr.update(1 / 60); f++);
+  assert.ok(tr.done);
+  assert.equal(app.loads, 0);
+  assert.equal(app.swaps, 1);
+  assert.deepEqual(app.bad, [], "no NaN or foreign param uploaded");
+  assert.deepEqual(app.planes.map((p) => p.desc.params), target.planes.map((p) => p.params));
+});
+
+test("a roll survives the plane list changing under it", () => {
+  const app = engineLikeApp(scene(["drift", "drift", "orbit"]));
+  const target = rollScene(app.getScene(), BEHAVIORS, 11);
+  const tr = startRoll(app, target, { duration: 1, stagger: 0.1 });
+  tr.update(1 / 60);
+  app.loadScene(scene(["drift", "drift", "orbit", "bloom", "drift"])); // e.g. the plane count slider
+  assert.doesNotThrow(() => { for (let f = 0; f < 600 && !tr.update(1 / 60); f++); });
+  assert.ok(tr.done);
+  assert.deepEqual(app.bad, []);
+});
+
+test("a streamed world, whose scene lists no planes, rolls its live planes without a reload", () => {
+  const app = engineLikeApp(scene(["drift", "drift", "drift"]));
+  app.getScene = () => ({ ...scene([]), planes: [] });
+  const live = { ...scene([]), planes: app.planes.map((p) => p.desc) };
+  const target = rollScene(live, BEHAVIORS, 5);
+  const tr = startRoll(app, target, { duration: 0.5, stagger: 0.05 });
+  for (let f = 0; f < 600 && !tr.update(1 / 60); f++);
+  assert.equal(app.loads, 0);
+  assert.deepEqual(app.planes.map((p) => p.desc.behaviorId), target.planes.map((p) => p.behaviorId));
+  assert.deepEqual(app.bad, []);
+});
