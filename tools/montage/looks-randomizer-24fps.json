@@ -1,0 +1,13 @@
+{
+  "width": 1280, "height": 720, "fps": 24, "particles": 300000, "warmup": 90, "frames": 36,
+  "looks": [
+    { "name": "white-wide", "seed": "a1", "theme": "white", "camera": {} },
+    { "name": "heat-close", "seed": "q7", "theme": "heat", "camera": { "focusPlane": 5 } },
+    { "name": "cyan-turned", "seed": "z9", "theme": "cyan", "camera": { "rotate": [0.8, 0.2] } },
+    { "name": "red-blue-close", "seed": "m2", "theme": "red-blue", "camera": { "focusPlane": 12 } },
+    { "name": "white-depth-sprites", "seed": "c4", "theme": "white", "query": "raster=sprites", "camera": { "rotate": [-0.6, -0.15] } },
+    { "name": "amber-wide", "seed": "h8", "theme": "amber", "camera": { "zoom": 0.4 } },
+    { "name": "violet-close", "seed": "x5", "theme": "violet", "camera": { "focusPlane": 20 } },
+    { "name": "ice-turned", "seed": "p3", "theme": "ice", "camera": { "rotate": [1.6, 0.3] } }
+  ]
+}
