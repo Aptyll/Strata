@@ -17,8 +17,13 @@ import type { Behavior } from '../core/contracts';
 import { BRUSH_DISPLACE, buildSimShader, GLOBALS_SIZE, PLANE_UNIFORM_SIZE } from '../gpu/shaderLib';
 
 export const WORKGROUP_SIZE = 256;
-/** Workgroups per dispatch row; planes larger than one row dispatch several rows. */
-export const DISPATCH_ROW_GROUPS = 32768;
+/**
+ * Workgroups per dispatch row; planes larger than one row dispatch several rows.
+ * Short rows keep the overshoot small: a 2D dispatch is a rectangle, so up to
+ * one row of invocations runs past the count. 256 groups wastes under 65,536
+ * invocations per dispatch; 32,768 wasted up to 8.4 million.
+ */
+export const DISPATCH_ROW_GROUPS = 256;
 /** Fixed-point value of one full-brightness particle in the atomic framebuffer. */
 export const WEIGHT_ONE = 256;
 

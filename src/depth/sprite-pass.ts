@@ -89,6 +89,7 @@ struct Plane {
   params1: vec4f,
   count: u32,
   seed: f32,
+  brightness: f32, // multiplies globals.brightness for this plane
 };
 struct DepthView {
   eye: vec3f,
@@ -119,7 +120,7 @@ fn vs(@builtin(vertex_index) vi: u32, @location(0) local: vec2f) -> VSOut {
   var clip = globals.viewProj * world;
   let viewZ = clip.w; // perspective projection: w is the distance along the view axis
   var s = depth_sprite(viewZ, distance(world.xyz, dv.eye), dp);
-  s.intensity *= globals.brightness;
+  s.intensity *= globals.brightness * plane.brightness;
 
   var out: VSOut;
   if (s.intensity < dp.cullIntensity * globals.brightness || viewZ < 1e-3) {
