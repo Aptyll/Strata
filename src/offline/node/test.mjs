@@ -121,6 +121,30 @@ for (const splat of ["point", "bilinear"]) {
   check("cancel rejects with AbortError", error?.name === "AbortError", error?.message ?? "no error");
 }
 
+// ---- cancel keeps the work done so far, and the frame resumes exactly ---------
+{
+  const job = testJob({ splat: "bilinear" });
+  const opts = { initialBatch: 60_000, maxBatch: 60_000 };
+  const whole = await renderOnce(job, opts);
+  const controller = new AbortController();
+  /** @type {any} */
+  let saved = null;
+  let batches = 0;
+  try {
+    await renderOnce(job, opts, 1, {
+      signal: controller.signal,
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      onProgress: () => {
+        if (++batches === 7) controller.abort();
+      },
+    });
+  } catch (e) {
+    if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+  }
+  const resumed = saved ? await renderOnce(job, opts, 1, { resume: saved }) : null;
+  check("cancel saves a checkpoint that resumes exactly", resumed !== null && same(whole.lo, resumed.lo) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, saved ? `saved after ${saved.gpuEvaluated} particles` : "nothing saved");
+}
+
 // ---- batch invariance -------------------------------------------------------
 {
   const job = testJob({ splat: "bilinear", weighting: "flux", fluxRef: 8.5 });

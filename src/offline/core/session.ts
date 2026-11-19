@@ -88,6 +88,9 @@ export interface RenderOptions extends RendererOptions {
   shouldStop?(): boolean;
   /** Aborting rejects with an AbortError after the current batch. Progress is kept as a checkpoint. */
   signal?: AbortSignal;
+  /** Progressive preview of the frame in progress, every previewSeconds (default 15). */
+  onPartial?(frame: number, acc: Accumulation, done: number, total: number): void | Promise<void>;
+  previewSeconds?: number;
   onProgress?(p: {
     frame: number;
     done: number;
@@ -154,6 +157,9 @@ export async function renderJob(
       const result = await renderer.renderFrame(frame, {
         resume,
         signal: opts.signal,
+        onPartial: opts.onPartial
+          ? { everyMs: (opts.previewSeconds ?? 15) * 1000, show: (acc, done, total) => opts.onPartial!(frame, acc, done, total) }
+          : undefined,
         checkpoint:
           (opts.checkpointSeconds ?? 300) > 0
             ? {

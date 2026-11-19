@@ -50,8 +50,13 @@ export interface FrameHooks {
   resume?: { cursor: FrameCursor } & Accumulation;
   /** Save a partial frame every `everyMs` so a crash loses little. */
   checkpoint?: { everyMs: number; save(cursor: FrameCursor, acc: Accumulation): Promise<void> };
-  /** Checked between batches. When aborted, renderFrame rejects with an AbortError. */
+  /**
+   * Checked between batches. When aborted, renderFrame saves a checkpoint (if
+   * checkpoint is set) and rejects with an AbortError.
+   */
   signal?: AbortSignal;
+  /** Hand the partial frame to a preview every `everyMs`. Costs one readback each time. */
+  onPartial?: { everyMs: number; show(acc: Accumulation, done: number, total: number): void | Promise<void> };
 }
 
 export interface FrameResult extends Accumulation {
@@ -206,9 +211,14 @@ export class StatelessRenderer {
     const u32 = new Uint32Array(data);
     let batches = 0;
     let lastCheckpoint = now();
+    let lastPartial = now();
 
     while (cursor.plane < job.planes.length) {
-      if (hooks.signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
+      if (hooks.signal?.aborted) {
+        // Keep the work done so far: a cancelled frame resumes where it stopped.
+        if (hooks.checkpoint && done > startDone) await hooks.checkpoint.save(cursor, await this.readAccumulation());
+        throw new DOMException("Render cancelled", "AbortError");
+      }
       const plane = job.planes[cursor.plane];
       const left = plane.particleCount - cursor.offset;
       if (left <= 0) {
@@ -264,6 +274,10 @@ export class StatelessRenderer {
         this.batch = Math.max(4096, Math.min(this.maxBatch, Math.round(this.batch * factor)));
       }
 
+      if (hooks.onPartial && now() - lastPartial >= hooks.onPartial.everyMs && done < this.total) {
+        await hooks.onPartial.show(await this.readAccumulation(), done, this.total);
+        lastPartial = now();
+      }
       if (hooks.checkpoint && now() - lastCheckpoint >= hooks.checkpoint.everyMs && done < this.total) {
         await hooks.checkpoint.save(cursor, await this.readAccumulation());
         lastCheckpoint = now();
