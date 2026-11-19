@@ -7,6 +7,7 @@
  *   &brightness=1        light per particle (default 1, or 0.2 with ?tonemap=basic)
  *   &seed=1              layout seed
  *   &raster=points       draw with the point-list pass instead of the compute rasterizer
+ *   &raster=hue          points, each sheet in its own color (src/hue)
  *   &raster=sprites      depth-aware sprites: fog, depth of field, size falloff (also ?depth=1)
  *   &raster=splat        sub-pixel splats
  *   &parallax=1          the eye slides sideways with the pointer, for depth parallax
