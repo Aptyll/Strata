@@ -68,11 +68,12 @@ and no count appears without one of the two words (or "stored") beside it.
   about card, and always `1,000,000,000,000` for the trillion.
 - **Measured numbers come from the README.** The about card may quote only
   what is in `MEASURED` (`words.ts`), and `npm test` fails if `README.md` no
-  longer contains those numbers. A frame time for the trillion is always
-  quoted with which of the two ways of adding light it belongs to: about 160
-  to 193 seconds when every particle in view adds exactly one unit (count
-  weighting), 26 to 52 seconds when far particles are drawn on average (flux
-  weighting). The times differ sixfold, so one without the other misleads.
+  longer has those numbers. A frame time for the trillion is always quoted
+  with the case it belongs to: about 160 to 193 seconds when every particle in
+  view adds exactly one unit (count weighting); when far particles are drawn
+  on average (flux weighting), 26 to 52 seconds if the sheets cover part of
+  the picture and 161 to 205 seconds if they fill it. A frame takes anywhere
+  from 26 to 205 seconds, so a time without its case misleads.
 - **Particles per pixel** in the about card is simulated particles divided by
   the pixels of the drawing buffer (`canvas.width × canvas.height`). Pointing
   at it shows the sum.
@@ -110,9 +111,10 @@ For any new label, hint, menu row or message:
 
 ## Open
 
-- **`?world` (streamed sheets):** the camera rig is not given the streamed
-  sheets, so double-click, `G` and the sheet label do not work there
-  (`docs/world.md` notes the same for "go to nearest sheet").
+- **`?world` (streamed sheets):** the label works there, but a sheet's number
+  ("sheet 7 of 180") is its place among the sheets loaded right now, so it
+  changes as sheets stream in and out. A streamed sheet has no lasting number
+  yet.
 - **Auto camera tour (`C`):** the tour steers the camera without telling the
   rig which sheet it frames, so the label stays hidden during a tour. A tour
   with captions would be a good use of the label.

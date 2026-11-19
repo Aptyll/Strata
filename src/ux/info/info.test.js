@@ -79,12 +79,17 @@ test("the measured numbers the about card quotes are the ones in the README", (t
   const readme = resolve(process.cwd(), "README.md");
   if (!existsSync(readme)) return t.skip("run from the repository root to check against README.md");
   const text = readFileSync(readme, "utf8");
-  const { exact, averaged } = MEASURED.trillionFrameSeconds;
+  const { exact, averaged, averagedFull } = MEASURED.trillionFrameSeconds;
   const hint = "README.md and MEASURED in src/ux/info/words.ts must quote the same measurement";
   assert.ok(text.includes(MEASURED.gpu), `${MEASURED.gpu} is not in the README. ${hint}`);
   assert.ok(text.includes(exactCount(MEASURED.trillion)), `the trillion is not written out in the README. ${hint}`);
-  assert.ok(text.includes(`${averaged[0]} to ${averaged[1]}`), `"${averaged[0]} to ${averaged[1]}" seconds is not in the README. ${hint}`);
-  assert.ok(text.includes(`${exact[0]} to\n${exact[1]}`) || text.includes(`${exact[0]} to ${exact[1]}`), `"${exact[0]} to ${exact[1]}" seconds is not in the README. ${hint}`);
+  // Each time belongs to one way of adding light, so it must sit on a README line that names that way.
+  const lines = text.split("\n");
+  const quoted = ([from, to], weighting) => lines.some((line) => line.includes(`${from} to ${to}`) && line.includes(weighting));
+  const missing = (range, weighting) => `"${range[0]} to ${range[1]}" seconds with ${weighting} weighting is not in the README. ${hint}`;
+  assert.ok(quoted(exact, "count"), missing(exact, "count"));
+  assert.ok(quoted(averaged, "flux"), missing(averaged, "flux"));
+  assert.ok(quoted(averagedFull, "flux"), missing(averagedFull, "flux"));
 });
 
 // ---- sheets ----------------------------------------------------------------------------

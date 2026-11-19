@@ -9,8 +9,9 @@
  * The live numbers come from the running world and refresh while the card is
  * open. The definitions are the TERMS in ./words.ts, word for word, so the
  * card, the stats line and the docs cannot drift apart. The only fixed claims
- * are the measured trillion frame times in MEASURED, quoted with their GPU and
- * with which of the two ways of adding light each one belongs to.
+ * are the measured trillion frame times in MEASURED, quoted with their GPU,
+ * with which of the two ways of adding light each one belongs to, and with
+ * how much of the picture the sheets cover.
  */
 import { census, censusLine, totals, type Sheet } from "./sheets";
 import { MEASURED, TERMS, exactCount, perPixel, plural } from "./words";
@@ -119,7 +120,7 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
   const live = rich([...define(TERMS.simulated), ...define(TERMS.stored)]);
 
   // ---- the trillion -------------------------------------------------------------
-  const { exact, averaged } = MEASURED.trillionFrameSeconds;
+  const { exact, averaged, averagedFull } = MEASURED.trillionFrameSeconds;
   const trillion = rich([
     "The frames with ",
     [exactCount(MEASURED.trillion)],
@@ -127,7 +128,7 @@ export function createAbout(root: HTMLElement, sources: AboutSources, options: A
   ]);
   const renderedText = rich(define(TERMS.rendered));
   const measured = rich([
-    `On an ${MEASURED.gpu}, one 4K frame takes about ${exact[0]} to ${exact[1]} seconds when every particle in view adds exactly one unit of light, and ${averaged[0]} to ${averaged[1]} seconds when far particles are drawn on average instead of one by one.`,
+    `On an ${MEASURED.gpu}, one 4K frame takes about ${exact[0]} to ${exact[1]} seconds when every particle in view adds exactly one unit of light. When far particles are drawn on average instead of one by one, it takes ${averaged[0]} to ${averaged[1]} seconds if the sheets cover part of the picture, and ${averagedFull[0]} to ${averagedFull[1]} seconds if they fill it.`,
   ]);
   const links = h("p", "si-links");
   links.append(

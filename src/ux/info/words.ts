@@ -60,15 +60,17 @@ export const MEASURED = {
   /** Particles in one offline 4K frame. */
   trillion: 1_000_000_000_000,
   /**
-   * Seconds per 4K trillion frame, fastest and slowest framing, for the two
-   * ways a particle's light is added. The times differ sixfold, so a time is
-   * never quoted without saying which one it is.
+   * Seconds per 4K trillion frame, fastest and slowest, for the three cases
+   * the README measures. A frame takes anywhere from 26 to 205 seconds, so a
+   * time is never quoted without saying which case it belongs to.
    */
   trillionFrameSeconds: {
     /** Count weighting: every particle in view adds exactly one unit (the proof shots). */
     exact: [160, 193],
-    /** Flux weighting: far particles get a randomly rounded weight, often zero (the record stills). */
+    /** Flux weighting, sheets cover part of the frame: far particles get a randomly rounded weight, often zero (the wide and medium stills). */
     averaged: [26, 52],
+    /** Flux weighting, sheets fill the frame (the close-up). */
+    averagedFull: [161, 205],
   },
 } as const;
 

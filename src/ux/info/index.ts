@@ -146,8 +146,9 @@ export function mountInfo(opts: InfoOptions): Info {
     const hit = rig.pick(((px - r.left) / r.width) * 2 - 1, 1 - ((py - r.top) / r.height) * 2);
     return hit ? findSheet(app.planes, hit.center) : null;
   };
-  /** The sheet the full label last arrived for, and until when it stays up so it can be read. */
-  let announced = "";
+  /** The sheet and the name the full label last arrived for, and until when it stays up so it can be read. */
+  let heldSheet: object | null = null;
+  let heldName = "";
   let holdUntil = 0;
 
   // ---- keys sheet: the controls the HUD does not know about ---------------------------
@@ -265,16 +266,20 @@ export function mountInfo(opts: InfoOptions): Info {
     if (facts) {
       const characters = label.show(facts, level);
       // A label that arrives for a sheet the camera now faces stays long enough to be read,
-      // even if the person lets go of the mouse and the rest of the HUD fades.
-      const arrival = level === "full" ? `${facts.number}/${facts.of} ${facts.name}` : "";
-      if (arrival !== announced) {
-        announced = arrival;
-        holdUntil = arrival ? now + readingMs(characters) : 0;
+      // even if the person lets go of the mouse and the rest of the HUD fades. "Arrives" means
+      // another sheet or another behavior on it; the sheet's number may change as sheets stream
+      // in and out (?world), and that alone is no reason to hold the label up again.
+      const arrived = level === "full" ? sheet : null;
+      if (arrived !== heldSheet || facts.name !== heldName) {
+        heldSheet = arrived;
+        heldName = facts.name;
+        holdUntil = arrived ? now + readingMs(characters) : 0;
       }
       label.hold(now < holdUntil);
     } else {
       label.hide();
-      announced = "";
+      heldSheet = null;
+      heldName = "";
       holdUntil = 0;
     }
 
