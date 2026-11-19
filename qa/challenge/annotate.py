@@ -892,7 +892,7 @@ def fig_trillion(out: str) -> None:
         f"- Exact: in all three frames the counter sum equals the landed tally ({ms[0]['tally']['landed']:,} of {ms[0]['tally']['evaluated']:,} evaluated){'' if exact else ' (MISMATCH)'}.",
         f"- The demo's self test: {'passed' if selftest and selftest.get('ok') else 'not run' if not selftest else 'FAILED'}; two batch plans give bit-identical counters." if selftest is not None else "- Self test result not found.",
         f"- Unbiased: after a 2 px blur, point and stochastic counts differ by a median {rel * 100:.1f}%. Coverage {(cnt[0] > 0).mean() * 100:.1f}% vs {(cnt[1] > 0).mean() * 100:.1f}%.",
-        f"- Noise: a new salt at the same instant moves lit pixels by {d[lit].mean():.1f} levels on average (99th percentile {np.percentile(d, 99):.0f}). The offline renderer sets the salt to the frame number, so in a video this is fresh grain every frame on top of motion; at 1T density it shrinks with the square root of the hits per pixel.",
+        f"- Noise: a new salt at the same instant moves lit pixels by {d[lit].mean():.1f} levels on average (99th percentile {np.percentile(d, 99):.0f}). When this was rendered the offline renderer set the salt to the frame number, so a video got fresh grain every frame; PR #174 has since kept it constant. At 1T density the grain shrinks with the square root of the hits per pixel.",
         f"Not checked here: the stand-in laws never take the shared-memory tile path (patches {t.get('patches', 0)}, full tiles {t.get('tiledPatches', 0)}, partial tiles {t.get('partialPatches', 0)}), so PR #115's partial tiles are not exercised by this scene" + (". Figure 11 runs the offline laws through this kernel, but the offline renderer does not report tile use." if have("kernels-trillion-40M.gray") else ".") + " This scene also has no fine periodic structure, so it cannot show the point splat's ring moire (trillion-A in docs/record).",
     ], 560, font_=F_SMALL)
     save(f, out, "09-trillion-kernel.jpg")
@@ -940,7 +940,7 @@ def fig_kernels(out: str) -> None:
     lines += [
         "- The film is not affected: docs/perf.md makes src/offline the film's 1T kernel. But 'trillion' is not a drop-in there under flux weighting, and an A/B under flux compares every particle against a few percent of them, in look and in atomics written.",
         "- Fix (suggested): run A/Bs with weighting 'count', where both kernels draw every particle. To render the film with this kernel, give it fractional weights (add round(keep x 65,536) units per hit with dither, as the offline kernel does) instead of a keep probability.",
-        "Shutter 0 for both because the trillion kernel has no camera blur; with the film's shutter they would also differ by blur.",
+        "Shutter 0 for both: when this was rendered the trillion kernel had no camera blur (PR #174 has since added it). PRs #171 and #174 left the per-sheet keep probability as it was.",
     ]
     text_block(f, 1210, 150, lines, 560, font_=F_SMALL)
     save(f, out, "11-trillion-kernel-flux.jpg")

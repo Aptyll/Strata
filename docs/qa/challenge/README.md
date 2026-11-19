@@ -32,7 +32,7 @@ Main moves fast, so each figure's footer names the commit it was rendered
 from. Unless noted, that is `df80a27` (the "before" captures in 02 and 04 are
 from `c42ceda`, and the real 1T frames in 05 are the RTX 2070 stills in
 `docs/record/`). Changes merged after `df80a27` that touch what a finding
-looked at, up to `1820b1d`:
+looked at, up to `8bb79e9`:
 
 - **01, 08** (`src/render`): none.
 - **02, 03** (`src/capture`): PR #144 adds an audio track to recordings and PR
@@ -48,9 +48,14 @@ looked at, up to `1820b1d`:
 - **06** (`src/challenge`): PR #139 dropped the 1/2.2 power after the log curve
   (brief V02), so Challenge renders darker. 06 was rendered again at `1820b1d`,
   after it, and compares the two (07's Challenge panel is from `1820b1d` too).
+  PR #175 changes how the count is searched on screens capped at the target
+  frame rate, not the picture.
 - **09, 11** (`src/trillion`): PR #157 keeps the partial tile inside its bins
-  on very wide frames. The per-sheet keep probability behind 11 is unchanged
-  at `1820b1d`.
+  on very wide frames. PRs #171 and #174 add camera blur to the trillion kernel,
+  keep its salt constant across frames (09's per-frame grain no longer
+  changes), and add a `trillion-strata` kernel choice, which none of these
+  figures ran. The per-sheet keep probability behind 11 is unchanged at
+  `8bb79e9`.
 
 ## Related briefs
 
