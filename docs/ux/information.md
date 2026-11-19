@@ -122,9 +122,8 @@ For any new label, hint, menu row or message:
   rig which sheet it frames, so the label stays hidden during a tour. A tour
   with captions would be a good use of the label.
 - **Esc menu header** (`src/ux/hud/menu.js`) still says "simulating" and
-  "planes", shows counts in lowercase (`20.0k`) and names the world's most
-  common behavior as if it were the one on screen. It reads the same stats,
-  so only its own labels and one `text-transform` need to follow. Passed to
-  the Esc menu threads on 2026-11-19.
+  "planes", and names the world's most common behavior as if it were the one
+  on screen. It reads the same stats, so only its own labels need to follow.
+  Passed to the Esc menu threads on 2026-11-19.
 - **Challenge mode** (`/?challenge`) has its own readout and does not mount
   this layer.
