@@ -49,23 +49,28 @@ export async function renderFrame(kernel: TrillionKernel, planes: readonly Trill
     if (opts.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     const enc = device.createCommandEncoder();
     let n = 0;
+    let skipped = 0;
     while (item < work.length && n < budget) {
       const w = work[item];
       const take = Math.min(w.end - w.start, budget - n);
-      kernel.encodeBatch(enc, { plane: w.plane, start: w.start, count: take });
+      // Only particles that will run count toward the budget: a culled batch
+      // costs no GPU time and must not inflate the next submit.
+      n += kernel.encodeBatch(enc, { plane: w.plane, start: w.start, count: take });
+      skipped += take;
       w.start += take;
-      n += take;
       if (w.start >= w.end) item++;
+      if (skipped >= 4 * budget) break;
     }
     const t0 = performance.now();
     device.queue.submit([enc.finish()]);
     kernel.submitted();
     await device.queue.onSubmittedWorkDone();
     const ms = Math.max(1, performance.now() - t0);
-    done += n;
+    done += skipped;
     opts.onProgress?.(done, total, (n / ms) * 1000);
-    // Steer the next submit toward targetMs, at most doubling per step.
-    budget = Math.max(2 ** 16, Math.min(budget * 2, Math.floor(budget * (targetMs / ms))));
+    // Steer the next submit toward targetMs, at most doubling per step, and
+    // never past 2^34 particles whatever the measurement says.
+    if (n > 0) budget = Math.max(2 ** 16, Math.min(budget * 2, Math.floor(budget * (targetMs / ms)), 2 ** 34));
   }
 
   const enc = device.createCommandEncoder();

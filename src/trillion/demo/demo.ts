@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   await show();
   info.textContent = [
     `${N.toExponential(3)} particles, ${planes.length} planes, ${width}x${height}, tile ${kernel.tileBins} counters`,
-    `evaluated ${tally.evaluated.toExponential(4)}   culled ${tally.culled.toExponential(4)}`,
+    `evaluated ${tally.evaluatedGpu.toExponential(4)} (GPU tally)   culled ${tally.culled.toExponential(4)}`,
     `in view   ${tally.inView.toExponential(4)}   landed ${tally.landed.toExponential(4)}`,
     tally.patches ? `strata patches ${tally.patches}, ${((100 * tally.tiledPatches) / tally.patches).toFixed(1)}% on a shared memory tile` : 'plain path (no strata patches)',
     `${secs.toFixed(2)} s, ${(tally.evaluated / secs / 1e9).toFixed(2)} B particles/s`,
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     const cb = await kernel.readCounts();
     let sum = 0, identical = a.landed === b.landed;
     for (let i = 0; i < ca.length; i++) { sum += ca[i]; if (ca[i] !== cb[i]) identical = false; }
-    const ok = sum === a.landed && identical && a.evaluated + a.culled === 2e7;
+    const ok = sum === a.landed && identical && a.evaluated + a.culled === 2e7 && a.evaluatedGpu === a.evaluated && b.evaluatedGpu === b.evaluated;
     return { ok, landed: a.landed, sum, identical };
   };
   // Statistical check of the strata path against the plain one: same laws,

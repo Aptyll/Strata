@@ -21,7 +21,7 @@ export interface TrillionLaw {
 export interface TrillionPlane {
   /** Law id. */
   law: string;
-  /** Particles on this plane, at most 2^32 (keys are 32 bit, more would repeat positions). */
+  /** Particles on this plane, at most 2^32 (the per-plane index is a u32). */
   count: number;
   /** u32. Different seeds give different particles. */
   seed: number;
@@ -85,8 +85,10 @@ export interface TrillionFrameSettings {
 }
 
 export interface TrillionTally {
-  /** Particles whose position was computed. */
+  /** Particles whose position was computed, counted on the host at encode time. */
   evaluated: number;
+  /** The same, counted on the GPU (one atomic per workgroup). Must equal `evaluated`. */
+  evaluatedGpu: number;
   /** Particles skipped as whole batches because their plane is out of view (only with settings.cull). */
   culled: number;
   /** Evaluated particles that fell inside the frame. */
@@ -113,7 +115,7 @@ export class TrillionKernel {
   acc!: GPUBuffer;
   /** Exact 64 bit counters, CountToneMapper words = 2 layout (lo at 2i, hi at 2i + 1). Valid after `fold`. */
   counts!: GPUBuffer;
-  /** Landed and in-view totals as 64 bit (lo, hi) pairs, then strata patches run and tiled (u32). */
+  /** Landed and in-view totals as 64 bit (lo, hi) pairs, strata patches run and tiled (u32), evaluated (64 bit). */
   readonly tallyBuffer: GPUBuffer;
   readonly settings: TrillionFrameSettings = { time: 0, shutter: 0, salt: 0, stochastic: true, cull: false, mode: 'full' };
   /** CPU side tally since the last `clear`. GPU side counts come from `readTally`. */
@@ -322,6 +324,7 @@ export class TrillionKernel {
       inView: u[2] + u[3] * U32_LIMIT,
       patches: u[4],
       tiledPatches: u[5],
+      evaluatedGpu: u[6] + u[7] * U32_LIMIT,
     };
   }
 

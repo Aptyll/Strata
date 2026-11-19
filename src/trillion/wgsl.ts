@@ -67,13 +67,15 @@ ${BATCH_STRUCT}
 @group(0) @binding(0) var<uniform> B: Batch;
 @group(0) @binding(1) var<storage, read_write> acc: array<atomic<u32>>;
 // [0] landed lo, [1] landed hi, [2] in view lo, [3] in view hi,
-// [4] strata patches run, [5] strata patches that found a tile
+// [4] strata patches run, [5] strata patches that found a tile,
+// [6] evaluated lo, [7] evaluated hi
 @group(0) @binding(2) var<storage, read_write> tally: array<atomic<u32>, 8>;
 
 const TILE_BINS: u32 = ${tileBins}u;
 var<workgroup> bins: array<atomic<u32>, TILE_BINS>;
 var<workgroup> wgLanded: atomic<u32>;
 var<workgroup> wgInView: atomic<u32>;
+var<workgroup> wgEvaluated: atomic<u32>;
 
 fn add64(i: u32, n: u32) {
   if (n == 0u) { return; }
@@ -126,9 +128,11 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   let p = params();
   var landed = 0u;
   var inView = 0u;
+  var evaluated = 0u;
   for (var j = 0u; j < B.perThread; j++) {
     let off = base + j * ${WORKGROUP}u + lid;
     if (off >= B.count) { break; }
+    evaluated += 1u;
     let key = particleKey(B.start + off, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
     SQ = vec2f(u01(key.x), u01(key.y));
@@ -142,10 +146,12 @@ fn direct(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   }
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgInView, inView);
+  atomicAdd(&wgEvaluated, evaluated);
   workgroupBarrier();
   if (lid == 0u) {
     add64(0u, atomicLoad(&wgLanded));
     add64(2u, atomicLoad(&wgInView));
+    add64(6u, atomicLoad(&wgEvaluated));
   }
 }
 
@@ -160,10 +166,12 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
   let th = u32(tile.w);
   var landed = 0u;
   var inView = 0u;
+  var evaluated = 0u;
   // Workgroup memory starts zeroed (WebGPU guarantees it).
   for (var j = 0u; j < B.perThread; j++) {
     let off = base + j * ${WORKGROUP}u + lid;
     if (off >= B.count) { break; }
+    evaluated += 1u;
     let key = particleKey(B.start + off, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
     SQ = vec2f(u01(key.x), u01(key.y));
@@ -182,6 +190,7 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
   }
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgInView, inView);
+  atomicAdd(&wgEvaluated, evaluated);
   workgroupBarrier();
   let area = tw * th;
   for (var b = lid; b < area; b += ${WORKGROUP}u) {
@@ -195,6 +204,7 @@ fn tiled(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid:
   if (lid == 0u) {
     add64(0u, atomicLoad(&wgLanded));
     add64(2u, atomicLoad(&wgInView));
+    add64(6u, atomicLoad(&wgEvaluated));
   }
 }
 
@@ -312,11 +322,13 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   // hits on one pixel are merged in registers before any atomic.
   var landed = 0u;
   var inView = 0u;
+  var evaluated = 0u;
   var runPix = 0xffffffffu;
   var runN = 0u;
   for (var j = 0u; j < r.len; j++) {
     let id = r.first + j;
     if (id - B.start >= B.count) { continue; }   // outside this batch
+    evaluated += 1u;
     let key = particleKey(id, B.seed);
     let jr = pcg(key.x ^ (key.y * 0x9e3779b9u) ^ B.salt);
     SQ = stratQ(g, j, key);
@@ -337,6 +349,7 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   flushRun(runPix, runN, tile);
   atomicAdd(&wgLanded, landed);
   atomicAdd(&wgInView, inView);
+  atomicAdd(&wgEvaluated, evaluated);
   workgroupBarrier();
   if (lid == 0u) {
     atomicAdd(&tally[4], 1u);
@@ -353,6 +366,7 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
   if (lid == 0u) {
     add64(0u, atomicLoad(&wgLanded));
     add64(2u, atomicLoad(&wgInView));
+    add64(6u, atomicLoad(&wgEvaluated));
   }
 }
 `;
