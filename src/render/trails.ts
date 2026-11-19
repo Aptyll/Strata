@@ -11,17 +11,17 @@
 //          movement turns into smooth streaks and total brightness of a
 //          static image is preserved. Also averages away sub-pixel shimmer.
 
-import { FULLSCREEN_VS } from './common';
+import { DENSITY_MAX, FULLSCREEN_VS } from './common';
 
 const WGSL = FULLSCREEN_VS + /* wgsl */ `
-struct T { decay: f32, mode: u32 };
+struct T { decay: f32, mode: u32 }; // 16 byte uniform, written by encode()
 @group(0) @binding(0) var<uniform> t: T;
 @group(0) @binding(1) var cur: texture_2d<f32>;
 @group(0) @binding(2) var prev: texture_2d<f32>;
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {
   let c = vec2i(i.pos.xy);
-  let a = clamp(textureLoad(cur, c, 0).r, 0.0, 1.0e30);
-  let b = clamp(textureLoad(prev, c, 0).r, 0.0, 1.0e30);
+  let a = clamp(textureLoad(cur, c, 0).r, 0.0, ${DENSITY_MAX});
+  let b = clamp(textureLoad(prev, c, 0).r, 0.0, ${DENSITY_MAX});
   var v: f32;
   if (t.mode == 0u) { v = max(a, b * t.decay); } else { v = mix(a, b, t.decay); }
   // Let faint tails die instead of lingering as residue forever.

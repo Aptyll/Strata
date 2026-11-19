@@ -8,7 +8,7 @@
 // particles on a pixel brightens it by the same step as going from 100 to
 // 1000, so structure stays readable in both the dust and the cores.
 
-import { FULLSCREEN_VS, HASH_WGSL, TONE_WGSL, CURVES, DISPLAYS, type Curve, type Display } from './common';
+import { FULLSCREEN_VS, HASH_WGSL, TONE_UNIFORM_BYTES, TONE_WGSL, CURVES, DISPLAYS, type Curve, type Display } from './common';
 
 const WGSL = FULLSCREEN_VS + HASH_WGSL + TONE_WGSL + /* wgsl */ `
 @group(0) @binding(0) var<uniform> t: Tone;
@@ -94,7 +94,7 @@ export class ToneMap {
   constructor(device: GPUDevice, opts: { format: GPUTextureFormat }) {
     this.device = device;
     this.format = opts.format;
-    this.buffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.buffer = device.createBuffer({ size: TONE_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this._sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
     const module = device.createShaderModule({ code: WGSL });
     this._pipeline = device.createRenderPipeline({
@@ -113,9 +113,10 @@ export class ToneMap {
   /**
    * Upload tone parameters. Call before encoding bloom and the composite.
    * `bloom.strength` is already divided by the bloom level count by the caller.
+   * Word indices follow the Tone struct in common.ts.
    */
   write(tone: ToneSettings, bloom: { strength: number; threshold: number }, frame: number): void {
-    const b = new ArrayBuffer(48);
+    const b = new ArrayBuffer(TONE_UNIFORM_BYTES);
     const f = new Float32Array(b);
     const u = new Uint32Array(b);
     f[0] = tone.exposure;
@@ -123,12 +124,12 @@ export class ToneMap {
     u[2] = CURVES[tone.curve] ?? 0;
     u[3] = DISPLAYS[tone.display] ?? 0;
     f[4] = tone.power;
-    f[10] = tone.contrast ?? 1;
     f[5] = bloom.strength;
     f[6] = bloom.threshold;
     f[7] = tone.dither;
     u[8] = frame >>> 0;
     u[9] = this.format.endsWith('-srgb') ? 0 : 1;
+    f[10] = tone.contrast ?? 1;
     this.device.queue.writeBuffer(this.buffer, 0, b);
   }
 

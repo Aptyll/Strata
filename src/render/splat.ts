@@ -14,29 +14,46 @@
 //   'compute' no rasteriser. A compute shader projects each particle and adds
 //             fixed point energy into a per pixel atomic counter with the same
 //             2x2 split. Scales best when particles outnumber pixels.
+//
+// Buffers:
+//   density target  `format` (r32float with float32-blendable, else r16float),
+//                   red channel only, additive. Either the accumulator's own
+//                   texture or a view passed to encode() (the engine's
+//                   rgba16float HDR target, for example).
+//   counter grid    'compute' only: one u32 per pixel, row major, in fixed
+//                   point (`fixedScale` units per unit of energy). Cleared and
+//                   filled every encode, then resolved into the density target
+//                   by counterResolveWgsl (shared with CountToneMapper).
+//   batch uniform   one 112 byte Batch block per batch, layout below.
 
-import { FULLSCREEN_VS, HASH_WGSL, pickHdrFormat } from './common';
+import { ADDITIVE_BLEND, COUNTER_LAYOUT_BYTES, HASH_WGSL, counterResolveWgsl, packCounterLayout, pickHdrFormat } from './common';
 
+/** Byte size of the Batch uniform: 28 four-byte fields. */
 const UBO_SIZE = 112;
-// Short rows: a dispatch is a rectangle, so up to one row of invocations runs
-// past the count and exits early. 256 groups keeps that under 65,536.
+/**
+ * Workgroups per dispatch row in 'compute' mode; larger batches dispatch more
+ * rows. Short rows on purpose: a dispatch is a rectangle, so up to one row of
+ * invocations runs past the count and exits early. 256 groups keeps that
+ * under 65,536.
+ */
 const ROW_GROUPS = 256;
 const WORKGROUP = 256;
 
+// Byte offsets are what _writeBatch() writes.
 const BATCH_WGSL = /* wgsl */ `
 struct Batch {
-  mvp: mat4x4f,
-  viewport: vec2f,
-  energy: f32,
-  size: f32,
-  attenuate: f32,
-  maxSize: f32,
-  count: u32,
-  first: u32,
-  frame: u32,
-  fixedScale: f32,
-  gridW: u32,
-  gridH: u32,
+  mvp: mat4x4f,       //   0  model view projection of this batch
+  viewport: vec2f,    //  64  target size in pixels
+  energy: f32,        //  72  energy of a particle that covers one pixel
+  size: f32,          //  76  diameter in pixels (at w = 1 when attenuated)
+  attenuate: f32,     //  80  1 divides size by clip w, 0 keeps it constant
+  maxSize: f32,       //  84  cap on the apparent diameter in pixels
+  count: u32,         //  88  particles in this batch
+  first: u32,         //  92  index of the first particle ('compute' only)
+  frame: u32,         //  96  decorrelates stochastic rounding ('compute' only)
+  fixedScale: f32,    // 100  counter units per unit of energy ('compute' only)
+  gridW: u32,         // 104  counter grid size ('compute' only)
+  gridH: u32,         // 108
 };
 @group(0) @binding(0) var<uniform> u: Batch;
 
@@ -137,16 +154,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
-const RESOLVE_WGSL = FULLSCREEN_VS + /* wgsl */ `
-struct R { gridW: u32, invScale: f32 };
-@group(0) @binding(0) var<uniform> r: R;
-@group(0) @binding(1) var<storage, read> grid: array<u32>;
-@fragment fn fs(i: VSOut) -> @location(0) vec4f {
-  let c = vec2u(i.pos.xy);
-  return vec4f(f32(grid[c.y * r.gridW + c.x]) * r.invScale, 0.0, 0.0, 1.0);
-}
-`;
-
 export type SplatMode = 'point' | 'quad' | 'compute';
 
 export interface SplatBatch {
@@ -191,11 +198,6 @@ interface Slot {
   grid: GPUBuffer | null;
 }
 
-const ADD: GPUBlendState = {
-  color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-  alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-};
-
 export class SplatAccumulator {
   readonly device: GPUDevice;
   /** Switch at any time. Pipelines are built on first use. */
@@ -232,7 +234,7 @@ export class SplatAccumulator {
     this.format = opts.format ?? pickHdrFormat(device);
     this.fixedScale = opts.fixedScale ?? 256;
     this._ownTarget = opts.ownTarget ?? true;
-    this._resolveUbo = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this._resolveUbo = device.createBuffer({ size: COUNTER_LAYOUT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
 
   resize(width: number, height: number): void {
@@ -342,7 +344,7 @@ export class SplatAccumulator {
           attributes: [{ shaderLocation: 0, offset, format: dims === 3 ? 'float32x3' : 'float32x2' }],
         }],
       },
-      fragment: { module, entryPoint: 'fs', targets: [{ format: this.format, blend: ADD }] },
+      fragment: { module, entryPoint: 'fs', targets: [{ format: this.format, blend: ADDITIVE_BLEND }] },
       primitive: { topology: quad ? 'triangle-strip' : 'point-list' },
     });
     this._raster.set(key, p);
@@ -421,13 +423,13 @@ export class SplatAccumulator {
     pass.end();
 
     if (!this._resolve) {
-      const module = device.createShaderModule({ code: RESOLVE_WGSL });
+      const module = device.createShaderModule({ code: counterResolveWgsl(1) });
       this._resolve = device.createRenderPipeline({
         layout: 'auto',
         vertex: { module, entryPoint: 'vs' },
         // Additive, so the counters can be added onto a target that already
         // holds something. Float formats that cannot blend fall back to replace.
-        fragment: { module, entryPoint: 'fs', targets: [{ format: this.format, blend: this._blendable() ? ADD : undefined }] },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: this.format, blend: this._blendable() ? ADDITIVE_BLEND : undefined }] },
       });
     }
     this._resolveBind ??= device.createBindGroup({
@@ -437,10 +439,7 @@ export class SplatAccumulator {
         { binding: 1, resource: { buffer: grid } },
       ],
     });
-    const r = new ArrayBuffer(16);
-    new Uint32Array(r)[0] = this.width;
-    new Float32Array(r)[1] = 1 / this.fixedScale;
-    device.queue.writeBuffer(this._resolveUbo, 0, r);
+    device.queue.writeBuffer(this._resolveUbo, 0, packCounterLayout(this.width, this.height, 1 / this.fixedScale));
     const rp = this.beginPass(encoder, target);
     rp.setPipeline(this._resolve);
     rp.setBindGroup(0, this._resolveBind);
