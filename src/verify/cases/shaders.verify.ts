@@ -17,6 +17,9 @@ import { BASIC_TONEMAP_WGSL } from "../../passes/tonemap.pass";
 import { ATOMIC_COMPOSITE_WGSL, ATOMIC_RASTER_WGSL } from "../../perf/atomicRasterPass";
 import { buildSimRasterWGSL, INIT_WGSL, RESOLVE_WGSL } from "../../perf/shaders";
 import { rasterKernelWgsl } from "../../raster/kernel";
+import { STANDIN_LAWS } from "../../trillion/laws";
+import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
+import { FOLD_WGSL, splatWgsl } from "../../trillion/wgsl";
 import { shaderCase } from "../shader-case";
 import type { VerifyCase } from "../types";
 
@@ -42,6 +45,11 @@ const cases: VerifyCase[] = [
   ...(["kepler", "vortex", "lissajous"] as const).flatMap((law) =>
     (["point", "bilinear"] as const).map((splat) => shaderCase(`offline ${law} ${splat}`, () => accumulateShader(law, splat))),
   ),
+  // Trillion splat kernel: all three entry points, at the default-device and the raised tile size.
+  ...[...STANDIN_LAWS, ...OFFLINE_LAWS].flatMap((law) =>
+    [4064, 8192].map((bins) => shaderCase(`trillion ${law.id} (${bins} bins)`, () => splatWgsl(law, bins))),
+  ),
+  shaderCase("trillion fold", FOLD_WGSL),
 ];
 
 export default cases;
