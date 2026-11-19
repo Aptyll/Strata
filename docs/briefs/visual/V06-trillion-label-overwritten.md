@@ -1,5 +1,7 @@
 # V06: the 1T honesty label is erased where bright sheets sit behind it
 
+Status: **done** in PR #67. See "Status" below.
+
 Severity: high for the video. The label is the main proof device for the count.
 Lines are as of main `793eefc`.
 
