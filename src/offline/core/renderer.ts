@@ -185,6 +185,7 @@ export class StatelessRenderer {
   static async create(device: GPUDevice, job: OfflineJob, opts: RendererOptions = {}): Promise<StatelessRenderer> {
     validateJob(job);
     const r = new StatelessRenderer(device, job, opts);
+    if (job.select && r.kernel === "trillion") throw new Error("job.select needs the offline kernel");
     if (r.kernel === "trillion") {
       // Only the laws this job uses, so no pipeline is compiled for nothing.
       const used = new Set<string>(job.planes.map((p) => p.law));
@@ -359,8 +360,9 @@ export class StatelessRenderer {
       u32[22] = plane.seed;
       u32[23] = this.perInvocation;
       u32[24] = gx * WORKGROUP_SIZE;
-      u32[25] = this.gridWidth;
-      u32[26] = this.gridHeight;
+      const sel = job.select;
+      u32[25] = sel ? sel.width : this.gridWidth;
+      u32[26] = sel ? sel.height : this.gridHeight;
       u32[27] = 0;
       f32[28] = time;
       f32[29] = shutterSpan;
@@ -370,6 +372,8 @@ export class StatelessRenderer {
       const hc = this.homography(camClose, plane);
       const d = hc.map((v, i) => v - ho[i]);
       f32.set([d[0], d[1], d[2], 0, d[3], d[4], d[5], 0, d[6], d[7], d[8], 0], 32);
+      u32.set(sel ? [sel.x, sel.y, this.gridWidth, this.gridHeight] : [0, 0, 0, 0], 44);
+      f32.set(sel ? [this.gridWidth, this.gridHeight, 1, 0] : [0, 0, 0, 0], 48);
       device.queue.writeBuffer(this.uniform, 0, data);
 
       const enc = device.createCommandEncoder();
@@ -493,6 +497,8 @@ export class StatelessRenderer {
    * in doubles: px' = (px - x0) * sx, py' = (py - y0) * sy, depth unchanged.
    */
   private homography(cam: CameraBasis, plane: OfflinePlane): number[] {
+    const sel = this.job.select;
+    if (sel) return planeHomography(cam, plane, sel.width, sel.height);
     const w = this.job.window;
     if (!w) return planeHomography(cam, plane, this.gridWidth, this.gridHeight);
     const h = planeHomography(cam, plane, w.width, w.height);
