@@ -6,9 +6,11 @@
  */
 import {
   type AnyCanvas,
+  FilterStage,
   MAX_CANVAS_AREA,
   MAX_CANVAS_SIDE,
   Resampler,
+  cssFilterOf,
   downloadBlob,
   setCanvasSize,
   timestampName,
@@ -22,11 +24,30 @@ export interface StillOptions {
   filename?: string;
   /** Colour painted under the image. Default black. Use null to keep alpha. */
   background?: string | null;
+  /**
+   * CSS filter baked into the image. Default: the canvas element's own
+   * computed filter (the app's color themes), so the file looks like the
+   * screen. Null saves the raw canvas pixels.
+   */
+  filter?: string | null;
 }
 
 function finish(blob: Blob, opts: StillOptions): Blob {
   if (opts.download) downloadBlob(blob, opts.filename ?? timestampName('strata', 'png'));
   return blob;
+}
+
+/** The CSS filter to bake in: the one asked for, else the source canvas element's own. */
+function filterFor(opts: StillOptions, source: unknown): string | null {
+  return opts.filter === undefined ? cssFilterOf(source) : opts.filter;
+}
+
+/** Encodes the finished image as a PNG, through the CSS filter if there is one. */
+async function encodePNG(image: Resampler, filter: string | null): Promise<Blob> {
+  if (!filter) return image.toBlob();
+  const stage = new FilterStage();
+  stage.draw(image.canvas, image.width, image.height, filter);
+  return stage.toBlob();
 }
 
 /**
@@ -36,10 +57,11 @@ function finish(blob: Blob, opts: StillOptions): Blob {
  */
 export async function capturePNG(image: FrameImage, opts: StillOptions = {}): Promise<Blob> {
   const [w, h] = sizeOf(image);
+  const filter = filterFor(opts, image);
   const out = new Resampler(w, h, opts.background === undefined ? '#000' : opts.background);
   out.draw(image, w, h);
   closeIfFrame(image);
-  return finish(await out.toBlob(), opts);
+  return finish(await encodePNG(out, filter), opts);
 }
 
 const isFrame = (image: FrameImage): image is VideoFrame =>
@@ -104,6 +126,7 @@ export async function captureStillPNG(opts: SupersampledStillOptions): Promise<B
         `Lower supersample or use captureTiledPNG().`,
     );
   }
+  const filter = filterFor(opts, canvas);
   const prevW = canvas.width;
   const prevH = canvas.height;
   const out = new Resampler(width, height, opts.background === undefined ? '#000' : opts.background);
@@ -120,7 +143,7 @@ export async function captureStillPNG(opts: SupersampledStillOptions): Promise<B
   } finally {
     setCanvasSize(canvas, prevW, prevH);
   }
-  return finish(await out.toBlob(), opts);
+  return finish(await encodePNG(out, filter), opts);
 }
 
 export interface Tile {
@@ -224,6 +247,7 @@ export async function captureTiledPNG(opts: TiledStillOptions): Promise<Blob> {
     throw new RangeError(`capture: ${fullW}x${fullH} is larger than a browser canvas can hold.`);
   }
   const background = opts.background === undefined ? '#000' : opts.background;
+  const filter = filterFor(opts, canvas);
   const tiles = computeTiles(fullW, fullH, opts.tileSize ?? 4096);
   const stitched = new Resampler(fullW, fullH, null);
   if (background) stitched.fill(background);
@@ -247,8 +271,8 @@ export async function captureTiledPNG(opts: TiledStillOptions): Promise<Blob> {
   } finally {
     setCanvasSize(canvas, prevW, prevH);
   }
-  if (ss === 1) return finish(await stitched.toBlob(), opts);
+  if (ss === 1) return finish(await encodePNG(stitched, filter), opts);
   const out = new Resampler(width, height, background);
   out.draw(stitched.canvas);
-  return finish(await out.toBlob(), opts);
+  return finish(await encodePNG(out, filter), opts);
 }

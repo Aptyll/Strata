@@ -111,7 +111,9 @@ splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
 u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
 flux weighting becomes a per-sheet keep probability from the sheet center's
 depth, and `evaluated` is summed by the host from dispatch sizes (the stats
-JSON says `"evaluatedBy": "host"`). `bench --kernel both` compares them on one
+JSON says `"evaluatedBy": "host"`, and the default label says "dispatched"
+instead of "evaluated"). Camera motion blur is in the offline kernel only; the
+trillion kernel uses the mid-shutter camera. `bench --kernel both` compares them on one
 machine. The page has the same choice.
 
 ## Checks
@@ -133,6 +135,10 @@ Every frame's stats JSON holds `evaluated` (always the whole world) and
 counted on the GPU with one atomic per workgroup. `evaluated - landed` were
 behind the camera or off frame. In `count` weighting with `point` splat, the
 grid sum divided by 65536 equals `landed` exactly, which the checks verify.
+In `flux` weighting it does not: a far particle's weight is randomly rounded
+(unbiased) and is often 0, so `landed` counts it but it adds no light. Such a
+frame is drawn correctly on average, not particle by particle; say "evaluated"
+and "in frame", never "every particle drawn", for flux renders.
 
 ## Layout
 

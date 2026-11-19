@@ -12,6 +12,7 @@
 
 import type { Vec3 } from '../../core/contracts';
 import { BASIC_TONE_WGSL, FULLSCREEN_VS_WGSL, PCG_WGSL, U01_WGSL } from '../../gpu/wgsl';
+import { mat4LookAt, mat4Perspective, seededRandom } from '../../math';
 import { depthWGSL, DepthParams, DEPTH_PARAMS_BYTES, FocusTracker, ParallaxRig, type FocusPlane } from '../index';
 
 interface DemoHook {
@@ -52,49 +53,19 @@ const FOVY = (55 * Math.PI) / 180;
 const NEAR = 0.05;
 const FAR = 5000;
 
-// ---------- tiny vector / matrix helpers (column major, WebGPU clip z 0..1)
+// ---------- tiny vector helpers (matrices and the seeded random come from src/math.ts)
 const v3 = {
-  sub: (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
   scale: (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s],
-  dot: (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
   cross: (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
   norm: (a: Vec3): Vec3 => {
     const l = Math.hypot(a[0], a[1], a[2]) || 1;
     return [a[0] / l, a[1] / l, a[2] / l];
   },
 };
-function perspective(fovy: number, aspect: number, near: number, far: number): Float32Array {
-  const f = 1 / Math.tan(fovy / 2);
-  return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, far / (near - far), -1,
-    0, 0, (near * far) / (near - far), 0,
-  ]);
-}
-function lookAt(eye: Vec3, target: Vec3, up: Vec3): Float32Array {
-  const z = v3.norm(v3.sub(eye, target));
-  const x = v3.norm(v3.cross(up, z));
-  const y = v3.cross(z, x);
-  return new Float32Array([
-    x[0], y[0], z[0], 0,
-    x[1], y[1], z[1], 0,
-    x[2], y[2], z[2], 0,
-    -v3.dot(x, eye), -v3.dot(y, eye), -v3.dot(z, eye), 1,
-  ]);
-}
-function mulberry32(a: number): () => number {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 // ---------- world: a corridor of tilted paper planes that wraps around the
 // camera, so the flight never ends. Fog hides the wrap.
-const rand = mulberry32(7);
+const rand = seededRandom(7);
 interface DemoPlane extends FocusPlane {
   baseZ: number;
   off: [number, number];
@@ -464,8 +435,8 @@ async function main(): Promise<void> {
 
     const w = canvas.width;
     const h = canvas.height;
-    const proj = perspective(FOVY, w / h, NEAR, FAR);
-    const view = lookAt(cam.eye, cam.target, up);
+    const proj = mat4Perspective(new Float32Array(16), FOVY, w / h, NEAR, FAR);
+    const view = mat4LookAt(new Float32Array(16), cam.eye, cam.target, up);
     const perPlane = Math.max(1, Math.floor(state.total / PLANES));
     globalsF32.set(proj, 0);
     globalsF32.set(view, 16);

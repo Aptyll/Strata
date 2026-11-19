@@ -52,6 +52,7 @@ build (`vite.config.ts`).
 | `src/challenge` | challenge mode: its own 8-byte engine, the ramp, tiers, stateless "proc" mode | `README.md` |
 | `src/render` | density rendering: splatting, trails, bloom, tone mapping, integer counter tone mapping | `docs/render.md` |
 | `src/depth` | depth cues: fog, depth of field, size falloff, parallax, depth sprites | `docs/depth.md` |
+| `src/hue` | one color per sheet: a points rasterizer that tags each sheet's light with its hue, and a tint pass after the tone map | `sheetHue.ts` |
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
 | `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll | `docs/ux/` |
@@ -80,7 +81,7 @@ adding another.
 | `PerfEngine` | `src/perf` | 8 bytes packed (below), 64 MB pages, one range per plane | fused kernel: simulate and `atomicAdd` in one pass, then a fullscreen resolve | bench page; not yet the app's simulation |
 | `ChallengeEngine` | `src/challenge` | 8 bytes packed, a different velocity encoding (below), 128 MiB slabs | fused kernel with its own forces (not contract behaviors), `atomicAdd`, own resolve | `/?challenge` |
 | stateless "proc" mode | `src/challenge` | none: position from `(id, time)` | same accumulation buffer as above | `/?challenge`, key `M` |
-| `TrillionKernel` | `src/trillion` | none: stateless laws keyed by particle | exact hit counts per pixel (u32 hot counters folded into 64 bits), batched submits | trillion demo |
+| `TrillionKernel` | `src/trillion` | none: stateless laws keyed by particle | exact hit counts per pixel (u32 hot counters folded into 64 bits), batched submits | trillion demo; the offline renderer with `--kernel trillion` |
 | offline renderer | `src/offline` (+ `src/record`, `src/proof`) | none: 64-bit keys from `src/stateless` | 64-bit integer accumulation grid, developed to 16-bit log PNG, encoded to MP4 | offline page, Node CLI, `?record` |
 | behavior preview | `src/behaviors/preview` | 16 bytes, like the engine | point list | preview page |
 
@@ -171,10 +172,11 @@ Worth knowing before adding a fourth of anything:
   separate arrays and develops and grades on the CPU. Making `CountToneMapper`
   and the offline grade agree is open work
   (`docs/briefs/accumulation-and-tonemap.md`).
-- **Two stateless splat kernels.** `StatelessRenderer` (`src/offline`, what
-  record renders use) and `TrillionKernel` (`src/trillion`, faster, standalone)
-  evaluate the same keys and laws into 64-bit grids with different layouts and
-  units. See "The 1T path" below.
+- **Two stateless splat kernels.** `StatelessRenderer` (`src/offline`) runs
+  either its own accumulate shader (the default, what record renders use) or
+  `TrillionKernel` from `src/trillion` (`--kernel trillion`, faster). Their
+  grids differ in layout and units, and the renderer converts on readback. See
+  "The 1T path" below.
 - **Several tone mappers.** One density look for the app, `basicTone` for
   previews, and separate ones for challenge and the offline grade. Table in
   "Rendering, depth and the 1T path" below.
@@ -204,13 +206,14 @@ _Details to come with the GPU and perf cleanup. Meanwhile see
 
 Area docs: `docs/render.md` (density look, buffer formats, precision limits),
 `docs/depth.md` (depth cues), `src/offline/README.md` (offline renderer),
-`src/trillion/README.md` and `src/stateless/README.md`.
+`docs/trillion.md` (trillion kernel) and `src/stateless/README.md`.
 
 ### Light in the app
 
 Every rasterizer writes linear light into the frame graph's HDR target
 (`rgba16float`, owned by `src/core/frameGraph.ts`), the same value in r, g
-and b. A particle adds `globals.brightness * plane.brightness`, so one
+and b (only `sheet-hue` differs: density in r, color-weighted density in g, b
+and a). A particle adds `globals.brightness * plane.brightness`, so one
 particle at brightness 1 adds 1.0, the scale the density look's defaults are
 tuned for (with `?tonemap=basic` the app starts at brightness 0.2 instead).
 The tonemap stage reads the target (the density look uses the red
@@ -226,6 +229,7 @@ list is `RASTERIZERS` in `src/app/graph.ts`).
 | --- | --- | --- | --- |
 | `atomic-raster` (default) | `src/perf/atomicRasterPass.ts` | compute: project each particle, `atomicAdd` `brightness * LIGHT_ONE` into a u32 per pixel, then one fullscreen add into the HDR target | exact to 16.7 million full hits per pixel; the one f16 write rounds to within 0.05% and tops out at 65,504 |
 | `points` (`?raster=points`) | `src/passes/points.pass.ts` | one-pixel point list, additive blend | about 2048 hits per pixel, where adding to f16 stops changing it |
+| `sheet-hue` (`?raster=hue`) | `src/hue/sheetHue.ts` | points that also write the sheet's hue; its `ui` pass `sheet-hue-tint` tints the canvas after the tone map | the same f16 limit |
 | `depth-sprites` (`?raster=sprites` or `?depth=1`) | `src/depth/sprite-pass.ts`, registered by `src/passes/sprites.pass.ts` | instanced quads with fog, depth of field, size and brightness falloff | the same f16 limit |
 | `density-splat` (`?raster=splat`) | `src/render/passes.ts` (`SplatAccumulator` in `quad` mode) | instanced quads with a 2x2 tent, smooth below one pixel | the same f16 limit |
 
@@ -267,7 +271,7 @@ particle's key and the time, and adds it to an integer grid.
 | --- | --- | --- |
 | identity | `src/stateless/rng.ts` | `particleKey(index, seed)`: a 64-bit Feistel key, distinct for every particle while sheet seeds are unique and no sheet holds more than 2^32; `draw(key, k)` gives its random words (laws use k = 0..5, the offline runner owns 6 and 7) |
 | motion | `src/offline/core/laws.ts` | `kepler`, `vortex`, `lissajous`: a sheet-local position from (key, t, 8 params), in WGSL with a TypeScript mirror |
-| render | `src/offline/core/renderer.ts`, `shaders.ts` | `StatelessRenderer`: dispatches sized to a time target add particles to the 64-bit grid; checkpoints between batches; GPU tally of evaluated and landed particles |
+| render | `src/offline/core/renderer.ts`, `shaders.ts` | `StatelessRenderer`: dispatches sized to a time target add particles to the 64-bit grid, with its own accumulate shader (default) or `TrillionKernel`; checkpoints between batches; tally of evaluated and landed particles |
 | develop | `src/offline/core/develop.ts` | sums each output pixel's `ssaa * ssaa` cells and stores a 16-bit log PNG (`code = 1024 * log2(1 + units)`) plus a stats JSON |
 | grade, encode | `src/offline/core/grade.ts`, `session.ts` | stored frames to 8-bit (exposure, curve, dither, label), then WebCodecs in the browser or ffmpeg in Node |
 | front ends | `src/offline/web`, `src/offline/node`, `src/record`, `src/proof` | the offline page, the Node CLI (does not run on Noah's PC, see `CLAUDE.md`), `?record` from the app, the proof shots |
@@ -281,18 +285,24 @@ exactly `ONE`. `flux` weighting scales that by min(1, (fluxRef / depth)^2) with
 stochastic rounding. With `count` weighting and `point` splat, the grid sum
 divided by 65536 equals the landed tally exactly.
 
-`TrillionKernel` (`src/trillion`) is a faster splat for the same keys and laws
-(`OFFLINE_LAWS`), standalone with its own demo and not wired in yet. It adds
-exactly 1 per landed particle (counted with probability `keep`) to `acc`, one
-u32 hot counter per pixel. When a sheet's screen footprint fits in `tileBins`
-counters (at most 8192), the `tiled` entry point adds in workgroup memory
-first; otherwise `direct` adds straight to `acc`. `fold` adds the hot counters
-into `counts`, 64-bit interleaved (lo at 2i, hi at 2i + 1), which
-`CountToneMapper` reads with `words: 2`. `renderFrame` in `driver.ts` paces a
-frame in submits of about 200 ms, interleaved across sheets so a partial frame
-is an unbiased preview. Putting it behind `StatelessRenderer` needs a bridge:
-the two grids differ in layout (interleaved against two arrays) and in units
-(1 against `ONE` per particle).
+`TrillionKernel` (`src/trillion`, design in `docs/trillion.md`) is the faster
+splat for the same keys. Each counted particle adds exactly 1 (a landed
+particle is counted with probability `keep`, 1 by default) to `acc`, a u32 per
+pixel written with fire-and-forget atomics; `fold` adds those into `counts`,
+exact 64-bit interleaved (lo at 2i, hi at 2i + 1), which `CountToneMapper`
+reads with `words: 2`. Its speed comes from coherent laws
+(`STRATIFIED_OFFLINE_LAWS`, the offline laws rewritten so a workgroup's
+particles land close together), run merging in registers and a shared memory
+tile per workgroup; other laws, `OFFLINE_LAWS` among them, take the plain
+path. `renderFrame` in `driver.ts` paces a frame in submits of about 200 ms,
+interleaved across sheets so a partial frame is an unbiased preview.
+
+`StatelessRenderer` runs it with `--kernel trillion` (also a choice on the
+offline page): same job format, checkpoints and grade, counts converted to
+`ONE` units on readback, `flux` weighting turned into a per-sheet keep
+probability, and `evaluated` counted on the host (`"evaluatedBy": "host"` in
+the stats). It passes `OFFLINE_LAWS`, so the offline renderer does not use the
+stratified fast path yet.
 
 Gotchas on this path (the full rules are in `CLAUDE.md`): only integer adds,
 so a frame is bit-identical however it is batched and resumes exactly;

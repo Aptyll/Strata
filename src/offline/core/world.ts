@@ -101,7 +101,10 @@ export function clusterJob(o: ClusterOptions): OfflineJob {
       rotation: hero ? [0, 0, 0, 1] : randomRotation(r),
       halfSize: [size, size],
       law,
-      seed: pcg((seed * 0x85ebca6b + i) >>> 0),
+      // Math.imul, not *: past seed 4,010,000 the float product loses its low
+      // bits and sheets share seeds (the job then fails validation). Identical
+      // for smaller seeds, so existing jobs keep their particles.
+      seed: pcg((Math.imul(seed, 0x85ebca6b) + i) >>> 0),
       particleCount: base + (i < extra ? 1 : 0),
       params,
     });

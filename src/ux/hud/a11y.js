@@ -161,7 +161,8 @@ export function attachMenuA11y(root) {
     if (e.target !== panel && CONTROL_KEYS.has(e.key)) e.stopPropagation();
   };
   on(panel, 'keydown', onPanelKey);
-  on(panel, 'keyup', (e) => { if (e.target !== panel && CONTROL_KEYS.has(e.key)) e.stopPropagation(); });
+  // Key releases are left alone: the camera only acts on presses, and a release it never sees
+  // (an arrow held while Tab moved focus onto a control) would leave it flying.
 
   // The keys sheet closes on click; Enter and Space close it too once it has focus.
   on(help, 'keydown', (e) => {

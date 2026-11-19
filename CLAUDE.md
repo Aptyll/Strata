@@ -25,8 +25,9 @@ Two very different modes, and the wording must keep them apart:
   frame, **stateless**: each position is a closed-form function of a 64-bit
   particle key and time, splatted into a 64-bit integer grid, nothing kept
   between frames. Always say "rendered", never "simulated", for this path.
-  26 to 52 seconds per 4K frame on the 2070, depending on how spread out the
-  hits are.
+  26 to 52 seconds per 4K frame on the 2070 with flux weighting (the record
+  stills: far particles drawn on average), about 160 to 193 s with count
+  weighting (exactly one unit per particle in view, the proof shots).
 
 ## Rules (Noah's, non-negotiable)
 
@@ -91,6 +92,7 @@ npm install
 npm run dev          # every page, including dev-only demos
 npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
+npm test             # every *.test.* file under src/: a few seconds, no GPU
 npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
@@ -105,9 +107,10 @@ npm run record       # render manifests: make, check, reproduce (src/manifest)
 | `/src/verify/` | shader checks in a real browser |
 
 Production pages are listed in `vite.config.ts`; other `src/**/demo` pages are
-dev only. Optional light tests: `npm run verify` (headless shader checks, about
-a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
-`node src/stateless/test/run.mjs`. Offline Node CLI: `src/offline/README.md`.
+dev only. Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
+`*.test.ts` file under `src/` (drop one next to your code and it is picked up
+by name), and `npm run verify` runs the headless shader checks (about a second,
+needs Playwright). Offline Node CLI: `src/offline/README.md`.
 
 ## Gotchas
 
@@ -137,7 +140,7 @@ a second), `node src/world/test/run.mjs`, `node src/depth/test/run.mjs`,
   are batched and resume exactly after a stop. Keep it that way: no float
   accumulation in the offline path.
 - **Re-fetch main right before merging.** Many threads merge per hour.
-- **CI is a safety net, not a gate.** `.github/workflows/ci.yml` builds and runs
-  the light tests on every PR and on every push to main. It never blocks a
+- **CI is a safety net, not a gate.** `.github/workflows/ci.yml` runs
+  `npm run build` and `npm test` on every PR and on every push to main. It never blocks a
   merge. A red X on a `main` commit means that merge broke the build: fix it
   first with a small `fix/` PR.

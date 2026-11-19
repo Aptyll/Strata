@@ -65,6 +65,10 @@ export interface ManifestFrame {
   litPixels: number;
   maxCode: number;
   allEvaluated: boolean;
+  /** count + point only: grid sum is exactly landed x 65536. null when not provable (flux or bilinear). */
+  eachLandedAddedOnce: boolean | null;
+  /** Grid light in particles (unitSum / 65536), as a decimal string. Exact for count, expected total for flux. */
+  lightParticles: string;
   seconds: number;
   batches: number;
   particlesPerSecond: number;
@@ -99,8 +103,9 @@ export interface RenderManifest {
     camera: unknown[];
   };
   particlesPerFrame: number;
+  drawing: { weighting: string; splat: string; exact: boolean; meaning: string };
   grade: Record<string, unknown> | null;
-  totals: { framesComplete: number; allEvaluated: boolean; evaluated: string; gpuSeconds: number; particlesPerSecond: number };
+  totals: { framesComplete: number; allEvaluated: boolean; evaluated: string; eachLandedAddedOnce: boolean | null; gpuSeconds: number; particlesPerSecond: number };
   frames: ManifestFrame[];
   fullJob: JobLike | null;
 }

@@ -11,7 +11,7 @@ import type { LawId, SplatMode } from "./job";
 import { WGSL_COMMON, WGSL_LAWS } from "./laws";
 
 /** Size of the Batch uniform in bytes. Layout must match the struct below. */
-export const BATCH_UNIFORM_BYTES = 128;
+export const BATCH_UNIFORM_BYTES = 176;
 
 /** Invocations per workgroup. */
 export const WORKGROUP_SIZE = 64;
@@ -48,6 +48,11 @@ struct Batch {
   // Flux mode: (reference depth)^2. Zero or less selects count mode.
   fluxRef2: f32,
   near: f32,
+  // Camera motion over the shutter: homography at shutter close minus shutter
+  // open. A particle at shutter fraction s in [-0.5, 0.5] sees c + s * d.
+  d0: vec4f,
+  d1: vec4f,
+  d2: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> B: Batch;
@@ -102,8 +107,8 @@ fn combine(idx: u32, w: u32) {
 
 // Adds one particle to the grid. Returns true when its position is inside
 // the frame, whatever its weight.
-fn splat(pos: vec2f, key: Key) -> bool {
-  let c = B.c0.xyz * pos.x + B.c1.xyz * pos.y + B.c2.xyz;
+fn splat(pos: vec2f, key: Key, shutterAt: f32) -> bool {
+  let c = (B.c0.xyz + shutterAt * B.d0.xyz) * pos.x + (B.c1.xyz + shutterAt * B.d1.xyz) * pos.y + B.c2.xyz + shutterAt * B.d2.xyz;
   // Written so that a NaN fails the test and is dropped.
   if (!(c.z > B.near)) { return false; }
   let s = c.xy / c.z;
@@ -126,13 +131,18 @@ ${
     : /* wgsl */ `
   // Particles just outside the frame still spread light onto its edge pixels.
   if (!(s.x > -1.0 && s.y > -1.0 && s.x < size.x + 1.0 && s.y < size.y + 1.0)) { return false; }
-  // Weight in units of 1/256 of a particle, spread over 4 pixels with 4-bit
-  // subpixel weights. The 4 integer weights sum to exactly 256 * unit.
-  var unit = 256u;
-  if (B.fluxRef2 > 0.0) {
-    let f = min(1.0, B.fluxRef2 / (c.z * c.z));
-    unit = u32(f * 256.0 + u01(draw(key, 7u)));
-    if (unit == 0u) { return inFrame; }
+  // Weight in units of 1/65536 of a particle, spread over 4 pixels with 4-bit
+  // subpixel weights: 256 * wx * wy per pixel, the 4 summing to exactly 65536.
+  // Flux mode scales each pixel's weight and rounds it on its own, with its
+  // own 8 bits of draw 7 as dither (unbiased to within 1/256 of a unit), so a
+  // dim particle still spreads fractions of its light instead of being
+  // rounded to whole 1/256ths of a particle.
+  let flux = B.fluxRef2 > 0.0;
+  var f = 1.0;
+  var dither = 0u;
+  if (flux) {
+    f = min(1.0, B.fluxRef2 / (c.z * c.z));
+    dither = draw(key, 7u);
   }
   let q = s - vec2f(0.5);
   let fl = floor(q);
@@ -148,7 +158,11 @@ ${
     let y = iy + i32(dy);
     let wx = select(16u - fr.x, fr.x, dx == 1u);
     let wy = select(16u - fr.y, fr.y, dy == 1u);
-    let w = unit * wx * wy;
+    var w = 256u * wx * wy;
+    if (flux) {
+      let r = (f32((dither >> (8u * t)) & 0xffu) + 0.5) * (1.0 / 256.0);
+      w = u32(f * f32(w) + r);
+    }
     if (w != 0u && x >= 0 && y >= 0 && x < gw && y < gh) {
       add64(u32(y) * B.gridWidth + u32(x), w);
     }
@@ -172,8 +186,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
     evaluated++;
     let key = particleKey(B.start + first + k, B.seed);
     // Each particle has its own fixed instant inside the shutter window.
-    let t = B.time + B.shutterSpan * (u01(draw(key, 6u)) - 0.5);
-    if (splat(${LAW_FN[law]}(key, t, p), key)) { landed++; }
+    // The camera moves with the same instant, so camera moves blur too.
+    let s = u01(draw(key, 6u)) - 0.5;
+    let t = B.time + B.shutterSpan * s;
+    if (splat(${LAW_FN[law]}(key, t, p), key, s)) { landed++; }
   }
   // Point splats leave their last run of light in registers until here.
   flushRun();

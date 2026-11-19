@@ -95,9 +95,14 @@ export interface TrillionTally {
   inView: number;
   /** Particles counted: equals the sum of all pixel counters. */
   landed: number;
-  /** Strata path only: workgroups (patches) run, and how many found a shared memory tile. Tells whether a law is coherent enough. */
+  /**
+   * Strata path only: workgroups (patches) run, how many fit a shared memory
+   * tile whole, and how many were too spread out and got a tile over their
+   * middle only. Tells whether a law is coherent enough.
+   */
   patches: number;
   tiledPatches: number;
+  partialPatches: number;
 }
 
 export interface PixelRect { x: number; y: number; w: number; h: number }
@@ -153,7 +158,7 @@ export class TrillionKernel {
       ],
     });
     this.ring = device.createBuffer({ size: RING_SLOTS * SLOT_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.tallyBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+    this.tallyBuffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
     this.foldPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: device.createShaderModule({ code: FOLD_WGSL }), entryPoint: 'fold' },
@@ -310,9 +315,9 @@ export class TrillionKernel {
 
   /** GPU tally (landed, inView) plus the CPU one (evaluated, culled). Waits for the queue. */
   async readTally(): Promise<TrillionTally> {
-    const staging = this.device.createBuffer({ size: 32, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    const staging = this.device.createBuffer({ size: 48, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     const enc = this.device.createCommandEncoder();
-    enc.copyBufferToBuffer(this.tallyBuffer, 0, staging, 0, 32);
+    enc.copyBufferToBuffer(this.tallyBuffer, 0, staging, 0, 48);
     this.device.queue.submit([enc.finish()]);
     await staging.mapAsync(GPUMapMode.READ);
     const u = new Uint32Array(staging.getMappedRange().slice(0));
@@ -325,6 +330,7 @@ export class TrillionKernel {
       patches: u[4],
       tiledPatches: u[5],
       evaluatedGpu: u[6] + u[7] * U32_LIMIT,
+      partialPatches: u[8],
     };
   }
 
