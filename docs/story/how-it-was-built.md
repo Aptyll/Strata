@@ -6,8 +6,8 @@ the project chat. All times are US Central, Nov 18, 2026.*
 
 > This was written by one of the agents: the "storyteller" thread, started at
 > 7:27 PM to tell this story. It reports what the record shows, including what
-> broke and what nobody has measured yet. It is a snapshot taken around 7:38 PM,
-> seventeen minutes before the evening's 7:55 PM deadline, so some outcomes were
+> broke and what nobody has measured yet. It is a snapshot taken around 7:40 PM,
+> fifteen minutes before the evening's 7:55 PM deadline, so some outcomes were
 > still open when it was written. Those are marked.
 
 ## The short version
@@ -21,7 +21,7 @@ the project chat. All times are US Central, Nov 18, 2026.*
 | App worth opening (camera, HUD and dice wired in) | 7:16 PM |
 | Trillion-particle offline renderer on main | 7:27 PM |
 | First real-GPU performance numbers | 7:31 PM: 100 million particles at about 111 fps, 800 million at about 15 fps (1080p, bench page) |
-| First trillion-particle 4K still reported | 7:34 PM, 28.9 seconds on the RTX 2070 (receipt still to check, see below) |
+| First trillion-particle 4K still | 7:34 PM, 28.9 seconds on the RTX 2070, all 10^12 particles evaluated |
 | Pull requests merged by 7:27 PM | 41, in 22 minutes 32 seconds |
 | Pull requests merged by 7:36 PM | 54 |
 | Longest any of the first 41 stayed open | 51 seconds (median 9) |
@@ -343,12 +343,24 @@ After Noah's 7:26 PM request, new branches also got readable names like
 - **7:36 PM: public.** A GitHub Pages deploy, a rewritten README and an MIT
   license merged (PR #55).
 
-Two of those numbers do not obviously agree. A trillion particles in 28.9
+Two of those numbers did not obviously agree. A trillion particles in 28.9
 seconds is about 35 billion per second, roughly ten times the frame-filling
-benchmark. At 7:35 PM a pull request landed that counts evaluated particles on
-the GPU and refuses any frame that misses one (PR #52). Whether that first still
-evaluated every one of its 10^12 particles should be confirmed from its stats
-file before the number goes into a video.
+benchmark. This document's first version flagged it. At 7:35 PM a pull request
+landed that counts evaluated particles on the GPU and refuses any frame that
+misses one (PR #52), and at 7:39 PM the frame stats from Noah's desktop, as
+relayed by the coordinator, showed exactly 1,000,000,000,000 particles
+evaluated in every trillion frame. Every position is computed; particles that
+land off screen only skip the final atomic add. The gap with the benchmark is
+the cache. The first still's cluster lit only 4% of the 4K frame, so its hits
+stayed in the 2070's 4 MB L2 cache, while the benchmark's single camera-filling
+sheet spreads hits over the whole grid and pays a trip to video memory for most
+of them. Real trillion frames took 26 to 52 seconds, depending on framing.
+
+The first trillion frame was also honest about how it looked. The agent that
+measured it wrote that it "reads as grey confetti, not as a trillion": 96% of
+the pixels were exactly black, the sheets were 20 to 60 pixels across, and the
+lit ones held about 3 million hits each. Framing, not counting, became the last
+problem of the night.
 
 When this was written, the desktop agent was rendering three framed
 trillion-particle hero stills that Noah had picked on a decision card, to be
@@ -385,10 +397,10 @@ As of about 7:38 PM:
    from the perf engine's bench page, not the main app. The main app, challenge
    mode, camera feel, depth cues and world streaming had not been measured or
    tuned on the 2070.
-2. **The first trillion needs its receipt.** The 28.9-second trillion still was
-   reported at 7:34 PM, before the GPU-side evaluated-particle check (PR #52)
-   existed, and its speed is ten times the frame-filling benchmark. Check its
-   stats before quoting it.
+2. **The trillion counts, but it is not yet a picture.** The frame stats show
+   all 10^12 particles evaluated in 26 to 52 seconds per frame. The first wide
+   shot still read as grey confetti, and the framed hero stills and the moving
+   clip were rendering when this was written.
 3. **The trillion is choreography, not emergence.** Stateless particles follow
    formulas and cannot react to each other. The simulated tiers are the true
    simulation claim, and they had no real-GPU numbers either.
