@@ -201,6 +201,28 @@ same into a caller-owned encoder, for frame graphs.
   place of `Simulation` plus the rasterize pass. Until then it runs on the
   benchmark page.
 
+## Decisions: one rasterizer, one engine, one 1T kernel (2026-11-19)
+
+From [docs/briefs/unify-rasterizers.md](briefs/unify-rasterizers.md):
+
+- **Default rasterizer.** `atomic-raster` (compute, fixed-point integer adds,
+  no f16 blending) is the app's one default rasterizer. `points`,
+  `density-splat` and `depth-sprites` stay selectable with `?raster=` and are
+  labelled "debug" in the settings menu, because the two blending ones
+  saturate near 2048 hits per pixel in `rgba16float`. Folding sub-pixel, fog,
+  size falloff and depth of field into the compute pass as options is still
+  open (brief step 1).
+- **`PerfEngine` stays bench-only for now.** It is not wired into
+  `src/main.ts`; the app runs `Simulation` plus the compute rasterizer. Wiring
+  it behind `?engine=perf` is the next step for the app's high-count path,
+  but it replaces the simulate and rasterize stages together and was not
+  safe to land in the final minutes before the deadline.
+- **The film's 1T kernel is `src/offline`** (`StatelessRenderer`,
+  `src/offline/core/shaders.ts`). The record (`src/record`) and proof
+  (`src/proof`) paths use it and every verified 1T still came from it.
+  `src/trillion` stays a standalone faster kernel with its own demo on the
+  same shared 64-bit keys; folding it into `src/offline` is future work.
+
 ## Not done yet
 
 - **Sub-plane culling.** A very large plane seen up close still processes all of
