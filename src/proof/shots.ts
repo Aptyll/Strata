@@ -117,11 +117,17 @@ export function countUpPasses(o: ShotOptions): Pass[] {
   }));
 }
 
-export function countUpLabel(s: FrameStats, job: OfflineJob, seconds: number): string[] {
+/**
+ * `s.seconds` is this pass's own GPU time (the final pass is the full frame);
+ * `allSeconds` is the wall time of every count-up pass together, never
+ * presented as one frame's time.
+ */
+export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number, passes: number): string[] {
   return [
     `PARTICLES RENDERED ${big(s.evaluated)}`,
     `LANDED IN FRAME ${big(s.landed)} (COUNTED ON THE GPU)`,
-    `THIS FRAME TOOK ${seconds.toFixed(1)} S`,
+    `THIS FRAME TOOK ${s.seconds.toFixed(1)} S ON THE GPU` +
+      (Number.isFinite(allSeconds) ? `  ALL ${passes} PASSES ${allSeconds.toFixed(1)} S` : ""),
     `STATELESS  ONE FROZEN FRAME  ${job.width}X${job.height}`,
   ];
 }

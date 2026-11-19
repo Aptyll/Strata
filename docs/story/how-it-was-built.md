@@ -288,7 +288,8 @@ up to 10^12 particles per frame at 4K, written to MP4. 3,408 lines in 21 files.
   circular shear flow, and 2D harmonic oscillators. It is not a time-stepped
   simulation, and the label burned into the video says so: "stateless:
   closed-form motion".
-- **Exact counting.** Every particle adds one unit of light to a 64-bit integer
+- **Exact counting.** With count weighting (the record frames and proof
+  shots), every particle in view adds one unit of light to a 64-bit integer
   grid, built from two 32-bit atomic words with an exact carry. Integer addition
   does not care about order, so a frame is bit-identical however the GPU
   schedules the work, and the grid's total divided by one unit is exactly the

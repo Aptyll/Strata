@@ -133,6 +133,10 @@ Every frame's stats JSON holds `evaluated` (always the whole world) and
 counted on the GPU with one atomic per workgroup. `evaluated - landed` were
 behind the camera or off frame. In `count` weighting with `point` splat, the
 grid sum divided by 65536 equals `landed` exactly, which the checks verify.
+In `flux` weighting it does not: a far particle's weight is randomly rounded
+(unbiased) and is often 0, so `landed` counts it but it adds no light. Such a
+frame is drawn correctly on average, not particle by particle; say "evaluated"
+and "in frame", never "every particle drawn", for flux renders.
 
 ## Layout
 

@@ -22,7 +22,12 @@ export const MANIFEST_VERSION = 1;
 const WORDING =
   "Rendered, not simulated: every particle's position is a closed-form function of its 64-bit key and time. " +
   "Nothing is stored per particle between frames. evaluated = particles the GPU ran through the kernel this frame; " +
-  "landed = those that fell inside the picture.";
+  "landed = those whose position fell inside the picture. Under count weighting each landed particle adds exactly one unit " +
+  "of light (checked per frame: unitSum = landed x 65536 for point splats). Under flux weighting a far particle's weight is " +
+  "randomly rounded and often 0, so it is landed but drawn only in expectation.";
+
+/** Units of light one particle adds under count weighting (src/offline/core/job.ts ONE). */
+const ONE = 65536n;
 
 /** @param {Uint8Array} bytes */
 async function sha256Hex(bytes) {
@@ -93,6 +98,11 @@ export async function buildManifest(input) {
       litPixels: s.litPixels,
       maxCode: s.maxCode,
       allEvaluated: evaluated === BigInt(particles),
+      // Exactly one unit per landed particle: provable only for count + point.
+      eachLandedAddedOnce:
+        job.weighting === "count" && job.splat === "point" ? BigInt(s.unitSum) === BigInt(s.landed) * ONE : null,
+      // Light in the grid, in particles: exact for count, the expected total for flux.
+      lightParticles: (Number(BigInt(s.unitSum) / (ONE / 256n)) / 256).toString(),
       seconds: s.seconds,
       batches: s.batches,
       particlesPerSecond: Number(evaluated) / Math.max(s.seconds, 1e-9),
@@ -133,11 +143,21 @@ export async function buildManifest(input) {
       camera: job.camera,
     },
     particlesPerFrame: particles,
+    drawing: {
+      weighting: job.weighting,
+      splat: job.splat,
+      exact: job.weighting === "count",
+      meaning:
+        job.weighting === "count"
+          ? "count: every particle in frame adds exactly one unit of light"
+          : "flux: weights randomly rounded (unbiased); far particles are drawn on average, many add nothing",
+    },
     grade: input.look ?? null,
     totals: {
       framesComplete: frames.length,
       allEvaluated: frames.length > 0 && frames.every((f) => f.allEvaluated),
       evaluated: evaluatedTotal.toString(),
+      eachLandedAddedOnce: frames.every((f) => f.eachLandedAddedOnce === true) && frames.length > 0 ? true : frames.some((f) => f.eachLandedAddedOnce === false) ? false : null,
       gpuSeconds: seconds,
       particlesPerSecond: Number(evaluatedTotal) / Math.max(seconds, 1e-9),
     },

@@ -205,7 +205,7 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
     try {
       for (const pass of list) {
         const label = (s: FrameStats, job: OfflineJob): string[] => {
-          if (id === "countUp") return countUpLabel(s, job, seconds);
+          if (id === "countUp") return countUpLabel(s, job, seconds, list.length);
           if (id === "pullBack") return pullBackLabel(s);
           if (id === "dive") return diveLabel(s);
           if (id === "find") return findLabel(s, o.findIndex, job);
