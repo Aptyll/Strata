@@ -171,9 +171,10 @@ export function countUpLabel(s: FrameStats, job: OfflineJob, allSeconds: number,
 
 /** Particles a loupe pixel should hold so its dots stay distinct when opened up. */
 export const LOUPE_MIN = 10_000;
-// 100k: at 1T no sheet-interior pixel holds under 50k (2070 run, 2026-11-19).
-// Opened at 2160x2160, 100k dots are still about 7 px apart.
-export const LOUPE_MAX = 100_000;
+// 200k: at 1T sheet interiors run above 100k per pixel (2070 runs, 2026-11-19:
+// the nearest pick held 106,651). Opened at 2160x2160, 200k dots are still
+// about 5 px apart, and drawn 3x3 they cover about 13% of the frame.
+export const LOUPE_MAX = 200_000;
 
 /** Opened-up loupe frame size: a pixel's dots average about this many output pixels apart at LOUPE_MAX. */
 export const LOUPE_SIZE = 2160;

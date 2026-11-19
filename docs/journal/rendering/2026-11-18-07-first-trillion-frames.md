@@ -58,6 +58,12 @@ burned-in label.
 | `trillion256-K0.png` | the far view again | not reported | | 1,000,000,000,000 | contrast 256 |
 | `trillion-clip-k068.mp4` | 8 frames, the key2 camera with a slow push | about 32 s per frame | 31 B/s | 107,787,615,782 on the first frame, 107,743,038,598 on the last | contrast 256 |
 
+**Correction (added 2026-11-19 02:35 UTC):** A, `trillion256-A` and B were
+rendered on 32-bit keys (before PR #45) with stacked identical sheets, so they
+are **not** a trillion distinct particles: A holds at most about 17.2 billion
+distinct, B about 137 billion. The cluster frames are still 1T distinct. See
+[docs/record/README.md](../../record/README.md#distinct-particles-read-this-before-using-a-or-b).
+
 The first six are in git under [`docs/record/`](../../record/README.md). The
 last three are in the project files only.
 
@@ -83,16 +89,25 @@ three stills were in the project files before Noah's pick at 7:39 PM.
 
 Established:
 
-- **Evaluated.** The renderer refuses to save a frame whose GPU evaluated
-  count differs from the world's particle count
-  ([#52](https://github.com/Aptyll/Strata/pull/52)), and the frame stats
-  relayed at 7:39 PM showed exactly 1,000,000,000,000 in every frame.
+- **Every position is computed.** That holds by construction: the renderer
+  has no culling, and a particle that lands off screen only skips the final
+  add.
 - **In frame.** The numbers on the labels are exact GPU counts of positions
-  inside the frame.
+  inside the frame ([#43](https://github.com/Aptyll/Strata/pull/43)).
 - **Time.** As reported, one number per frame.
 
 Not established, and said so here on purpose:
 
+- **A GPU count of evaluated particles for the first stills.** The GPU-counted
+  `evaluated` tally, and the refusal to save a frame that misses a particle,
+  merged at 7:35:36 PM ([#52](https://github.com/Aptyll/Strata/pull/52)).
+  Before it, the `evaluated` field in a frame's stats was the job's total,
+  not a count. The first still was rendered before that, and its two-line
+  label shows it even predates the in-frame tally. key1 and key2 were already
+  rendering at 7:34 PM. The frame stats relayed at 7:39 PM showed exactly
+  1,000,000,000,000 evaluated for every frame, but for these three stills
+  that figure most likely came from the job, not from the GPU. For the later
+  frames the record does not say which code they ran.
 - **Weighting.** The stills were most likely rendered with flux weighting,
   where a far particle is drawn only on average. That is not confirmed
   ([page 04](2026-11-18-04-particle-keys-and-honest-counting.md)).

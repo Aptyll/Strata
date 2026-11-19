@@ -20,7 +20,7 @@ export interface CameraInputOptions {
   zoomSpeed?: number;
   /** Drag rotation sensitivity multiplier. Default 1. */
   rotateSpeed?: number;
-  /** Called after a double click or double tap that hit no plane. */
+  /** Called after a double click or double tap that hit no plane. Default: fly home. */
   onEmptyDoubleTap?: () => void;
 }
 
@@ -60,6 +60,8 @@ export function attachCameraInput(
   const pointers = new Map<number, Pointer>();
   const keys = new Set<string>();
   let panDrag = false;
+  /** The pan in progress has been scaled to what it started on (CameraRig.grab). */
+  let panGrabbed = false;
   let downX = 0;
   let downY = 0;
   let downTime = 0;
@@ -71,6 +73,8 @@ export function attachCameraInput(
   let pinchX = 0;
   let pinchY = 0;
   let trackpadUntil = 0;
+  /** A Shift + two-finger scroll pan is in progress until this time. */
+  let scrollPanUntil = 0;
 
   const prevTouchAction = element.style.touchAction;
   element.style.touchAction = "none";
@@ -125,9 +129,14 @@ export function attachCameraInput(
       moved = 0;
       panDrag =
         e.pointerType === "mouse" && (e.button === 1 || e.button === 2 || e.shiftKey);
+      panGrabbed = false;
     }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
-    if (pointers.size === 2) pinchState();
+    if (pointers.size === 2) {
+      pinchState();
+      // Two fingers pan and pinch whatever lies between them.
+      camera.grab(...toNdc(pinchX, pinchY));
+    }
     try {
       element.setPointerCapture(e.pointerId);
     } catch {
@@ -146,8 +155,15 @@ export function attachCameraInput(
     moved += Math.abs(dx) + Math.abs(dy);
 
     if (pointers.size === 1) {
-      if (panDrag) dragPan(dx, dy);
-      else dragRotate(dx, dy, e.altKey);
+      if (panDrag) {
+        // Scale the pan to the sheet the press landed on, so that sheet stays under the pointer.
+        // Done on the first move, not on the press: a press that never moves is not a pan.
+        if (!panGrabbed) {
+          panGrabbed = true;
+          camera.grab(...toNdc(downX, downY));
+        }
+        dragPan(dx, dy);
+      } else dragRotate(dx, dy, e.altKey);
     } else if (pointers.size === 2) {
       const prevDist = pinchDist;
       const prevX = pinchX;
@@ -185,7 +201,12 @@ export function attachCameraInput(
     if (isDouble) {
       lastTapTime = -Infinity;
       const [nx, ny] = toNdc(e.clientX, e.clientY);
-      if (!camera.focusAt(nx, ny)) options.onEmptyDoubleTap?.();
+      // A sheet: face it. Open space: back to the view the scene opened on, the way out of
+      // any spot where nothing is in sight.
+      if (!camera.focusAt(nx, ny)) {
+        if (options.onEmptyDoubleTap) options.onEmptyDoubleTap();
+        else camera.flyHome();
+      }
     } else {
       lastTapTime = e.timeStamp;
       lastTapX = downX;
@@ -214,8 +235,13 @@ export function attachCameraInput(
       e.deltaMode === 0 && (dx !== 0 || (Math.abs(dy) < 50 && !Number.isInteger(dy)));
     if (looksLikeTrackpad) trackpadUntil = e.timeStamp + 400;
     if (e.timeStamp < trackpadUntil) {
-      if (e.shiftKey) dragPan(-dx, -dy);
-      else dragRotate(-dx, -dy, false);
+      if (e.shiftKey) {
+        // Scale the pan to what it starts on, once per gesture: the scene slides under a
+        // pointer that stays put, so grabbing again mid-gesture would change the pace.
+        if (e.timeStamp > scrollPanUntil) camera.grab(nx, ny);
+        scrollPanUntil = e.timeStamp + 250;
+        dragPan(-dx, -dy);
+      } else dragRotate(-dx, -dy, false);
       return;
     }
 

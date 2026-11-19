@@ -27,12 +27,14 @@ It was found within minutes. The key fix merged five minutes after the
 renderer, and the renderer switched to it one minute after that (7:33:33 PM).
 
 One consequence should be said plainly. The very first trillion still
-(`trillion-still-f0.png`) was already in the project files at 7:32:15 PM, before that switch was on
-main, so it was almost certainly rendered with the old 32-bit keys. Which
-commit each later frame was rendered from was not recorded. The two closer
-stills were already rendering at 7:34 PM, so the same question applies to
-them. A render manifest (below) records the commit, and none exists for these
-frames yet.
+(`trillion-still-f0.png`) was already in the project files at 7:32:15 PM,
+before that switch was on main, so it was almost certainly rendered with the
+old 32-bit keys. Its two-line label, without the "in frame" line that
+[#43](https://github.com/Aptyll/Strata/pull/43) added at 7:30 PM, says the
+same: it came from an early build. Which commit each later frame was rendered
+from was not recorded. The two closer stills were already rendering at
+7:34 PM, so the same question applies to them. A render manifest (below)
+records the commit, and none exists for these frames yet.
 
 ## The 64-bit key
 
@@ -156,7 +158,7 @@ journal.
 | Duplicate keys | zero among 16.7 million particles across 4 sheets, counted directly | CPU | [#45](https://github.com/Aptyll/Strata/pull/45) |
 | The old 32-bit scheme | every sampled particle had an exact twin on another sheet | CPU | [#45](https://github.com/Aptyll/Strata/pull/45) |
 | Evaluated equals N | asserted in the conservation check; a 3-frame smoke render writes `"evaluated":"4000000"` | software GPU | [#52](https://github.com/Aptyll/Strata/pull/52) |
-| Evaluated on the real frames | exactly 1,000,000,000,000 in every trillion frame, from the frame stats relayed at 7:39 PM | RTX 2070 | [story doc](../../story/how-it-was-built.md) |
+| Evaluated on the real frames | 1,000,000,000,000 in every trillion frame, from the frame stats relayed at 7:39 PM. For the first three stills this was most likely the job's total, not a GPU count: they were rendered or already rendering before [#52](https://github.com/Aptyll/Strata/pull/52) merged | RTX 2070 | [story doc](../../story/how-it-was-built.md), [page 07](2026-11-18-07-first-trillion-frames.md) |
 
 ## Pictures: the label is the count
 
@@ -169,7 +171,7 @@ frames from the RTX 2070.
 
 ![Label of trillion-A.png: in frame 985,878,512,802](images/label-100pct_trillion-A.png)
 
-*Composition A, a close-up: 985,878,512,802 in frame.*
+*Composition A, a close-up: 985,878,512,802 in frame. Correction: A was rendered on 32-bit keys with stacked identical sheets, so it holds at most about 17.2 billion distinct particles, not a trillion ([docs/record](../../record/README.md#distinct-particles-read-this-before-using-a-or-b)).*
 
 ![Label of trillion-key1-f0.png with two digits hidden behind a sheet](images/label-100pct_trillion-key1-f0.png)
 
@@ -185,6 +187,9 @@ is what a real per-frame tally looks like.*
 
 ## Open
 
+- **No GPU count of evaluated particles for the first stills.** They were
+  rendered before, or while, [#52](https://github.com/Aptyll/Strata/pull/52)
+  merged ([page 07](2026-11-18-07-first-trillion-frames.md)).
 - **No stats JSON beside the stills.** The per-frame stats files of the
   record stills stayed on the desktop. In the repo and the project files, the
   burned-in label is the only record of their counts.

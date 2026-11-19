@@ -71,14 +71,16 @@ def card(frame: str, evaluated: str | None, in_frame: str | None, scrim: bool = 
     return im
 
 
-# The card the site uses. trillion-A.png: 985,878,512,802 of the 1,000,000,000,000
-# evaluated particles land in the frame (docs/record/README.md), so the big number
-# is true of what the picture shows.
-SITE_CARD = dict(frame="trillion-A.png", evaluated="1,000,000,000,000", in_frame="985,878,512,802")
+# The card the site uses. trillion-key2-f0.png: 107,787,615,440 of the 1,000,000,000,000
+# evaluated particles land in the frame (docs/record/README.md). It is a cluster render,
+# so its trillion particles are distinct even on the 32-bit keys it was rendered with.
+# Not trillion-A.png: composition A stacked identical sheets, so on 32-bit keys it held
+# at most about 17.2 billion distinct particles, repeated.
+SITE_CARD = dict(frame="trillion-key2-f0.png", evaluated="1,000,000,000,000", in_frame="107,787,615,440", scrim=True)
 
 VARIANTS = {
     "strata-1t": SITE_CARD,
-    "strata-1t-no-text": dict(frame="trillion-A.png", evaluated=None, in_frame=None),
+    "strata-1t-no-text": dict(frame="trillion-key2-f0.png", evaluated=None, in_frame=None),
     # key1 opens the video. Two digits of its label are hidden behind a sheet, hence "about".
     "strata-1t-wide": dict(frame="trillion-key1-f0.png", evaluated="1,000,000,000,000", in_frame="ABOUT 843 BILLION", scrim=True),
 }

@@ -23,7 +23,7 @@ export interface ShareCard {
 }
 
 export interface SitePage {
-  /** The HTML file, relative to the repo root, as vite.config.ts lists it. */
+  /** The HTML file, relative to the repo root: a page vite.config.ts lists, or a standalone page in docs/explainers. */
   file: string;
   /** <title> and the headline of a link preview. Search results cut it at about 60 characters. */
   title: string;
@@ -49,14 +49,14 @@ export const SITE = {
   author: { name: "Aptyll", url: "https://github.com/Aptyll" },
   license: "https://opensource.org/license/mit",
   locale: "en_US",
-  /** Made by share/make-card.py from docs/record/trillion-A.png; the numbers on it are that frame's GPU tallies. */
+  /** Made by share/make-card.py from docs/record/trillion-key2-f0.png; the numbers on it are that frame's GPU tallies. */
   card: {
     file: "src/site/share/strata-1t.jpg",
     width: 1200,
     height: 630,
     alt:
-      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: a spiral disc, " +
-      "a ribbon of looping curves and a sheet of fine rings. 985,878,512,802 of the particles are in the frame.",
+      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: one large glowing disc " +
+      "in front of hundreds of small spiral and ring sheets. 107,787,615,440 of the particles are in the frame.",
   } satisfies ShareCard,
 };
 
@@ -125,6 +125,13 @@ export const PAGES: SitePage[] = [
     title: "Strata design tokens",
     description: "Every design token of Strata's interface in use: type roles, ink levels, spacing, motion and the theme accent.",
     index: false,
+  },
+  {
+    file: "docs/explainers/rendering.html",
+    title: "How Strata draws a trillion particles: a field guide",
+    description:
+      "An interactive explainer: one particle's trip to a pixel, the memory wall, atomic counters, tone " +
+      "mapping and render time. Plain language, white on black.",
   },
   {
     file: "src/verify/index.html",

@@ -69,7 +69,7 @@ repo doc when this was written.
 | Realtime, simulated, culling and LOD | 800M in 18.53 ms (54 fps) | measured, RTX 2070 | [docs/perf.md](../../perf.md) |
 | Brute force rate | about 85 ps per particle, 11.6 billion particles per second | arithmetic from the table | [docs/perf.md](../../perf.md) |
 | Offline renderer, frame-filling sheet, point splat | 3.3 billion particles per second in Chrome | reported, RTX 2070 | story doc, briefs |
-| First 1T 4K frame | 28.9 s, 1,000,000,000,000 evaluated | reported, RTX 2070 | [story](../../story/how-it-was-built.md) |
+| First 1T 4K frame | 28.9 s for 1,000,000,000,000 particles | reported, RTX 2070 | [story](../../story/how-it-was-built.md), [page 07](2026-11-18-07-first-trillion-frames.md) |
 | 1T 4K cluster frames (far, key1, key2) | 29 s, 52 s, 26 s | reported, RTX 2070 | [docs/record](../../record/README.md) |
 | 1T 4K close-up filling the frame (composition A) | 172 s, and 205 s on the second render | reported, RTX 2070 | project chat |
 | 1T 4K frame with count weighting | about 160 to 193 s | reported, RTX 2070 | [README](../../../README.md), [#123](https://github.com/Aptyll/Strata/pull/123) |

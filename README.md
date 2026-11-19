@@ -80,8 +80,8 @@ The site opens straight into the simulation. Everything else sits behind a key.
 | --- | --- |
 | Left drag | orbit |
 | Right drag, or Shift + drag | pan |
-| Wheel or pinch | zoom toward the cursor |
-| Double click | fly to that sheet |
+| Wheel or pinch | zoom toward what is under the cursor, and on through it |
+| Double click a sheet | fly to it |
 | `W` `A` `S` `D`, `Q` `E` | fly, hold Shift to go faster |
 | `,` `.` | previous or next sheet |
 | `R` | roll the dice: new behaviors, new system |
@@ -95,7 +95,7 @@ The site opens straight into the simulation. Everything else sits behind a key.
 | `P` | screenshot |
 | `V` | record a video |
 | Space | idle drift on or off |
-| Home | fly home |
+| Home, or double click open space | fly home |
 
 You need a browser with WebGPU, such as current Chrome or Edge on desktop.
 Without it the page explains what is missing instead of rendering.
@@ -180,6 +180,17 @@ pieces are new files that register themselves by name:
 
 Each frame runs its passes in a fixed order: `simulate`, `interplane`,
 `rasterize`, `depth`, `tonemap`, `ui`, `capture`.
+
+## Privacy
+
+Strata has no analytics, no cookies, no ads and no third-party requests. Every
+page carries a Content-Security-Policy that only lets it load from, and send
+to, the site's own address, so your browser enforces this itself: a tracker or
+a font from someone else's server would be refused. Your settings and the
+frames you render stay in your own browser's storage, or in the folder you
+pick. The site is hosted on GitHub Pages, and GitHub, like any web host, sees
+your IP address when it serves you a page. How it is done:
+[src/site](src/site/README.md#the-privacy-lock).
 
 ## License
 
