@@ -7,6 +7,7 @@
  *   render  render missing frames of a job (resumable)
  *   encode  grade the rendered frames and encode an MP4
  *   still   grade one frame to an 8-bit PNG
+ *   ladder  render one frame at 1M, 100M, 10B and 1T particles, with timings
  */
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -14,11 +15,12 @@ import path from "node:path";
 import { create, globals } from "webgpu";
 
 import { totalParticles } from "../core/job";
+import { DEFAULT_RUNGS, ladderJobs, ladderMarkdown, ladderReport } from "../core/ladder";
 import { encodeGrayPng } from "../core/png";
 import { StatelessRenderer } from "../core/renderer";
 import { gradeJob, loadJob, loadStats, renderJob } from "../core/session";
 import { PRESETS, clusterJob } from "../core/world";
-import { withCommas } from "../core/grade";
+import { DEFAULT_LOOK, exposureTrack, withCommas } from "../core/grade";
 import { nodeStore, nodeZlib } from "./platform.mjs";
 
 Object.assign(globalThis, globals);
@@ -320,6 +322,97 @@ async function still(args) {
   if (!done) throw new Error(`Frame ${frame} is not rendered yet.`);
 }
 
+// ---------------------------------------------------------------- ladder ----
+
+/**
+ * The same frame at 1M, 100M, 10B and 1T particles (or --rungs). Each rung is
+ * its own resumable one-frame job in out/<rung>/, graded to out/<rung>.png.
+ * Exposure is locked per particle by default: the largest rung picks its white
+ * point (or --white), and every other rung uses that white scaled by its count,
+ * so the rungs share one mean brightness and differ only in grain. Pass
+ * --exposure auto to expose each rung on its own. ladder.md and ladder.json
+ * report the GPU time and throughput of every rung.
+ */
+async function ladder(args) {
+  const base = jobFromArgs({ preset: "trillion", ...args });
+  const frame = Number(args.frame ?? 0);
+  const rungs = args.rungs ? String(args.rungs).split(",").map(parseCount) : DEFAULT_RUNGS;
+  const steps = ladderJobs(base, frame, rungs);
+  const out = path.resolve(String(args.out ?? path.join("out", `${base.name}-ladder`)));
+  const root = nodeStore(out);
+  console.log(`Ladder of "${base.name}" frame ${frame}: ${steps.map((s) => s.label).join(", ")} at ${base.width}x${base.height}`);
+  console.log(`Output: ${out}`);
+
+  const abort = new AbortController();
+  process.on("SIGINT", () => {
+    if (abort.signal.aborted) process.exit(130);
+    abort.abort();
+    console.log("\nStopping after this batch. Progress is saved. Run the same command to continue.");
+  });
+
+  // Every rung has the same grid, so one device fits them all.
+  const { device, name } = await openDevice(args, steps[steps.length - 1].job);
+  console.log(`Adapter: ${name}\n`);
+  /** @type {{ step: (typeof steps)[number], store: ReturnType<typeof nodeStore>, stats: any }[]} */
+  const done = [];
+  try {
+    for (const step of steps) {
+      const store = nodeStore(path.join(out, step.label));
+      let lastPrint = 0;
+      await renderJob(device, step.job, store, nodeZlib, {
+        ...rendererOptions(args),
+        signal: abort.signal,
+        checkpointSeconds: args.checkpoint !== undefined ? Number(args.checkpoint) : 300,
+        onProgress: (p) => {
+          const t = performance.now();
+          if (t - lastPrint < 1000) return;
+          lastPrint = t;
+          const eta = (p.total - p.done) / Math.max(p.rate, 1);
+          process.stdout.write(`\r${step.label}: ${((100 * p.done) / p.total).toFixed(1)}%  ${fmtRate(p.rate)}  eta ${fmtDuration(eta)}      `);
+        },
+      });
+      const [stats] = await loadStats(store, step.job);
+      if (!stats) throw new Error(`Rung ${step.label} did not finish.`);
+      done.push({ step, store, stats });
+      console.log(`\r${step.label.padEnd(5)} ${withCommas(step.count).padStart(17)} particles in ${fmtDuration(stats.seconds).padStart(8)}, ${withCommas(stats.landed)} in frame            `);
+    }
+  } catch (e) {
+    if (/** @type {Error} */ (e).name === "AbortError") {
+      console.log("Stopped. Run the same command to continue where it left off.");
+      return;
+    }
+    throw e;
+  } finally {
+    device.destroy();
+  }
+
+  // Grade after every rung is rendered, so the exposure can be locked to the largest one.
+  const look = lookFromArgs(args);
+  const locked = args.exposure !== "auto";
+  const top = done.reduce((a, b) => (b.step.count > a.step.count ? b : a), done[0]);
+  const topWhite = look.white ?? exposureTrack([top.stats], { ...DEFAULT_LOOK, ...look })[0];
+  /** @type {import("../core/ladder").RungResult[]} */
+  const results = [];
+  for (const { step, store, stats } of done) {
+    const white = locked ? (topWhite * step.count) / top.step.count : undefined;
+    const stillName = `${step.label}.png`;
+    await gradeJob(
+      store,
+      nodeZlib,
+      async (_f, gray, job) => root.write(stillName, await encodeGrayPng(gray, job.width, job.height, nodeZlib)),
+      { look: white !== undefined ? { ...look, white } : look, label: labelFromArgs(args) },
+    );
+    results.push({ label: step.label, count: step.count, seconds: stats.seconds, landed: stats.landed, litPixels: stats.litPixels, still: stillName, white });
+  }
+
+  const report = ladderReport(base, frame, name, results);
+  const markdown = ladderMarkdown(report);
+  await root.write("ladder.json", new TextEncoder().encode(JSON.stringify(report, null, 2)));
+  await root.write("ladder.md", new TextEncoder().encode(markdown));
+  console.log(`\n${markdown}`);
+  console.log(`Wrote the stills, ${path.join(out, "ladder.md")} and ladder.json`);
+}
+
 // ------------------------------------------------------------------ main ----
 
 const HELP = `Strata offline runner
@@ -328,6 +421,9 @@ const HELP = `Strata offline runner
   render  --preset <name> [--out dir] [...]      render missing frames (resumable)
   encode  --out dir [--crf 14] [--codec hevc]    grade and encode an MP4
   still   --out dir --frame N                    grade one frame to PNG
+  ladder  [--preset trillion] [--frame 0]        one frame at 1M, 100M, 10B, 1T
+          [--rungs 1M,100M,10B,1T] [--out dir]   with GPU time per rung (ladder.md)
+          [--exposure locked|auto]               locked: white scales with count
 
 Presets: ${Object.keys(PRESETS).join(", ")}
 Job overrides: --particles 1T --planes 1024 --width 3840 --height 2160 --fps 60
@@ -340,7 +436,7 @@ Look:   --white <particles per pixel>, --contrast 4096, --gamma 1,
 `;
 
 const args = parseArgs(process.argv.slice(2));
-const commands = { bench, render, encode, still };
+const commands = { bench, render, encode, still, ladder };
 const command = commands[args._[0]];
 if (!command) {
   console.log(HELP);
