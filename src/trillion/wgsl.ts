@@ -324,7 +324,14 @@ fn strata(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) lid
         let cw = f32(bx - ax);
         let ch = f32(by - ay);
         let k = sqrt(f32(TILE_BINS) / (cw * ch));
-        let tw = clamp(i32(cw * k), 1, bx - ax);
+        // tw is capped at TILE_BINS too: for a footprint wider than TILE_BINS
+        // and only a pixel or two tall (an edge-on sheet across a wide frame),
+        // cw * k exceeds TILE_BINS, th would clamp up to 1, and tw * th would
+        // index past the end of bins. Those hits then land in the wrong bin
+        // or are dropped, depending on how the browser bounds the access.
+        // Only reachable when the frame is wider than TILE_BINS pixels
+        // (8K on a device with default workgroup memory, 4064 bins).
+        let tw = clamp(i32(cw * k), 1, min(bx - ax, i32(TILE_BINS)));
         let th = clamp(i32(TILE_BINS) / tw, 1, by - ay);
         let cx = (ax + bx) / 2;
         let cy = (ay + by) / 2;
