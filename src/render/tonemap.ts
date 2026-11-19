@@ -61,6 +61,12 @@ export interface ToneSettings {
   display: Display;
   /** Exponent of the 'power' curve. 0.5 is a square root. */
   power: number;
+  /**
+   * Exponent applied to luma after the curve. Default 1. Above 1 pushes faint
+   * regions toward black and separates the bright ones, which helps when the
+   * log curve has to span many orders of magnitude.
+   */
+  contrast?: number;
   /** Dither amplitude in 8 bit steps. 0 turns it off. */
   dither: number;
 }
@@ -117,6 +123,7 @@ export class ToneMap {
     u[2] = CURVES[tone.curve] ?? 0;
     u[3] = DISPLAYS[tone.display] ?? 0;
     f[4] = tone.power;
+    f[10] = tone.contrast ?? 1;
     f[5] = bloom.strength;
     f[6] = bloom.threshold;
     f[7] = tone.dither;

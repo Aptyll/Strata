@@ -20,8 +20,8 @@ struct T { decay: f32, mode: u32 };
 @group(0) @binding(2) var prev: texture_2d<f32>;
 @fragment fn fs(i: VSOut) -> @location(0) vec4f {
   let c = vec2i(i.pos.xy);
-  let a = clamp(textureLoad(cur, c, 0).r, 0.0, 1.0e9);
-  let b = clamp(textureLoad(prev, c, 0).r, 0.0, 1.0e9);
+  let a = clamp(textureLoad(cur, c, 0).r, 0.0, 1.0e30);
+  let b = clamp(textureLoad(prev, c, 0).r, 0.0, 1.0e30);
   var v: f32;
   if (t.mode == 0u) { v = max(a, b * t.decay); } else { v = mix(a, b, t.decay); }
   // Let faint tails die instead of lingering as residue forever.

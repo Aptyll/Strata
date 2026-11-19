@@ -41,23 +41,25 @@ struct Tone {
   dither: f32,          // amplitude in 8-bit steps
   frame: u32,
   encodeSrgb: u32,      // 1 when the target is not an -srgb format
-  pad0: u32,
+  contrast: f32,        // exponent applied to luma after the curve
   pad1: u32,
 };
 
 // Largest finite value we trust from a float target. Keeps inf out of the chain.
-const DENSITY_MAX = 1.0e9;
+const DENSITY_MAX = 1.0e30;
 
 // Density (sum of particle energy that landed on a pixel) to scene luma.
 // The result may exceed 1.0 above the white point; the display curve handles that.
 fn densityToLuma(density: f32, t: Tone) -> f32 {
   let e = clamp(density, 0.0, DENSITY_MAX) * t.exposure;
   let w = max(t.white, 1.0e-6);
+  var l: f32;
   switch t.curve {
-    case 0u { return log(1.0 + e) / log(1.0 + w); }
-    case 1u { return pow(e / w, t.power); }
-    default { return e / w; }
+    case 0u { l = log(1.0 + e) / log(1.0 + w); }
+    case 1u { l = pow(e / w, t.power); }
+    default { l = e / w; }
   }
+  return pow(max(l, 0.0), t.contrast);
 }
 `;
 

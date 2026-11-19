@@ -4,6 +4,14 @@ export { SplatAccumulator, type SplatBatch, type SplatMode, type SplatTarget } f
 export { Trails, TRAIL_MODES, type TrailMode, type TrailOptions } from './trails';
 export { Bloom } from './bloom';
 export { ToneMap, DEFAULT_TONE, type ToneSettings } from './tonemap';
+export {
+  CountToneMapper,
+  exposureFromHistogram,
+  histogramPercentile,
+  type CountHistogram,
+  type CountToneMapperOptions,
+  type AutoExposeOptions,
+} from './counts';
 export { CURVES, DISPLAYS, pickHdrFormat, type Curve, type Display } from './common';
 export {
   createDensityTonemapPass,
