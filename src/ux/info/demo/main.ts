@@ -107,12 +107,39 @@ ui.hud.registerParam({
   id: "thin", label: "thin every other sheet", type: "toggle", value: false, persist: false,
   onChange: (on) => (thin = on),
 });
+// As the auto camera tour does: frame one sheet after another, with a gap in between while it flies.
+let tour = false;
+let tourStart = 0;
+const TOUR_SHOT_MS = 6000;
+const TOUR_FLIGHT_MS = 2000;
+const toured = (): DemoPlane | null => {
+  if (!tour) return null;
+  const t = performance.now() - tourStart;
+  if (t % TOUR_SHOT_MS < TOUR_FLIGHT_MS) return null; // on its way to the next sheet
+  return planes[Math.floor(t / TOUR_SHOT_MS) % planes.length];
+};
+ui.hud.registerParam({
+  id: "tour", label: "tour the sheets (stand-in)", type: "toggle", value: false, persist: false,
+  onChange: (on) => {
+    tour = on;
+    tourStart = performance.now();
+    if (on) focused = null;
+  },
+});
 const info = mountInfo({ hud: ui.hud, app, canvas, rig, base: "/" });
+info.follow(() => {
+  const p = toured();
+  return p ? { center: p.desc.position } : null;
+});
 if (location.hash === "#about") info.about.open();
 if (location.hash === "#keys") ui.hud.toggleHelp();
 if (location.hash === "#stats") focused = planes[2];
 if (location.hash === "#rest") {
   ui.hud.setParam("rest", true);
+  ui.hud.showStats();
+}
+if (location.hash === "#tour") {
+  ui.hud.setParam("tour", true);
   ui.hud.showStats();
 }
 Object.assign(window, { ui, app, info });
@@ -143,7 +170,7 @@ function frame(now: number): void {
   planes.forEach((plane, n) => {
     const ox = (n % COLS) * cw;
     const oy = Math.floor(n / COLS) * ch;
-    ctx.strokeStyle = plane === focused ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.12)";
+    ctx.strokeStyle = plane === focused || plane === toured() ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.12)";
     ctx.strokeRect(ox + cw * 0.06, oy + ch * 0.06, cw * 0.88, ch * 0.88);
     ctx.fillStyle = `rgba(255,255,255,${Math.min(1, scene.render.brightness)})`;
     const p = plane.points;

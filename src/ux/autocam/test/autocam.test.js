@@ -53,3 +53,39 @@ for (const [planes, seed] of WORLDS) {
     assert.ok(Object.keys(r.kinds).length >= 3, 'tour has variety');
   });
 }
+
+test('the director names the sheet a shot frames, once it has arrived, and only for one-sheet shots', () => {
+  const planes = 12;
+  const descs = scatterLayout({ planes, totalParticles: planes * 1e6, behaviorIds: ['a', 'b', 'c', 'd'], seed: 5 });
+  const sheets = sheetsFrom(descs.map((desc) => ({ desc, capacity: desc.particleCount, activeCount: 0 })));
+  const keys = new Set(sheets.map((s) => s.key));
+  const rig = new CameraRig({ initial: { target: [0, 0, 0], distance: 2.2 * scatterRadius(planes) } });
+  rig.setAspect(16 / 9);
+  rig.update(DT);
+  const director = new AutoCamDirector({ seed: 5 });
+  assert.equal(director.sheet, null, 'nothing is framed before the tour starts');
+  director.start(rig.getPose());
+  const view = () => ({ sheets, fovY: rig.options.fovY, aspect: 16 / 9 });
+  const framed = new Set();
+  let wideOrInsideNamed = 0;
+  let shots = 0;
+  let lastKind = null;
+  for (let f = 0; f < 300 / DT; f++) {
+    director.step(DT, view);
+    if (director.kind !== lastKind) {
+      lastKind = director.kind;
+      shots++;
+      // A new shot starts with a blend: the camera is still on its way, so nothing is framed yet.
+      if (shots > 1) assert.equal(director.sheet, null, 'a sheet is named before the camera arrives');
+    }
+    const s = director.sheet;
+    if (!s) continue;
+    assert.ok(keys.has(s.key), 'the framed sheet is one of the world\'s sheets');
+    if (director.kind === 'wide' || director.kind === 'inside') wideOrInsideNamed++;
+    framed.add(s.key);
+  }
+  assert.equal(wideOrInsideNamed, 0, 'a wide or inside shot shows many sheets and names none');
+  assert.ok(framed.size >= 3, `the tour framed ${framed.size} sheets in five minutes`);
+  director.stop();
+  assert.equal(director.sheet, null, 'nothing is framed after the tour stops');
+});

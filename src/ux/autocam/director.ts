@@ -147,6 +147,16 @@ export class AutoCamDirector {
   get kind(): ShotKind | null {
     return this.active && this.shot ? this.shot.kind : null;
   }
+  /**
+   * The sheet the shot on screen frames, for captions: set once the camera has
+   * arrived (not while it blends in from the last shot), and only for shots
+   * that are about one sheet. A wide shot and a drift inside a cluster show
+   * many sheets at once, so they have none.
+   */
+  get sheet(): Sheet | null {
+    if (!this.active || this.blend || !this.shot?.sheet || this.shot.kind === "inside") return null;
+    return this.shot.sheet;
+  }
 
   private readonly random: () => number;
   private readonly wideEvery: number;

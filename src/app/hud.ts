@@ -32,7 +32,7 @@ import type { DensitySettings } from "../render";
 import type { EngineCamera } from "../ux/camera";
 import type { Hud } from "../ux/hud/index.js";
 import { mountHud } from "../ux/hud/wire";
-import { mountInfo } from "../ux/info";
+import { mountInfo, type Info } from "../ux/info";
 import { mountThemes } from "../ux/theme";
 import type { BudgetChoice } from "./budget";
 import type { RenderGraph } from "./graph";
@@ -62,6 +62,8 @@ export interface AppHudDeps {
 
 export interface AppHud {
   hud: Hud;
+  /** The information layer: main.ts hands it the auto camera tour, which is built after the HUD. */
+  info: Info;
   /** Call once per frame: advances a dice roll in flight and refreshes the stats. */
   update(dt: number): void;
 }
@@ -87,9 +89,9 @@ export function mountAppHud({ app, canvas, scenes, render, budget, camera, view,
   registerMenuLinks(hud); // the benchmark, the offline renderer and the proof shots pages
   registerKeys(hud, { scenes, camera, options });
   // What the words on screen say: labelled counts, the sheet label, every control behind ?, about behind I.
-  mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
+  const info = mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
 
-  return { hud, update };
+  return { hud, info, update };
 }
 
 function registerMenu(

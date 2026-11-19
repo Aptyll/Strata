@@ -155,6 +155,7 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
     cameraKeys: keys.cameraTarget, moveKeys: MOVES_CAMERA,
   });
   loop.hooks.push({ beforeCamera: (f) => autocam.step(f.dt) });
+  ui.info.follow(() => autocam.director.sheet); // with the stats line on, the tour says what each sheet is doing
   if (streaming) loop.hooks.push({ afterCamera: (f) => streaming.tick(f.dt) });
   loop.hooks.push({ afterFrame: (f) => ui.update(f.dt) });
   loop.hooks.push({ afterFrame: (f) => hints.update(f.dt) });

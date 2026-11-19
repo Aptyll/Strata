@@ -16,6 +16,7 @@
  *   sheet label      bottom right: the name of the sheet the camera faces, the
  *                    sentence that describes its behavior, and its particle
  *                    count. With the stats line on, it also names the sheet
+ *                    the auto camera tour frames (info.follow) and the sheet
  *                    under the pointer (./label.ts).
  *   keys sheet (?)   gains the controls that are not HUD shortcuts: what the
  *                    pointer does and the camera keys (./controls.ts).
@@ -44,9 +45,9 @@ export type { About } from "./about";
 /** The parts of the camera rig (src/ux/camera) this reads. */
 export interface InfoRig {
   /** The sheet the camera has flown to and is facing, or null once the person moves away. */
-  readonly focused: { center: readonly number[] } | null;
+  readonly focused: SheetPointer | null;
   /** The nearest sheet under a screen position in normalized device coordinates, or null. */
-  pick(ndcX: number, ndcY: number): { center: readonly number[] } | null;
+  pick(ndcX: number, ndcY: number): SheetPointer | null;
 }
 
 export interface InfoOptions {
@@ -68,8 +69,20 @@ export interface InfoOptions {
   intervalMs?: number;
 }
 
+/** Something that knows where a sheet is: the rig's faced sheet, a pick, the tour's framed sheet. */
+export interface SheetPointer {
+  readonly center: readonly number[];
+}
+
 export interface Info {
   readonly about: About;
+  /**
+   * Caption another camera: `framed` returns the sheet it frames right now, or
+   * null. The app gives it the auto camera tour (src/ux/autocam), so a tour
+   * with the stats line on says what each sheet it visits is doing. The stats
+   * line is the switch: without it a tour stays free of text. Pass null to stop.
+   */
+  follow(framed: (() => SheetPointer | null | undefined) | null): void;
   /** Refresh now. It also runs by itself a few times a second. */
   update(): void;
   dispose(): void;
@@ -146,6 +159,8 @@ export function mountInfo(opts: InfoOptions): Info {
     const hit = rig.pick(((px - r.left) / r.width) * 2 - 1, 1 - ((py - r.top) / r.height) * 2);
     return hit ? findSheet(app.planes, hit.center) : null;
   };
+  /** The sheet another camera frames (the auto camera tour), set with follow(). */
+  let toured: (() => SheetPointer | null | undefined) | null = null;
   /** The sheet and the name the full label last arrived for, and until when it stays up so it can be read. */
   let heldSheet: object | null = null;
   let heldName = "";
@@ -257,6 +272,12 @@ export function mountInfo(opts: InfoOptions): Info {
     const quiet = about.isOpen || hud.busy || opts.quiet?.() === true;
     let level: LabelLevel = "full";
     let sheet = !quiet && rig?.focused ? findSheet(sheets, rig.focused.center) : null;
+    // With the stats line on, the label also follows what is being looked at without a
+    // sheet being faced: first the sheet the tour frames, in full, then the one pointed at.
+    if (!sheet && !quiet && hud.statsVisible) {
+      const framed = toured?.();
+      if (framed) sheet = findSheet(sheets, framed.center);
+    }
     if (!sheet && !quiet && hud.statsVisible) {
       sheet = pointedSheet();
       level = "short";
@@ -294,6 +315,9 @@ export function mountInfo(opts: InfoOptions): Info {
 
   return {
     about,
+    follow(framed) {
+      toured = framed;
+    },
     update,
     dispose() {
       about.close();
