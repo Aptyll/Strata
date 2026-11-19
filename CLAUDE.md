@@ -76,6 +76,7 @@ Two very different modes, and the wording must keep them apart:
 | `stateless/` | 64-bit particle keys and RNG for stateless particles (`rng.ts`) |
 | `trillion/` | faster trillion splat kernel and laws, standalone with its own demo (not wired into the app yet) |
 | `offline/` | standalone stateless renderer: `core/`, `web/` (browser UI), `node/` (CLI) |
+| `manifest/` | per-render JSON manifest (GPU tallies, job hash, grid hash) and `npm run record` (make, check, reproduce) |
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
@@ -90,6 +91,7 @@ npm install
 npm run dev          # every page, including dev-only demos
 npm run build        # tsc --noEmit + vite build: must pass before merging
 npm run typecheck    # tsc only
+npm run record       # render manifests: make, check, reproduce (src/manifest)
 ```
 
 | URL (under `npm run dev`) | what |
