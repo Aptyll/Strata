@@ -22,7 +22,7 @@ No WebGPU at all is a different case: that is the CPU plane in
 | `policy.ts` | pure decisions: restart by itself or not, with how many particles; the restart log in sessionStorage |
 | `card.ts` | the card: title, a line or two, buttons, optional countdown |
 | `demo/` | every card on a stand-in device, no WebGPU needed: `/src/ux/recovery/demo/` |
-| `test/` | `node src/ux/recovery/test/run.mjs` |
+| `test/` | `npm test -- recovery` |
 
 Wired in `src/main.ts`: `mountRecovery` just before `loop.start()`, and
 `reportBootFailure` in the catch of `startApp`.

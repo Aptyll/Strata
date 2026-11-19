@@ -124,7 +124,7 @@ module apart from your entry point.
 ## Checks
 
 ```sh
-node src/stateless/test/run.mjs     # keys and laws, through the mirrors
+npm test -- stateless               # keys and laws, through the mirrors
 npm run verify -- stateless         # the laws' WGSL on a GPU
 ```
 
