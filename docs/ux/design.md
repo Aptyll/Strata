@@ -2,9 +2,10 @@
 
 How every piece of chrome in Strata looks. "Chrome" is everything on screen
 that is not particles: the HUD, the Esc menu, hints, the title card, Challenge
-mode's readout, status lines, the no-WebGPU page.
+mode's readout, status lines, the no-WebGPU page, the card shown when the GPU
+stops.
 
-Code: `src/ux/design/index.ts` (the tokens, about 150 lines). Specimen, with
+Code: `src/ux/design/index.ts` (the tokens, about 200 lines). Specimen, with
 every token shown in use: `/src/ux/design/demo/` (ships in the production
 build, so it is also on the live site).
 
@@ -18,8 +19,10 @@ build, so it is also on the live site).
    points are round (the menu dot, the die's pips). Large text is thin, so
    every stroke on screen stays about a pixel wide.
 4. **Answer fast, arrive slowly, leave slowly.** Chrome that answers an input
-   takes 180 ms. Chrome that shows up unasked, or goes away, takes 1.2 s. Only
-   opacity and small moves, so the chrome never costs a frame.
+   takes 180 ms. Chrome that shows up by itself (a hint, the title), or goes
+   away, takes 1.2 s. Words about what just happened (the name of a roll, a
+   card that says the GPU stopped) take 480 ms. Only opacity and small moves,
+   so the chrome never costs a frame.
 5. **Themes color the particles and the marks, never the text.** A color
    theme sets one accent. Marks that show a value or a selection take it;
    text stays in the ink, so it reads the same in every theme.
@@ -43,8 +46,11 @@ const CSS = `
 - **Inline styles** take the same tokens: `el.style.font = "var(--st-font-fine)"`.
 - **Plain JS stylesheets** (the HUD) and **`index.html`** cannot import the
   module, so they write `var(--st-dim, rgba(255, 255, 255, 0.65))` with the
-  value as a fallback. The fallback must match the token; the HUD has a test
-  for that (`src/ux/hud/tokens.test.js`).
+  value as a fallback. The fallback must match the token. `staleFallbacks()`
+  in `src/ux/design/fallbacks.js` finds the ones that do not, and `npm test`
+  runs it over the HUD (`src/ux/hud/tokens.test.js`) and over `index.html`
+  (`src/ux/design/design.test.js`).
+- **A button** is `<button class="st-button">` (see "Buttons and controls").
 - **Canvas text and tests** read the raw values from `DESIGN`.
 
 ## Type
@@ -95,6 +101,8 @@ Every piece of text is exactly one of six roles.
 - **A full-screen sheet** (the keys sheet) dims the world with `--st-scrim`
   (0.8 black). More of the world shows through than through a panel, so text
   on a sheet is `--st-dim` or stronger.
+- **A card that takes over the screen** (the GPU stopped) is a panel on a
+  scrim: the picture stays visible, dimmed, and the words sit on the panel.
 - `npm test` checks these contrast numbers, so a token edit that breaks them fails.
 
 ## Space and shape
@@ -108,16 +116,32 @@ Every piece of text is exactly one of six roles.
   (24 px with a mouse, 44 px on touch screens).
 - **Shape:** one pixel lines, `--st-radius` (0) corners, circles only for
   points. Icons are drawn (SVG strokes or CSS shapes), not typed: a glyph such
-  as an arrow or a menu trigram renders differently on every system.
+  as an arrow or a menu trigram renders differently on every system. A sign
+  that every font has (`+`, `−`, `?`, `·`) is text, and is fine inside a line.
 - **Focus:** `outline: var(--st-focus); outline-offset: 2px` on
   `:focus-visible`.
+
+## Buttons and controls
+
+- **There is one button**, for cards and notes that speak to the person:
+  `<button class="st-button">`. It is a caption in a one pixel `--st-stroke`
+  outline, at least `--st-hit` tall, and it shows the focus ring. Hover and
+  focus take it to `--st-lit`.
+- **`is-primary`** marks the action that Enter picks. Its outline is
+  `--st-strong`. One per card, and it gets the focus when the card opens.
+- **Controls in the Esc menu are instruments** (rows, sliders, switches,
+  tabs). The HUD draws them in the instrument voice, with marks in the accent.
+- **A control that cannot act right now** keeps its place and drops to the
+  floor: its words go to `--st-faint`, because they still have to be read,
+  and its marks and outlines fade with `opacity: var(--st-a-faint)`. There is
+  no ink below the floor for text, so there is no separate "disabled" level.
 
 ## Motion
 
 | token | value | use it for |
 | --- | --- | --- |
 | `--st-fast` | 180 ms | answering an input: hover, press, open, close, show after a key |
-| `--st-medium` | 480 ms | text that answers an input: the name of a roll |
+| `--st-medium` | 480 ms | words about what just happened: the name of a roll, a card that says the GPU stopped |
 | `--st-slow` | 1200 ms | arriving unasked (a hint, the title) and every way of leaving |
 | `--st-ease` | `cubic-bezier(0.2, 0, 0, 1)` | anything that answers input |
 | `--st-ease-soft` | `cubic-bezier(0.4, 0, 0.6, 1)` | slow fades and breathing |
@@ -163,14 +187,18 @@ particles.
 | top left | optional fps readout. On a touch screen or a narrow window, the sheet label (under the readout) |
 | top center | Challenge mode only: the count, what it is, and its buttons |
 | top right | menu dot; the Esc menu opens under it |
-| center | title card, a message (loading, unsupported), the keys sheet, the about card (I) |
+| center | title card, a message (loading, unsupported), the keys sheet, a card that takes over the screen (the about card behind I, the card when the GPU stops) |
 | bottom left | stats (H): count, time, fps. Challenge mode's readout |
-| bottom center | the die; a status line takes its place while a job runs; captions (hints) sit above it; an announcement above those |
+| bottom center | the die; a status line takes its place while a job runs; captions (hints) sit above it; an announcement above those. On the no-WebGPU page: its note |
 | bottom right | the sheet label: what the sheet the camera faces is doing (`src/ux/info`). On a touch screen the menu button takes this corner |
 
 New chrome picks a region from this table. If two things want the same
 region, one of them replaces the other (as the status line replaces the die);
 they do not stack.
+
+Layers, back to front: `--st-z-caption` (text over the void), `--st-z-hud`
+(the HUD), `--st-z-top` (anything that must sit above the HUD) and
+`--st-z-modal` (a card that takes over the screen).
 
 ## Checklist for new chrome
 
@@ -178,7 +206,7 @@ they do not stack.
 - Every piece of text is one role.
 - Text is `--st-faint` or stronger. Over the void it has the halo.
 - It sits in a region from the stage table and keeps the edge.
-- Targets are `--st-hit` or larger and show `--st-focus`.
+- Targets are `--st-hit` or larger and show `--st-focus`. A button is `.st-button`.
 - It fades in and out with the motion tokens and does not move the layout.
 
 ## Where it is applied
@@ -188,11 +216,13 @@ they do not stack.
 | specimen | `src/ux/design/demo/` | yes |
 | HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | yes, through `--hud-*` properties that follow the tokens |
 | sheet label, about card, keys sheet groups | `src/ux/info/styles.ts` | yes |
-| hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | not yet |
-| title card | `index.html` | not yet |
+| hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | yes |
+| title card | `index.html` | yes, with fallbacks: it starts before the tokens arrive |
+| card when the GPU stops | `src/ux/recovery/card.ts` | yes |
 | Challenge count and buttons | `src/challenge/viewer.ts` | yes |
 | Challenge readout | `src/challenge/main.ts` | not yet |
 | capture status line | `src/capture/app.ts` | not yet |
+| phone menu button | `src/ux/mobile/index.ts` | not yet |
 
 ## Older names
 

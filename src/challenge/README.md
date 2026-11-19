@@ -46,8 +46,12 @@ within 5 percent of the target or slower, a window passes at 95 percent of the
 refresh rate (every refresh shown), the climb doubles instead of reading
 headroom the screen hides, the block and the copied sentence say "screen
 capped at 30 Hz", and the JSON carries `refreshHz` and `passFps`. Tier 1 stays
-strict: it needs a measured 30 fps or more. `refresh.test.js` runs the search
-on pretend devices with fast and capped screens.
+strict: it needs a measured 30 fps or more. The refresh is measured while the
+GPU is set up, when late frames can make a 60 Hz screen read as 30; the first
+window that reads more than 15 percent above the measured refresh proves the
+screen is not capped, and the search starts again against the plain target
+(`capDisproved`). `refresh.test.js` runs the search on pretend devices with
+fast and capped screens.
 
 Procedural mode (key `M`) is reported separately and never as a tier. Its
 particles have no stored state: position is a closed-form function of id and

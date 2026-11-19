@@ -9,6 +9,7 @@
  *
  *   installTokens();   // once per page; safe to call from every module that draws chrome
  *   .my-line { font: var(--st-font-fine); color: var(--st-dim); }
+ *   <button class="st-button">reload</button>
  *
  * The system in five lines:
  *   color   one ink (white) on one void (black) at five strengths; text never changes hue
@@ -57,7 +58,7 @@ export const DESIGN = {
   hit: { pointer: 24, touch: 44 },
   /** `out` for anything that answers input, `soft` for slow fades and breathing. */
   ease: { out: "cubic-bezier(0.2, 0, 0, 1)", soft: "cubic-bezier(0.4, 0, 0.6, 1)" },
-  /** fast: answer an input. medium: text that answers an input. slow: arrive unasked, and leave. */
+  /** fast: answer an input. medium: words about what just happened. slow: arrive unasked, and leave. */
   ms: { fast: 180, medium: 480, slow: 1200 },
 } as const;
 
@@ -87,7 +88,7 @@ export const TYPE = Object.fromEntries(ROLES.map((r) => [r, roleCss(r)])) as Rec
 
 const levels = Object.entries(D.alpha) as Array<[keyof typeof D.alpha, number]>;
 
-/** The stylesheet: every token on :root, the role classes, and what people's system settings change. */
+/** The stylesheet: every token on :root, the role classes, the button, and what people's system settings change. */
 export const TOKENS_CSS = `
 :root {
   /* color: one ink on one void */
@@ -136,12 +137,33 @@ ${D.space.map((n) => `  --st-space-${n}: ${n * D.unit}px;`).join("\n")}
   --st-slow: ${D.ms.slow}ms;
   --st-travel: 1;
 
-  /* layers: text over the void, the HUD, anything that must sit above the HUD */
+  /* layers: text over the void, the HUD, anything that must sit above the HUD, a card that takes over the screen */
   --st-z-caption: 5;
   --st-z-hud: 10;
   --st-z-top: 20;
+  --st-z-modal: 30;
 }
 ${ROLES.map((r) => `.st-${r} { ${roleCss(r)} }`).join("\n")}
+
+/* The one button: a caption in a one pixel outline. .is-primary marks the action Enter picks. */
+.st-button {
+  ${roleCss("caption")}
+  color: var(--st-strong);
+  text-indent: var(--st-track-wide); /* balances the tracking after the last letter */
+  min-height: var(--st-hit);
+  margin: 0;
+  padding: var(--st-space-2) var(--st-space-4);
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: 1px solid var(--st-stroke);
+  border-radius: var(--st-radius);
+  cursor: pointer;
+  transition: border-color var(--st-fast) var(--st-ease), color var(--st-fast) var(--st-ease);
+}
+.st-button:hover, .st-button:focus-visible { border-color: var(--st-lit); color: var(--st-lit); }
+.st-button:focus-visible { outline: var(--st-focus); outline-offset: 2px; }
+.st-button.is-primary { border-color: var(--st-strong); }
 
 @media (max-width: 520px) { :root { --st-edge: ${D.edge.narrow}px; } }
 @media (pointer: coarse) { :root { --st-hit: ${D.hit.touch}px; } }

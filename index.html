@@ -9,16 +9,27 @@
     <style>
       html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
       canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
-      /* First-run title card: fades in over the opening, then gets out of the way. Pure CSS, no input. */
+      /* First-run title card: fades in over the opening, then gets out of the way. Pure CSS, no input.
+         Styled from the design tokens (src/ux/design, docs/ux/design.md): the title role, a caption, the
+         halo, slow fades. The tokens arrive with the script, after this card has started, so each var()
+         repeats its token's value; npm test fails if one of them goes stale. */
       #title-card { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
-        justify-content: center; pointer-events: none; color: #fff; text-align: center; opacity: 0;
-        font: 300 13px/1.6 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-        animation: title-card 6.5s ease 0.6s forwards; }
-      #title-card h1 { margin: 0; font-weight: 200; font-size: clamp(28px, 6vw, 64px); letter-spacing: 0.5em;
-        text-indent: 0.5em; text-transform: uppercase; }
-      #title-card p { margin: 14px 0 0; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.55; }
-      @keyframes title-card { 0% { opacity: 0; } 22% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-      @media (prefers-reduced-motion: reduce) { #title-card { animation-duration: 3s; } }
+        justify-content: center; pointer-events: none; text-align: center; opacity: 0;
+        text-shadow: var(--st-halo, 0 0 6px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.9));
+        animation:
+          title-in var(--st-slow, 1200ms) var(--st-ease-soft, cubic-bezier(0.4, 0, 0.6, 1)) 0.6s forwards,
+          title-out var(--st-slow, 1200ms) var(--st-ease-soft, cubic-bezier(0.4, 0, 0.6, 1)) 5.4s forwards; }
+      #title-card h1 { margin: 0; text-transform: uppercase;
+        font: var(--st-font-title, 200 clamp(28px, 6vw, 64px)/1 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+        letter-spacing: var(--st-track-title, 0.5em); text-indent: var(--st-track-title, 0.5em);
+        color: var(--st-strong, rgba(255, 255, 255, 0.9)); }
+      #title-card p { margin: var(--st-space-4, 16px) 0 0; text-transform: uppercase;
+        font: var(--st-font-caption, 400 11px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+        letter-spacing: var(--st-track-wide, 0.3em); text-indent: var(--st-track-wide, 0.3em);
+        color: var(--st-dim, rgba(255, 255, 255, 0.65)); }
+      @keyframes title-in { to { opacity: 1; } }
+      @keyframes title-out { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+      @media (prefers-reduced-motion: reduce) { #title-card { animation-duration: var(--st-fast, 180ms), var(--st-fast, 180ms); } }
     </style>
   </head>
   <body>

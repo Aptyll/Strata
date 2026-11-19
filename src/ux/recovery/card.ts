@@ -2,34 +2,30 @@
  * The card recovery shows over a frozen or failed world: a title, a line or
  * two of plain words, and buttons. Plain DOM, no GPU. One card at a time.
  *
- * It looks like the no-WebGPU note (src/ux/experience/fallback.ts) on
- * purpose: same type, same pill buttons, because it is the same kind of
- * message. The picture underneath stays visible, dimmed.
+ * It is styled from the design tokens (docs/ux/design.md), like the
+ * no-WebGPU note (src/ux/experience/fallback.ts), because it is the same
+ * kind of message: a scrim over the picture, which stays visible, a panel,
+ * a caption for the title, the body role for the sentences, the fine role
+ * for the copied details, and the shared button.
  */
+
+import { TYPE, installTokens } from "../design";
 
 const STYLE_ID = "strata-recovery-style";
 const STYLE = `
-.strata-recovery{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
-padding:24px;box-sizing:border-box;background:rgba(0,0,0,.62);color:#fff;
-font:400 13px/1.6 ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
-opacity:0;transition:opacity .4s ease}
+.strata-recovery{position:fixed;inset:0;z-index:var(--st-z-modal);display:flex;align-items:center;justify-content:center;
+padding:var(--st-edge);box-sizing:border-box;background:var(--st-scrim);
+opacity:0;transition:opacity var(--st-medium) var(--st-ease)}
 .strata-recovery[data-on="1"]{opacity:1}
-.strata-recovery-card{max-width:34em;width:100%;text-align:center;padding:28px 24px;box-sizing:border-box;
-background:rgba(0,0,0,.82);border:1px solid rgba(255,255,255,.16);border-radius:6px}
-.strata-recovery h2{margin:0 0 12px;font-size:11px;font-weight:400;letter-spacing:.3em;text-transform:uppercase;opacity:.9}
-.strata-recovery p{margin:0 auto 8px;max-width:30em;opacity:.72;text-wrap:balance}
-.strata-recovery .count{opacity:.9;font-variant-numeric:tabular-nums}
-.strata-recovery .hint{margin-top:16px;font-size:12px;opacity:.5}
-.strata-recovery .copied{margin:12px 0 0;font-size:12px;opacity:.5;white-space:pre-wrap;text-align:left}
+.strata-recovery-card{${TYPE.body}max-width:34em;width:100%;text-align:center;padding:var(--st-space-8) var(--st-space-6);box-sizing:border-box;
+background:var(--st-surface);border:1px solid var(--st-hair);border-radius:var(--st-radius)}
+.strata-recovery h2{${TYPE.caption}color:var(--st-strong);margin:0 0 var(--st-space-3);text-indent:var(--st-track-wide)}
+.strata-recovery p{margin:0 auto var(--st-space-2);max-width:30em;text-wrap:balance}
+.strata-recovery .count{color:var(--st-strong);font-variant-numeric:tabular-nums}
+.strata-recovery .hint{margin-top:var(--st-space-4);margin-bottom:0;color:var(--st-faint)}
+.strata-recovery .copied{${TYPE.fine}margin:var(--st-space-3) 0 0;white-space:pre-wrap;text-align:left}
 .strata-recovery .copied:empty{display:none}
-.strata-recovery-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px}
-.strata-recovery button{background:none;color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:999px;
-padding:8px 18px;min-height:36px;font:inherit;font-size:11px;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;opacity:.8}
-.strata-recovery button.primary{border-color:rgba(255,255,255,.7);opacity:1}
-.strata-recovery button:hover,.strata-recovery button:focus-visible{border-color:#fff;opacity:1;outline:none}
-.strata-recovery button:focus-visible{box-shadow:0 0 0 2px rgba(255,255,255,.5)}
-@media (pointer:coarse){.strata-recovery button{min-height:44px;padding:10px 20px}}
-@media (prefers-reduced-motion:reduce){.strata-recovery{transition:none}}
+.strata-recovery-actions{display:flex;flex-wrap:wrap;gap:var(--st-space-3);justify-content:center;margin-top:var(--st-space-4)}
 `;
 
 export interface CardAction {
@@ -76,6 +72,7 @@ export function showCard(spec: CardSpec, parent: HTMLElement = document.body): C
   open?.close();
   const doc = parent.ownerDocument;
   const win = doc.defaultView ?? window;
+  installTokens(doc);
   if (!doc.getElementById(STYLE_ID)) {
     const style = doc.createElement("style");
     style.id = STYLE_ID;
@@ -122,7 +119,7 @@ export function showCard(spec: CardSpec, parent: HTMLElement = document.body): C
     const b = doc.createElement("button");
     b.type = "button";
     b.textContent = action.label;
-    if (action.primary) b.className = "primary";
+    b.className = action.primary ? "st-button is-primary" : "st-button";
     b.addEventListener("click", () => {
       stopCount();
       action.run();
@@ -150,6 +147,7 @@ export function showCard(spec: CardSpec, parent: HTMLElement = document.body): C
     card.append(count);
     stopButton = doc.createElement("button");
     stopButton.type = "button";
+    stopButton.className = "st-button";
     stopButton.textContent = cd.stopLabel;
     stopButton.addEventListener("click", stop);
     actions.append(stopButton);
@@ -171,6 +169,7 @@ export function showCard(spec: CardSpec, parent: HTMLElement = document.body): C
     const details = spec.details;
     const b = doc.createElement("button");
     b.type = "button";
+    b.className = "st-button";
     b.textContent = "copy details";
     b.addEventListener("click", () => {
       const text = details();

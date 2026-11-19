@@ -4,6 +4,8 @@
 // has had a fair chance to find it alone, and is retired the moment they do
 // it. At most one hint is on screen, and never during the intro.
 
+import { TYPE, installTokens } from '../design';
+
 export interface HintDef {
   id: string;
   /** Shown with a mouse or trackpad. */
@@ -91,13 +93,15 @@ export class HintScheduler {
   }
 }
 
+// Styled from the design tokens (docs/ux/design.md): the caption role, with the halo because it sits
+// over the particles. Bottom center, one step above the die. It arrives unasked and leaves by itself,
+// so both fades are slow; the tokens shorten them for people who asked for reduced motion.
 const STYLE = `
-.strata-hint{position:absolute;left:50%;bottom:max(7vh,calc(env(safe-area-inset-bottom) + 28px));
-transform:translateX(-50%);font:400 11px/1 ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
-letter-spacing:.32em;text-transform:uppercase;color:#fff;opacity:0;white-space:nowrap;
-pointer-events:none;user-select:none;transition:opacity 1.4s ease}
-.strata-hint[data-on="1"]{opacity:.42}
-@media (prefers-reduced-motion:reduce){.strata-hint{transition-duration:.01s}}
+.strata-hint{${TYPE.caption}position:absolute;left:var(--st-edge-left);right:var(--st-edge-right);
+bottom:calc(var(--st-edge-bottom) + var(--st-space-12));z-index:var(--st-z-caption);
+text-align:center;text-indent:var(--st-track-wide);text-shadow:var(--st-halo);
+opacity:0;pointer-events:none;user-select:none;transition:opacity var(--st-slow) var(--st-ease-soft)}
+.strata-hint[data-on="1"]{opacity:1}
 `;
 
 /**
@@ -106,6 +110,7 @@ pointer-events:none;user-select:none;transition:opacity 1.4s ease}
  */
 export function createHintView(root: HTMLElement, opts: { touch?: boolean } = {}) {
   const doc = root.ownerDocument;
+  installTokens(doc);
   if (!doc.getElementById('strata-hint-style')) {
     const style = doc.createElement('style');
     style.id = 'strata-hint-style';
