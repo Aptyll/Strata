@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Strata capture demo</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 13px/1.4 ui-monospace, Menlo, monospace; }
+      canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+      #panel { position: fixed; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,.6); padding: 10px; border: 1px solid #333; }
+      #panel > div { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      button, select, input { background: #111; color: #ddd; border: 1px solid #444; font: inherit; padding: 3px 8px; }
+      button:hover { border-color: #aaa; }
+      input[type=number] { width: 4em; }
+      #status { min-height: 1.4em; color: #9c9; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="panel">
+      <div>
+        <button id="shot">Screenshot (P)</button>
+        <button id="still">4K still, 2x supersampled</button>
+        <button id="poster">16K tiled poster</button>
+      </div>
+      <div>
+        <button id="rec">Record live (R)</button>
+      </div>
+      <div>
+        <select id="res">
+          <option value="1280x720">720p</option>
+          <option value="1920x1080" selected>1080p</option>
+          <option value="2560x1440">1440p</option>
+          <option value="3840x2160">4K</option>
+        </select>
+        <select id="ss"><option value="1">1x</option><option value="2">2x supersample</option></select>
+        <input id="secs" type="number" value="10" min="1" max="600" /> s
+        <label><input id="disk" type="checkbox" /> to disk</label>
+        <button id="offline">Render offline</button>
+        <button id="cancel" hidden>Cancel</button>
+      </div>
+      <div id="status"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -8,11 +8,15 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "verify": "node src/verify/run.mjs"
+    "verify": "node src/verify/run.mjs",
+    "verify:capture": "node src/capture/demo/verify.mjs"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.60",
     "typescript": "^5.6.0",
     "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "mediabunny": "^1.66.1"
   }
 }
