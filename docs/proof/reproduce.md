@@ -22,10 +22,11 @@ random on your own GPU and compare them with the manifest.
   reduced per workgroup (`src/offline/core/shaders.ts`). The manifest copies
   these numbers; nothing is computed from the job. The renderer refuses to save
   a frame whose GPU count differs from the number of particles in the world.
-  Both of the renderer's kernels count on the GPU. Stats the `trillion` kernel
-  wrote before it had its own tally were summed on the host from dispatch
-  sizes; a manifest says which counter was used, and `verify` fails a render
-  that was not counted on the GPU.
+  Every kernel the renderer has (`offline`, `trillion`, `trillion-strata`)
+  counts on the GPU. Stats the `trillion` kernel wrote before it had its own
+  tally were summed on the host from dispatch sizes; a manifest says which
+  counter was used, and `verify` fails a render that was not counted on the
+  GPU.
 - **Each particle in frame adds exactly one unit of light.** The record uses
   count weighting with point splats, so a frame's grid sum is exactly
   (particles in frame) x 65536. The manifest checks this for every frame.
@@ -116,10 +117,10 @@ npm run dev                             # then open /src/offline/web/
 
 1. On the offline page, press **choose folder** and pick
    `proof/out/record-1T-3840x2160-600f`. A folder that holds a job renders that
-   job, whatever the form says. Either kernel counts every particle on the GPU,
+   job, whatever the form says. Every kernel counts every particle on the GPU,
    and each frame's stats record which kernel rendered it, so `verify` uses the
-   same one. **offline** is the default and the only one with camera motion
-   blur. Press **render**. It is resumable: stop, close the tab or
+   same one (the kernels sample camera blur differently, so their pixels
+   differ). **offline** is the default. Press **render**. It is resumable: stop, close the tab or
    reboot, then choose the folder and press render again. The page also saves
    the GPU's name in the folder (`adapter.json`).
 2. Export the MP4 into the same folder (the default name is the job name).

@@ -13,8 +13,8 @@ export interface FrameStatsLike {
   resumes?: number;
   /** Who counted evaluated: "gpu", or "host" in old trillion-kernel stats that summed dispatch sizes. */
   evaluatedBy?: "gpu" | "host";
-  /** The kernel that rendered the frame. */
-  kernel?: "offline" | "trillion";
+  /** The kernel that rendered the frame (renderer.ts KernelChoice). */
+  kernel?: string;
   /** SHA-256 commitment to the exact grid (src/offline/core/fingerprint.ts). */
   gridSha256?: string;
   /** 16 x 9 log-coded tile brightness (src/offline/core/fingerprint.ts). */
@@ -107,7 +107,7 @@ export interface ManifestFrame {
   /** Who counted evaluated. null in stats written before the field existed (the GPU-counting kernel). */
   evaluatedBy: "gpu" | "host" | null;
   /** The kernel that rendered the frame; null in stats written before the field existed. `verify` re-renders with it. */
-  kernel: "offline" | "trillion" | null;
+  kernel: string | null;
   imageSha256: string | null;
 }
 

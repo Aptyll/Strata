@@ -29,8 +29,8 @@ record: [docs/proof/reproduce.md](../../docs/proof/reproduce.md). Brief:
 | `job` | name, sha256 of the exact job JSON, size, fps, splat, weighting, sheet count, seed range, camera keys; `fullJob` embeds the whole job |
 | `particlesPerFrame` | the job's configured count, kept apart from the tallies |
 | `frames[]` | per frame, copied from the GPU-written stats: `evaluated`, `landed`, `outside`, exact grid `unitSum`, `litPixels`, `maxCode`, GPU seconds, particles/s, `gridHash`, sha256 of the 16-bit PNG |
-| `frames[].evaluatedBy` | who counted `evaluated`: `gpu` (both kernels now) or `host` (trillion-kernel stats from before its GPU tally, summed from dispatch sizes); `null` in stats from before the field |
-| `frames[].kernel` | the kernel that rendered the frame (`offline` or `trillion`), so `verify` re-renders with the same one; `null` in older stats |
+| `frames[].evaluatedBy` | who counted `evaluated`: `gpu` (every kernel now) or `host` (trillion-kernel stats from before its GPU tally, summed from dispatch sizes); `null` in stats from before the field |
+| `frames[].kernel` | the kernel that rendered the frame (`offline`, `trillion` or `trillion-strata`), so `verify` re-renders with the same one; `null` in older stats |
 | `frames[].gridSha256` | SHA-256 commitment to the exact 64-bit grid; `null` in older stats or without WebCrypto |
 | `frames[].signature` | 16 x 9 tile brightness, `round(256 log2(1 + particles in tile))`, for comparing renders across GPU models |
 | `drawing` | `weighting` and `splat`, and what they mean: `count` = exactly one unit per particle in frame; `flux` = randomly rounded weights, drawn on average only |

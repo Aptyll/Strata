@@ -10,7 +10,7 @@
  *     derived from the job's configured count.
  *   - `particlesPerFrame` (the job) is kept separate, and `allEvaluated`
  *     is true only when the GPU tally equals it exactly. `evaluatedBy` says
- *     who counted: "gpu" (both kernels now) or "host" (trillion-kernel stats
+ *     who counted: "gpu" (every kernel now) or "host" (trillion-kernel stats
  *     from before it had a GPU tally summed dispatch sizes, which proves
  *     coverage, not work).
  *   - These frames are RENDERED (stateless, closed-form motion), never
@@ -389,7 +389,7 @@ export async function checkManifest(m) {
     byHost.length
       ? `${framesList(byHost)} were counted by the host from dispatch sizes (trillion kernel before it had a GPU tally), which shows the dispatches covered the world but is not a GPU tally`
       : unknown
-        ? `${unknown} of ${n} frames do not say who counted (frames written before evaluatedBy existed came from the GPU-counting kernel)`
+        ? `${unknown} of ${n} frames do not say who counted: the manifest was made before it copied evaluatedBy (the frame stats files may say)`
         : "every frame by the kernel's own GPU tally",
   );
 
@@ -415,7 +415,7 @@ export async function checkManifest(m) {
   const commit = m.source?.commit ?? null;
   add("commit", commit && !commit.endsWith("-dirty") ? true : null, !commit ? "not recorded" : commit.endsWith("-dirty") ? `${commit}: rendered with local changes, so the commit alone may not reproduce it` : commit);
   const kernels = [...new Set(frames.map((f) => f.kernel ?? "not recorded"))];
-  add("kernel", null, `${kernels.join(" and ")}${kernels.includes("not recorded") ? " (verify then re-renders with the offline kernel)" : ""}`);
+  add("kernel", null, `${kernels.join(" and ")}${kernels.includes("not recorded") ? " (verify then assumes offline, or trillion where the host counted)" : ""}`);
   add("gpu", null, m.gpu ? gpuName(m.gpu) : "not recorded");
   add("video", null, m.video ? `${m.video.file}, ${m.video.bytes} bytes, sha256 ${m.video.sha256}` : "no video hash recorded");
   return checks;

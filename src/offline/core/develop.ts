@@ -8,7 +8,7 @@
  *
  *   code = round(LOG_SCALE * log2(1 + units))      units = weight units in the pixel
  */
-import { accumulationSum } from "./renderer";
+import { accumulationSum, type KernelChoice } from "./renderer";
 
 /** Codes per stop (doubling of light). */
 export const LOG_SCALE = 1024;
@@ -25,7 +25,7 @@ export interface FrameStats {
    * complete frame.
    */
   evaluated: string;
-  /** "gpu": counted by the shader (both kernels now). "host": summed from dispatch sizes, in stats from the trillion kernel before it had its own tally. */
+  /** "gpu": counted by the shader (every kernel now). "host": summed from dispatch sizes, in stats from the trillion kernel before it had its own tally. */
   evaluatedBy?: "gpu" | "host";
   /** Exact sum of the grid in weight units, as a decimal string. */
   unitSum: string;
@@ -60,8 +60,8 @@ export interface FrameStats {
   gridSha256?: string;
   /** 16 x 9 log-coded tile brightness of the grid (fingerprint.ts), for comparing renders across GPU models. */
   signature?: number[];
-  /** The kernel that rendered the frame (renderer.ts KernelChoice), so a re-render can use the same one. */
-  kernel?: "offline" | "trillion";
+  /** The kernel that rendered the frame, so a re-render can use the same one. */
+  kernel?: KernelChoice;
 }
 
 export const encodeLog = (units: number): number => Math.min(65535, Math.round(LOG_SCALE * Math.log2(1 + units)));

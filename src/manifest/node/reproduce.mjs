@@ -36,6 +36,32 @@ import { gitCommit, hostInfo, output, printChecks, repo, shown, userPath } from 
 import { makeManifest, videoInfo } from "./folder.mjs";
 import { selfChecks } from "./selfcheck.mjs";
 
+/**
+ * The kernels this checkout renders with: renderer.ts KernelChoice, spelled
+ * out because a type has no value at run time (config.test.mjs keeps the two
+ * in step).
+ * @type {import("../../offline/core/renderer").KernelChoice[]}
+ */
+export const KERNELS = ["offline", "trillion", "trillion-strata"];
+
+/**
+ * The kernel to render a frame with again: the one its stats name. Stats from
+ * before the field existed came from the offline kernel, or from the trillion
+ * kernel where the host counted. An unknown name stops the run rather than
+ * fall back, because another kernel samples differently and gives other pixels.
+ * @param {{ kernel?: unknown, evaluatedBy?: unknown }} frame
+ * @param {string} where what named the kernel, for the error
+ * @returns {import("../../offline/core/renderer").KernelChoice}
+ */
+export function kernelFor(frame, where) {
+  if (frame.kernel === undefined || frame.kernel === null) return frame.evaluatedBy === "host" ? "trillion" : "offline";
+  const kernel = KERNELS.find((k) => k === frame.kernel);
+  if (!kernel) {
+    throw new Error(`${where} names the kernel "${String(frame.kernel)}", which this checkout does not have (${KERNELS.join(", ")}). Check out the commit that rendered it.`);
+  }
+  return kernel;
+}
+
 const offlineDir = path.join(repo, "src/offline");
 const withCommas = (/** @type {number | bigint | string} */ n) => BigInt(n).toLocaleString("en-US");
 
@@ -190,7 +216,7 @@ export async function renderFolder(args, entry) {
         const r = await renderJob(device, j, store, nodeZlib, {
           first,
           end,
-          kernel: args.kernel === "trillion" ? "trillion" : "offline",
+          kernel: kernelFor({ kernel: args.kernel }, "--kernel"),
           targetBatchMs: args["batch-ms"] ? Number(args["batch-ms"]) : 250,
           checkpointSeconds: args.checkpoint ? Number(args.checkpoint) : 300,
           signal: stop.signal,
@@ -395,6 +421,12 @@ export async function verify(args, entry) {
   if (picks.length === 0 || !ref.fullJob) return finish(report, failures, null, out);
   console.log(`\nFrames to re-render (${how}): ${picks.join(", ")}`);
 
+  // The record's own kernel for each frame, named before any GPU work: kernels
+  // sample differently and give other pixels.
+  const kernelOf = new Map(
+    picks.map((frame) => [frame, kernelFor(ref.frames.find((/** @type {any} */ f) => f.frame === frame), `frame ${frame} of the manifest`)]),
+  );
+
   // 3. This machine's GPU.
   const fullJob = ref.fullJob;
   const { device, errors, gpu } = await openDevice(dawnFlags(args), fullJob);
@@ -430,8 +462,7 @@ export async function verify(args, entry) {
       const r = await renderJob(device, fullJob, store, nodeZlib, {
         first: frame,
         end: frame + 1,
-        // The record's own kernel: the two kernels need not give the same pixels.
-        kernel: byFrame.get(frame).kernel === "trillion" ? "trillion" : "offline",
+        kernel: kernelOf.get(frame),
         targetBatchMs: args["batch-ms"] ? Number(args["batch-ms"]) : 250,
         checkpointSeconds: 300,
         signal: stop.signal,

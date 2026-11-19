@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { totalParticles } from "../offline/core/job.ts";
 import { expandJob, validateConfig } from "./config.ts";
-import { pickFrames } from "./node/reproduce.mjs";
+import { KERNELS, kernelFor, pickFrames } from "./node/reproduce.mjs";
 
 // npm test runs from the repository root, and the test is bundled elsewhere, so read from the working directory.
 const load = (name) => validateConfig(JSON.parse(readFileSync(path.join(process.cwd(), "proof", name), "utf8")));
@@ -48,4 +48,16 @@ test("pickFrames: named frames and ranges, random picks, repeatable with a seed"
   assert.deepEqual(pickFrames(available, { frames: 3, seed: 42 }).picks, pickFrames(available, { frames: 3, seed: 42 }).picks);
   assert.equal(pickFrames([1, 2], { frames: 5 }).picks.length, 2);
   assert.deepEqual(pickFrames(available, { frames: 0 }).picks, []);
+});
+
+test("verify knows every kernel the renderer has, and re-renders with the frame's own", () => {
+  const source = readFileSync(path.join(process.cwd(), "src", "offline", "core", "renderer.ts"), "utf8");
+  const union = /export type KernelChoice = ([^;]+);/.exec(source);
+  assert.ok(union, "KernelChoice not found in renderer.ts");
+  const names = [...union[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...KERNELS].sort(), names.sort());
+  for (const k of KERNELS) assert.equal(kernelFor({ kernel: k }, "test"), k);
+  assert.equal(kernelFor({}, "test"), "offline");
+  assert.equal(kernelFor({ kernel: null, evaluatedBy: "host" }, "test"), "trillion");
+  assert.throws(() => kernelFor({ kernel: "warp" }, "frame 3"), /frame 3 names the kernel "warp"/);
 });
