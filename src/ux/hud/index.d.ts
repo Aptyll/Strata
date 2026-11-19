@@ -61,6 +61,8 @@ interface ParamBase<T> {
   label?: string;
   /** Section heading. Params without one go first. */
   group?: string;
+  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  page?: string;
   onChange?: (value: T, id: string) => void;
   /** Save the value in localStorage. Default true. */
   persist?: boolean;
@@ -90,6 +92,8 @@ export interface ActionParam {
   id: string;
   label?: string;
   group?: string;
+  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  page?: string;
   type?: 'action';
   run: () => void;
 }
@@ -141,6 +145,8 @@ export interface JobSpec {
   label?: string;
   /** Menu section, e.g. 'capture'. */
   group?: string;
+  /** Menu page: 'scene', 'behaviors', 'look', 'themes', 'perf', 'capture' or 'more'. Defaults from group (see PAGES in menu.js). */
+  page?: string;
   /** Resolve with a string to show it as the closing line. Throw to report a failure. */
   run(job: JobContext): Promise<string | void> | string | void;
 }
