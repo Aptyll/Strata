@@ -2,7 +2,7 @@
 
 Severity: medium, and a **look decision for Noah** (see "Decision" below). It looks like a bug in stills, and it crawls on camera motion.
 Affects: every renderer (app, Challenge, 1T).
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![needles](img/v01-edge-on-needles.jpg)
 
@@ -30,7 +30,7 @@ No renderer has a view-angle term. Each one weights a hit by brightness, and at 
 | points | `src/passes/points.pass.ts:18` |
 | sub-pixel splats | `src/render/passes.ts:148` |
 | depth sprites | `src/depth/sprite-pass.ts:110` |
-| Challenge | `src/challenge/shaders.ts:107` weight `a.x / w^2` (distance only), set at `src/challenge/engine.ts:745` |
+| Challenge | `src/challenge/shaders.ts:131` weight `a.x / w^2` (distance only), set at `src/challenge/engine.ts:831` |
 | 1T offline | `src/offline/core/shaders.ts:119,133` flux `min(1, ref^2 / z^2)` (distance only; `weighting=count` has none) |
 
 ## Decision

@@ -1,7 +1,7 @@
 # V06: the 1T honesty label is erased where bright sheets sit behind it
 
 Severity: high for the video. The label is the main proof device for the count.
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![label](img/v06-label-overwritten.jpg)
 

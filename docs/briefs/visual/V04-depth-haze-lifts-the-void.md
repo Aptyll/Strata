@@ -1,7 +1,7 @@
 # V04: depth cues fix the blown core but fill the void with grey haze
 
 Severity: medium (`?depth=1` and the "depth sprites" rasterizer only; off by default).
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![depth](img/v04-depth-black-lift.jpg)
 

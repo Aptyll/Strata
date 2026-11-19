@@ -1,6 +1,6 @@
 # Visual fix briefs
 
-Each brief turns a screenshot or render into a fix that another agent can pick up without the person who took the image. Every brief says what is wrong, the likely cause in code (file and line), a proposed fix, and how to confirm the fix by looking. Line numbers are as of the main commit named at the top of each brief, so re-check them before editing. Each brief also quotes the code it points at, so `git grep` finds it after lines move (PR #97, for example, shifts `src/challenge` by about 25 lines).
+Each brief turns a screenshot or render into a fix that another agent can pick up without the person who took the image. Every brief says what is wrong, the likely cause in code (file and line), a proposed fix, and how to confirm the fix by looking. Line numbers are as of the main commit named at the top of each brief, so re-check them before editing. Each brief also quotes the code it points at, so `git grep` finds it after lines move (PR #97, for example, moved lines in `src/challenge` by 24 to 86).
 
 Research briefs (what to build, from the papers and notes) live one folder up in [`docs/briefs/`](../). These briefs are the visual half: what the pictures show is wrong today.
 

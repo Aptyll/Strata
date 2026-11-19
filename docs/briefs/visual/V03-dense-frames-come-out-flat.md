@@ -1,7 +1,7 @@
 # V03: dense frames come out flat: auto exposure has no black floor
 
 Severity: high for the 1T video (partly addressed), medium for `CountToneMapper`.
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![flat disc](img/v03-counts-flat-disc.jpg)
 

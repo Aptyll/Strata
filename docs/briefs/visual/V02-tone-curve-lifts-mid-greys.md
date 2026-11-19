@@ -2,7 +2,7 @@
 
 Severity: medium (it sets the whole look of the app and Challenge mode).
 Affects: the app's density look, the `?tonemap=basic` curve and the Challenge resolve. The 1T grade is not affected.
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![tone steps](img/v02-tone-steps.png)
 
@@ -23,12 +23,12 @@ The 1T grade (`src/offline/core/grade.ts`) does not encode (gamma 1), so the sam
 
 - `src/render/tonemap.ts:57` `var e = srgb(v);` encodes every display value. On an `-srgb` canvas, `:63` hands back the linear value so the hardware encodes it instead (`:147` picks the case). Either way, the screen shows the sRGB encode of the log luma.
 - `src/passes/tonemap.pass.ts:35` `exposure: 2, white: 128` ("one particle is a clear grey dot").
-- `src/gpu/wgsl.ts:67` `basicTone` (the `?tonemap=basic` curve) and `src/challenge/shaders.ts:296`: an exp or log curve followed by `pow(x, 1/2.2)`.
+- `src/gpu/wgsl.ts:68` `basicTone` (the `?tonemap=basic` curve) and `src/challenge/shaders.ts:330`: an exp or log curve followed by `pow(x, 1/2.2)`.
 
 ## Proposed fix
 
 1. App: set `tone.contrast` (it already exists and is applied at `src/render/common.ts:56`) to about 2.2 for the log curve in `tonemap.pass.ts`. That cancels the second lift, giving 55 / 84 / 116 / 150 / 185 / 220 / 244 for 1 to 64 hits (bottom row of the image). 1.6 is a softer middle ground (86 / 115 / 144 / 174 / 202 / 229 / 244).
-2. Expose it as a "contrast" range (1 to 3) in the Esc menu's look group next to "white point" (`src/app/hud.ts:104`, where `white` is registered), so Noah can tune it on his display.
+2. Expose it as a "contrast" range (1 to 3) in the Esc menu's look group next to "white point" (`src/app/hud.ts:105`, where `white` is registered), so Noah can tune it on his display.
 3. Challenge uses the same chain (log curve, soft shoulder, then `pow(…, 1/2.2)`). Change both curves in one PR, or the app and Challenge will stop matching. Drop the `pow` after the log curve, or apply it only to non-log curves.
 4. Match the 1T grade: both should mean "log output is the display value".
 

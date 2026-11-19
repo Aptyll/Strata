@@ -1,7 +1,7 @@
 # V05: bench stats are unreadable over bright particles
 
 Severity: low, but it is the page whose screenshots carry the real-GPU numbers.
-Lines are as of main `665a6cb`.
+Lines are as of main `793eefc`.
 
 ![bench](img/v05-bench-overlay.jpg)
 
