@@ -18,11 +18,12 @@ export function dispatchSize(count: number): [number, number] {
 
 /** Globals uniform: viewProj (64) + time, dt, frame, brightness (16). */
 export const GLOBALS_SIZE = 80;
-/** Plane uniform: model (64) + 8 params (32) + count, seed, pad (16). */
+/** Plane uniform: model (64) + 8 params (32) + count, seed, brightness, pad (16). */
 export const PLANE_UNIFORM_SIZE = 112;
 export const PLANE_PARAMS_OFFSET = 64;
 export const PLANE_COUNT_OFFSET = 96;
 export const PLANE_SEED_OFFSET = 100;
+export const PLANE_BRIGHTNESS_OFFSET = 104;
 
 export const GLOBALS_WGSL = /* wgsl */ `
 struct Globals {
@@ -60,6 +61,7 @@ struct Plane {
   params: Params,
   count: u32, // particles active this frame
   seed: f32, // unique per plane, in [0, 1)
+  brightness: f32, // multiplies globals.brightness for this plane
 }
 @group(1) @binding(0) var<uniform> plane: Plane;
 @group(1) @binding(1) var<storage, read_write> particles: array<Particle>;

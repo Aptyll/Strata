@@ -1,10 +1,20 @@
 import { getBehavior } from "../behaviors";
-import type { Behavior, FrameContext, GpuContext, Pass, PlaneBehaviorChange, PlaneDesc, PlaneInstance } from "../core/contracts";
+import type {
+  Behavior,
+  FrameContext,
+  GpuContext,
+  Pass,
+  PlaneBehaviorChange,
+  PlaneDesc,
+  PlaneHost,
+  PlaneInstance,
+} from "../core/contracts";
 import {
   buildSimShader,
   dispatchSize,
   paramNames,
   PARTICLE_STRIDE,
+  PLANE_BRIGHTNESS_OFFSET,
   PLANE_COUNT_OFFSET,
   PLANE_PARAMS_OFFSET,
   PLANE_SEED_OFFSET,
@@ -23,7 +33,7 @@ interface PlaneGpu extends PlaneInstance {
  * pipeline per behavior (compiled lazily, cached), one dispatch per plane.
  * It is also the `simulate` pass of the frame graph.
  */
-export class Simulation implements Pass {
+export class Simulation implements Pass, PlaneHost {
   readonly name = "simulate";
   readonly stage = "simulate" as const;
   enabled = true;
@@ -111,7 +121,16 @@ export class Simulation implements Pass {
     return plane;
   }
 
-  /** Call after mutating a plane's desc (transform or params) to push it to the GPU. */
+  /** Remove one plane and free its GPU buffers. */
+  removePlane(instance: PlaneInstance): void {
+    const index = this.list.indexOf(instance as PlaneGpu);
+    if (index < 0) return;
+    this.list.splice(index, 1);
+    instance.particles.destroy();
+    instance.uniform.destroy();
+  }
+
+  /** Call after mutating a plane's desc (transform, params or brightness) to push it to the GPU. */
   updatePlane(instance: PlaneInstance): void {
     const plane = instance as PlaneGpu;
     const { desc, behavior } = plane;
@@ -123,6 +142,7 @@ export class Simulation implements Pass {
     });
     new Uint32Array(buf)[PLANE_COUNT_OFFSET / 4] = plane.activeCount;
     f32[PLANE_SEED_OFFSET / 4] = desc.seed;
+    f32[PLANE_BRIGHTNESS_OFFSET / 4] = desc.brightness ?? 1;
     this.gpu.device.queue.writeBuffer(plane.uniform, 0, buf);
     plane.uploadedCount = plane.activeCount;
   }
@@ -155,7 +175,7 @@ export class Simulation implements Pass {
         this.gpu.device.queue.writeBuffer(plane.uniform, PLANE_COUNT_OFFSET, this.countScratch);
         plane.uploadedCount = count;
       }
-      if (count === 0) continue;
+      if (count === 0 || plane.paused) continue;
       if (plane.pipeline !== current) {
         current = plane.pipeline;
         pass.setPipeline(current);
