@@ -100,6 +100,33 @@ export function prefixJob(job: OfflineJob, n: number, name: string): OfflineJob 
   return { ...job, name, frames: 1, planes };
 }
 
+/**
+ * The first `n` particles spread over every sheet in proportion to its size:
+ * sheet i takes its own indices [0, take_i), with
+ *   take_i = floor(n * cum_i / total) - floor(n * cum_(i-1) / total)
+ * (cum_i = particles in sheets 0..i). The parts sum to exactly n and grow with
+ * n, so each count-up stage shows the whole cluster getting denser instead of
+ * one sheet filling at a time. Exact in BigInt (n * cum reaches 10^24).
+ * Stages are nested from about 1,000 particles up; below that, when sheets
+ * hold 0 or 1 particle each, a lone particle can sit on a different sheet from
+ * one stage to the next (checked over the default 1T stages).
+ */
+export function evenPrefixJob(job: OfflineJob, n: number, name: string): OfflineJob {
+  const total = BigInt(totalParticles(job));
+  const N = BigInt(Math.min(n, totalParticles(job)));
+  let cum = 0n;
+  let prev = 0n;
+  const planes = [];
+  for (const p of job.planes) {
+    cum += BigInt(p.particleCount);
+    const upto = (N * cum) / total;
+    const take = Number(upto - prev);
+    prev = upto;
+    if (take > 0) planes.push({ ...p, particleCount: Math.min(take, p.particleCount) });
+  }
+  return { ...job, name, frames: 1, planes };
+}
+
 export interface Pass {
   /** Prefix for this pass's files in the shot folder. */
   key: string;
@@ -120,7 +147,7 @@ export function countUpPasses(o: ShotOptions): Pass[] {
   const total = totalParticles(world);
   return countUpStages(total).map((n, i) => ({
     key: `countup-${String(i).padStart(2, "0")}-`,
-    job: prefixJob(world, n, `countup ${n}`),
+    job: evenPrefixJob(world, n, `countup ${n}`),
     hold: Math.max(6, Math.round(o.fps * 0.4)),
   }));
 }

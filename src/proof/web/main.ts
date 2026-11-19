@@ -268,6 +268,29 @@ function boxedLabel(gray: Uint8Array, w: number, h: number, lines: string[], top
   if (top) for (let y = y0; y < y1; y++) gray.set(target.subarray(y * w + x0, y * w + x1), (y - shift) * w + x0);
 }
 
+/**
+ * Loupe only: draw every dot as a 3x3 square (a 3x3 max filter), so single
+ * particles survive YouTube's downscale to 1080p. Display only: the counts
+ * come from the GPU tally, one dot per particle.
+ */
+function growDots(gray: Uint8Array, w: number, h: number): void {
+  const src = gray.slice();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx >= 0 && xx < w && src[yy * w + xx] > m) m = src[yy * w + xx];
+        }
+      }
+      gray[y * w + x] = m;
+    }
+  }
+}
+
 /** A thin ring around a tracked particle, drawn into the graded frame. */
 function ring(gray: Uint8Array, w: number, h: number, cx: number, cy: number, r: number): void {
   for (let a = 0; a < 720; a++) {
@@ -319,6 +342,7 @@ $<HTMLButtonElement>("export").addEventListener("click", async () => {
         // gradeJob asks for the label just before handing over the frame; draw it ourselves on a solid box.
         let lines: string[] = [];
         await gradeJob(prefixed(store, pass.key), browserZlib, async (f, gray, job) => {
+          if (id === "loupe") growDots(gray, job.width, job.height);
           boxedLabel(gray, job.width, job.height, lines, id === "loupe");
           if (findTarget) {
             const cam = cameraBasis(new CameraPath(job.camera).atFrame(f, job.frames));
