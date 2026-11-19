@@ -20,6 +20,7 @@ import { encodeGrayPng } from "../core/png";
 import { StatelessRenderer } from "../core/renderer";
 import { gradeJob, loadJob, loadStats, renderJob } from "../core/session";
 import { PRESETS, clusterJob } from "../core/world";
+import { COMPOSITIONS } from "../core/compositions";
 import { DEFAULT_LOOK, exposureTrack, withCommas } from "../core/grade";
 import { nodeStore, nodeZlib } from "./platform.mjs";
 
@@ -56,8 +57,9 @@ function parseCount(v) {
 
 function jobFromArgs(args) {
   const presetName = args.preset ?? "smoke";
-  const preset = PRESETS[presetName];
-  if (!preset) throw new Error(`Unknown preset "${presetName}". Choose from: ${Object.keys(PRESETS).join(", ")}`);
+  const composition = COMPOSITIONS[presetName];
+  const preset = composition?.defaults ?? PRESETS[presetName];
+  if (!preset) throw new Error(`Unknown preset "${presetName}". Choose from: ${[...Object.keys(PRESETS), ...Object.keys(COMPOSITIONS)].join(", ")}`);
   const o = { ...preset };
   if (args.name) o.name = String(args.name);
   if (args.width) o.width = parseCount(args.width);
@@ -73,13 +75,14 @@ function jobFromArgs(args) {
   if (args.weighting) o.weighting = args.weighting;
   if (args["time-scale"]) o.timeScale = Number(args["time-scale"]);
   if (args.shutter !== undefined) o.shutter = Number(args.shutter);
-  return clusterJob(o);
+  return composition ? composition.build(o) : clusterJob(o);
 }
 
 const rendererOptions = (args) => ({
   perInvocation: args["per-invocation"] ? parseCount(args["per-invocation"]) : undefined,
   targetBatchMs: args["batch-ms"] ? Number(args["batch-ms"]) : undefined,
   maxBatch: args["max-batch"] ? parseCount(args["max-batch"]) : undefined,
+  kernel: args.kernel === "trillion" ? "trillion" : undefined,
 });
 
 // ------------------------------------------------------------------- gpu ----
@@ -122,6 +125,9 @@ async function bench(args) {
   console.log(`Adapter: ${name}`);
   console.log(`Grid: ${base.width * base.ssaa} x ${base.height * base.ssaa}. Measuring about ${seconds} s per case.\n`);
   const results = [];
+  // --kernel both runs every case on both kernels, for an A/B on one machine.
+  const kernels = args.kernel === "both" ? ["offline", "trillion"] : [args.kernel === "trillion" ? "trillion" : "offline"];
+  for (const kernel of kernels)
   for (const splat of ["point", "bilinear"]) {
     for (const law of ["kepler", "vortex", "lissajous"]) {
       // One sheet facing the camera, big enough to keep the GPU busy.
@@ -135,7 +141,7 @@ async function bench(args) {
         fluxRef: 1,
         near: 0.01,
       };
-      const renderer = await StatelessRenderer.create(device, /** @type {any} */ (job), rendererOptions(args));
+      const renderer = await StatelessRenderer.create(device, /** @type {any} */ (job), { ...rendererOptions(args), kernel });
       // Stop the frame by throwing from the progress hook once time is up.
       const start = performance.now();
       let done = 0;
@@ -159,8 +165,8 @@ async function bench(args) {
       }
       const rate = (done - warm) / ((performance.now() - warmAt) / 1000);
       renderer.dispose();
-      results.push({ law, splat, rate });
-      console.log(`${law.padEnd(10)} ${splat.padEnd(9)} ${fmtRate(rate).padStart(12)}   1T frame: ${fmtDuration(1e12 / rate)}   1B frame: ${fmtDuration(1e9 / rate)}`);
+      results.push({ law, splat, rate, kernel });
+      console.log(`${kernel.padEnd(9)} ${law.padEnd(10)} ${splat.padEnd(9)} ${fmtRate(rate).padStart(12)}   1T frame: ${fmtDuration(1e12 / rate)}   1B frame: ${fmtDuration(1e9 / rate)}`);
     }
   }
   const point = results.filter((r) => r.splat === "point");
@@ -192,10 +198,15 @@ async function render(args) {
   const [first, end] = args.frame !== undefined ? [Number(args.frame), Number(args.frame) + 1] : String(args.range ?? "").includes(":") ? String(args.range).split(":").map(Number) : [undefined, undefined];
   const [shardIndex, shardCount] = args.shard ? String(args.shard).split("/").map(Number) : [0, 1];
 
-  // A lost device (driver reset, sleep) is retried a few times from the last checkpoint.
+  // A lost device (driver reset, sleep) is reopened and the render resumes
+  // from its last checkpoint. It gives up after 5 losses in a row with no
+  // frame finished in between, so a run of several days survives several resets.
+  let failures = 0;
   for (let attempt = 0; ; attempt++) {
     const { device, name } = await openDevice(args, job);
     if (attempt === 0) console.log(`Adapter: ${name}\n`);
+    let lost = false;
+    void device.lost.then(() => (lost = true));
     let lastPrint = 0;
     try {
       const r = await renderJob(device, job, store, nodeZlib, {
@@ -214,6 +225,7 @@ async function render(args) {
           process.stdout.write(`\rframe ${p.frame}: ${((100 * p.done) / p.total).toFixed(1)}%  ${fmtRate(p.rate)}  batch ${withCommas(p.batchSize)} in ${p.batchMs.toFixed(0)} ms  frame eta ${fmtDuration(eta)}      `);
         },
         onFrame: (s, resumed) => {
+          failures = 0;
           const rate = Number(s.evaluated) / Math.max(s.seconds, 1e-9);
           process.stdout.write(`\rframe ${s.frame} done in ${fmtDuration(s.seconds)}${resumed ? " (resumed)" : `, ${fmtRate(rate)}`}, ${withCommas(s.litPixels)} lit pixels, ${withCommas(s.landed)} in frame                    \n`);
         },
@@ -223,8 +235,11 @@ async function render(args) {
       return;
     } catch (e) {
       const message = /** @type {Error} */ (e).message ?? String(e);
-      if (!/device lost/i.test(message) || attempt >= 5 || stop) throw e;
-      console.log(`\n${message}. Reopening the GPU and resuming (attempt ${attempt + 1} of 5).`);
+      // Ask the device itself: a failed readback can reject with a message that
+      // does not say "device lost", before the loss is reported.
+      if (!lost) await Promise.race([device.lost, new Promise((r) => setTimeout(r, 1000))]);
+      if (!(lost || /device (is |was )?lost/i.test(message)) || ++failures > 5 || stop) throw e;
+      console.log(`\n${message}. Reopening the GPU and resuming (attempt ${failures} of 5).`);
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
@@ -426,12 +441,13 @@ const HELP = `Strata offline runner
           [--exposure locked|auto]               locked: white scales with count
 
 Presets: ${Object.keys(PRESETS).join(", ")}
+Hero compositions (1T 4K stills by default): ${Object.keys(COMPOSITIONS).join(", ")}
 Job overrides: --particles 1T --planes 1024 --width 3840 --height 2160 --fps 60
                --frames 600 | --seconds 10, --ssaa 1, --splat point|bilinear,
                --weighting flux|count, --seed 1, --time-scale 1, --shutter 0.5
 Render: --frame N | --range a:b | --shard i/n, --checkpoint 300 (seconds),
         --batch-ms 250, --per-invocation 64, --dawn backend=vulkan
-Look:   --white <particles per pixel>, --contrast 4096, --gamma 1,
+Look:   --white <particles per pixel>, --contrast 256, --gamma 1,
         --percentile 0.995, --headroom 1, --smooth 20, --label "a|b", --no-label
 `;
 

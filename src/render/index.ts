@@ -26,8 +26,6 @@ export { CURVES, DISPLAYS, pickHdrFormat, type Curve, type Display } from './com
 export {
   createDensityTonemapPass,
   createDensitySplatPass,
-  planeModelMatrix,
-  mulMat4,
   type DensityTonemapPassOptions,
   type DensitySplatPassOptions,
 } from './passes';

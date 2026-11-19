@@ -8,7 +8,8 @@
 // only visible through `strataDemo.capture()`. That is for headless browsers
 // with a software GPU, which can lose the device on the first present.
 
-import { DensityRenderer, mulMat4, planeModelMatrix, type SplatBatch, type SplatMode, type Curve, type Display, type TrailMode } from '../index';
+import { DensityRenderer, type SplatBatch, type SplatMode, type Curve, type Display, type TrailMode } from '../index';
+import { mat4LookAt, mat4Multiply, mat4Perspective, planeModelMatrix } from '../../math';
 import type { PlaneDesc } from '../../core/contracts';
 import { DemoSim } from './sim';
 
@@ -172,25 +173,10 @@ canvas.addEventListener('wheel', (e) => {
 // ---- camera --------------------------------------------------------------
 
 type V3 = [number, number, number];
-const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const norm = (a: V3): V3 => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
-
-function perspective(fovy: number, aspect: number, near: number, far: number): Float32Array {
-  const f = 1 / Math.tan(fovy / 2);
-  const o = new Float32Array(16);
-  o[0] = f / aspect; o[5] = f; o[10] = far / (near - far); o[11] = -1; o[14] = (near * far) / (near - far);
-  return o;
-}
-function lookAt(eye: V3, target: V3, up: V3): Float32Array {
-  const z = norm([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
-  const x = norm(cross(up, z));
-  const y = cross(z, x);
-  return new Float32Array([
-    x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
-    -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
-  ]);
-}
+// Orbit camera matrices, rebuilt every frame (column major, src/math.ts).
+const proj = new Float32Array(16);
+const view = new Float32Array(16);
+const viewProj = new Float32Array(16);
 
 // ---- frame ---------------------------------------------------------------
 
@@ -228,7 +214,9 @@ function draw(target: GPUTextureView, dt: number): void {
 
   const cp = Math.cos(state.pitch);
   const eye: V3 = [state.dist * cp * Math.sin(state.yaw), state.dist * Math.sin(state.pitch), state.dist * cp * Math.cos(state.yaw)];
-  const viewProj = mulMat4(perspective(0.9, canvas.width / canvas.height, 0.01, 100), lookAt(eye, [0, 0, 0], [0, 1, 0]));
+  mat4Perspective(proj, 0.9, canvas.width / canvas.height, 0.01, 100);
+  mat4LookAt(view, eye, [0, 0, 0], [0, 1, 0]);
+  mat4Multiply(viewProj, proj, view);
 
   // One batch per plane, the way the engine hands planes over: a range of
   // plane-local 2D particles plus a model matrix.
@@ -250,7 +238,7 @@ function draw(target: GPUTextureView, dt: number): void {
       count: p === planes - 1 ? sim.count - p * per : per,
       stride: 16,
       dims: 2,
-      mvp: mulMat4(viewProj, planeModelMatrix(desc)),
+      mvp: mat4Multiply(new Float32Array(16), viewProj, planeModelMatrix(desc)),
       energy: state.energy,
       size: state.size,
     });

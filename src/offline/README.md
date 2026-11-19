@@ -53,7 +53,13 @@ npx tsx node/cli.mjs render --preset trillion    # 1e12 particles, 4K60, 10 s
 npx tsx node/cli.mjs encode --out out/trillion
 ```
 
-Presets: `smoke`, `preview`, `billion`, `ten_billion`, `trillion`. Any field can
+Presets: `smoke`, `preview`, `billion`, `ten_billion`, `trillion`, plus three
+hand-placed hero compositions that default to a 1T 4K still (`core/compositions.ts`):
+`heroA` (close, four sheets, one edge-on as a line of light), `heroB` (a
+cathedral stack of floors), `heroC` (the camera inside a cloud of sheets).
+They default to bilinear splats, since sub-pixel rings alias into moire with
+point splats. Low-resolution previews at 30M particles are in `docs/record/`. Sheets past
+2^32 particles are split into layers with the same transform and their own seeds. Any field can
 be overridden, for example `--preset trillion --seconds 5 --fps 30`. Run the
 command with no arguments for the full list of options.
 
@@ -96,6 +102,20 @@ Use the Node runner for renders that take hours. A browser tab can be
 throttled in the background, and browsers reset the GPU if one submission runs
 too long, so the page keeps batches short (about 120 ms) at some cost in speed.
 
+## Two kernels
+
+`--kernel offline` (default) is this folder's accumulate shader: returning
+64-bit atomics, exact per-particle flux weights, and evaluated and in-frame
+counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
+splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
+u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
+flux weighting becomes a per-sheet keep probability from the sheet center's
+depth, and `evaluated` is summed by the host from dispatch sizes (the stats
+JSON says `"evaluatedBy": "host"`, and the default label says "dispatched"
+instead of "evaluated"). Camera motion blur is in the offline kernel only; the
+trillion kernel uses the mid-shutter camera. `bench --kernel both` compares them on one
+machine. The page has the same choice.
+
 ## Checks
 
 ```sh
@@ -115,6 +135,10 @@ Every frame's stats JSON holds `evaluated` (always the whole world) and
 counted on the GPU with one atomic per workgroup. `evaluated - landed` were
 behind the camera or off frame. In `count` weighting with `point` splat, the
 grid sum divided by 65536 equals `landed` exactly, which the checks verify.
+In `flux` weighting it does not: a far particle's weight is randomly rounded
+(unbiased) and is often 0, so `landed` counts it but it adds no light. Such a
+frame is drawn correctly on average, not particle by particle; say "evaluated"
+and "in frame", never "every particle drawn", for flux renders.
 
 ## Layout
 

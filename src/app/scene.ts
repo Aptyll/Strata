@@ -16,7 +16,7 @@ import type { PlaneDesc, PlaneInstance, Scene } from "../core/contracts";
 import type { DepthSpritePass } from "../depth";
 import type { Simulation } from "../sim/simulation";
 import { planeTargetFromDesc, poseFromState, type EngineCamera } from "../ux/camera";
-import type { StreamingWorld } from "../world";
+import { openingCamera, type StreamingWorld } from "../world";
 import { scatterLayout, scatterRadius } from "../world/layout";
 import type { AppOptions } from "./options";
 
@@ -36,11 +36,11 @@ export function buildScene(options: LayoutOptions, particles: number, planes: nu
   };
 }
 
-/** The scene the app opens on. With ?world it is empty, and the camera starts where the streamer expects it. */
+/** The scene the app opens on. With ?world it is empty, and the camera opens on the nearest streamed structure. */
 function openingScene(options: AppOptions): Scene {
   const scene = buildScene(options, options.particles, options.planes, options.brightness);
   if (options.world === null) return scene;
-  return { ...scene, planes: [], camera: { ...scene.camera, target: [6, 6, 6], distance: 10 } };
+  return { ...scene, planes: [], camera: openingCamera({ seed: options.world }, scene.camera.fovY) };
 }
 
 export interface SceneHost {

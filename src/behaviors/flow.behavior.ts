@@ -1,4 +1,4 @@
-import { defineBehavior } from "./define";
+import { defineBehavior } from "./core";
 
 /**
  * Particles ride a slowly evolving noise field. A curl component makes them
@@ -7,6 +7,7 @@ import { defineBehavior } from "./define";
 export default defineBehavior({
   id: "flow",
   label: "Flow field",
+  description: "Particles ride a slowly changing noise field that swirls them and gathers them into drifting filaments.",
   params: {
     // noise frequency across the sheet
     scale: { default: 2.2, min: 0.5, max: 8 },

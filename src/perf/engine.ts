@@ -17,15 +17,7 @@
 
 import { BRUSH_FLOATS, MAX_BRUSHES, type Behavior, type PlaneDesc } from '../core/contracts';
 import { compileComputePipeline } from '../gpu/context';
-import {
-  dispatchSize,
-  GLOBALS_BRUSHES_OFFSET,
-  paramSlotNames,
-  PLANE_BRIGHTNESS_OFFSET,
-  PLANE_COUNT_OFFSET,
-  PLANE_PARAMS_OFFSET,
-  PLANE_SEED_OFFSET,
-} from '../gpu/shaderLib';
+import { dispatchSize, packGlobals, packPlane, planeParamValues, type GlobalsValues } from '../gpu/shaderLib';
 import { mat4Multiply, planeModelMatrix, seededRandom } from '../math';
 import { classifyPlane, DEFAULT_LOD, type LodSettings, type PlaneClass } from './culling';
 import { GpuTimer } from './gpuTimer';
@@ -40,6 +32,7 @@ import {
   GLOBALS_BLOCK_SIZE,
   INIT_WGSL,
   LIGHT_ONE,
+  packPerf,
   PERF_BLOCK_SIZE,
   PLANE_BLOCK_SIZE,
   RESOLVE_WGSL,
@@ -151,11 +144,18 @@ export class PerfEngine {
   private readonly timer: GpuTimer;
   private readonly clearTarget: boolean;
 
+  /** One SLOT_STRIDE slot per dispatched plane (see ./shaders.ts), packed on the CPU into uniformData. */
   private uniformBuffer!: GPUBuffer;
   private uniformData!: ArrayBuffer;
-  private uniformF32!: Float32Array;
-  private uniformU32!: Uint32Array;
+  private uniformView!: DataView;
+  /** Slots in uniformBuffer. The last one is reserved for seeding (seedOnGpu), so frames use at most uniformSlots - 1. */
   private uniformSlots = 0;
+  /**
+   * Uniform buffers replaced by a growth. A frame encoded before the growth
+   * may still be waiting for its submit, so they are destroyed at the next
+   * encode, not at once: a destroyed buffer would make that submit fail.
+   */
+  private readonly retiredUniforms: GPUBuffer[] = [];
 
   private fb!: GPUBuffer;
   private width = 1;
@@ -294,7 +294,7 @@ export class PerfEngine {
     };
     this.planes.set(id, plane);
     this.applyDesc(plane);
-    this.ensureUniformSlots(this.planes.size);
+    this.ensureUniformSlots(this.planes.size + 1); // + the seeding slot
     if (behavior.init) this.seedFromCpu(plane);
     else this.seedOnGpu(plane);
     return id;
@@ -331,17 +331,20 @@ export class PerfEngine {
   frame(p: FrameParams): FrameStats {
     const encoder = this.device.createCommandEncoder({ label: 'strata-perf frame' });
     this.encode(encoder, p);
-    this.timer.resolve(encoder);
     this.device.queue.submit([encoder.finish()]);
-    this.timer.readback();
-    this.stats.gpuComputeMs = this.timer.ms[0];
-    this.stats.gpuResolveMs = this.timer.ms[1];
+    this.afterSubmit();
     return this.stats;
   }
 
-  /** Encodes one frame into a caller-owned encoder (for frame graphs and capture). */
+  /**
+   * Encodes one frame into a caller-owned encoder (for frame graphs and
+   * capture). Call `afterSubmit` once the encoder is submitted.
+   */
   encode(encoder: GPUCommandEncoder, p: FrameParams): FrameStats {
     const { device, lod, stats } = this;
+    // Every frame encoded before a growth has been submitted by now.
+    for (const b of this.retiredUniforms) b.destroy();
+    this.retiredUniforms.length = 0;
     const frame = this.frameIndex++;
     const active = this.dispatchPlanes;
     const counts = this.dispatchCounts;
@@ -351,6 +354,15 @@ export class PerfEngine {
     let drawn = 0;
     let simulated = 0;
     const baseFlags = this.bilinear ? FLAG_BILINEAR : 0;
+    // Every slot's Globals block holds these values; only dt differs per plane.
+    const globals: GlobalsValues = {
+      viewProj: p.viewProj,
+      time: p.time,
+      dt: 0,
+      frame,
+      brightness: this.brightness,
+      brushes: this.brushes,
+    };
 
     for (const plane of this.planes.values()) {
       plane.pendingDt += p.dt;
@@ -358,14 +370,16 @@ export class PerfEngine {
       const c = classifyPlane(this.mvp, plane.count, this.width, this.height, lod, this.cls);
 
       const planeBrightness = plane.desc.brightness ?? 1;
-      let drawCount = 0;
-      if (this.draw && c.visible && planeBrightness > 0) {
-        visible++;
-        drawCount = Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction)));
-      }
+      // The LOD prefix of a plane in view: what a drawn frame draws, and with
+      // simulateHidden off also all that is simulated. It must not depend on
+      // `draw`, or a sim-only frame (draw off) would simulate no visible plane.
+      const lodCount =
+        c.visible && planeBrightness > 0 ? Math.max(1, Math.min(plane.count, Math.floor(plane.count * c.fraction))) : 0;
+      if (lodCount > 0) visible++;
+      const drawCount = this.draw ? lodCount : 0;
       // Stagger by plane id so planes on the same interval do not all land on one frame.
       const doSim = this.simulate && c.simInterval > 0 && (frame + plane.id) % c.simInterval === 0;
-      const simCount = doSim ? (c.visible && !lod.simulateHidden ? drawCount : plane.count) : 0;
+      const simCount = doSim ? (c.visible && !lod.simulateHidden ? lodCount : plane.count) : 0;
       if (drawCount === 0 && simCount === 0) continue;
 
       let dt = 0;
@@ -376,7 +390,30 @@ export class PerfEngine {
       const weight = drawCount > 0 ? Math.max(1, Math.round((LIGHT_ONE * planeBrightness * plane.count) / drawCount)) : 0;
       const flags = baseFlags | (doSim ? FLAG_SIM : 0) | (drawCount > 0 ? FLAG_DRAW : 0);
       const processed = Math.max(drawCount, simCount);
-      this.writeSlot(active.length, plane, p.viewProj, this.mvp, dt, p.time, frame, simCount, drawCount, weight, flags, processed);
+
+      // This dispatch's uniform slot: the engine's Globals and Plane blocks
+      // (src/gpu/shaderLib.ts), then this path's Perf block (./shaders.ts).
+      const at = active.length * SLOT_STRIDE;
+      globals.dt = dt; // a plane on a rate-LOD interval steps the time since its own last step
+      packGlobals(this.uniformView, at, globals);
+      packPlane(this.uniformView, at + BLOCK_ALIGN, {
+        model: plane.model,
+        params: plane.params,
+        count: processed,
+        seed: plane.desc.seed,
+        brightness: planeBrightness,
+      });
+      packPerf(this.uniformView, at + 2 * BLOCK_ALIGN, {
+        mvp: this.mvp,
+        base: plane.base,
+        drawCount,
+        simCount,
+        weight,
+        flags,
+        fbWidth: this.width,
+        fbHeight: this.height,
+        velMax: plane.velMax,
+      });
       active.push(plane);
       counts.push(processed);
       drawn += drawCount;
@@ -424,6 +461,7 @@ export class PerfEngine {
     render.setBindGroup(0, this.resolveBindGroup);
     render.draw(3);
     render.end();
+    this.timer.resolve(encoder);
 
     stats.planes = this.planes.size;
     stats.visiblePlanes = visible;
@@ -432,6 +470,17 @@ export class PerfEngine {
     stats.drawnParticles = drawn;
     stats.simulatedParticles = simulated;
     return stats;
+  }
+
+  /**
+   * Call after submitting a frame from `encode` (`frame` does it): starts the
+   * readback of that frame's GPU timings and copies the latest finished ones
+   * into the stats.
+   */
+  afterSubmit(): void {
+    this.timer.readback();
+    this.stats.gpuComputeMs = this.timer.ms[0];
+    this.stats.gpuResolveMs = this.timer.ms[1];
   }
 
   /** Debug and tests: copy the atomic framebuffer of the last frame back to the CPU. */
@@ -450,6 +499,8 @@ export class PerfEngine {
     this.pool.destroy();
     this.fb.destroy();
     this.uniformBuffer.destroy();
+    for (const b of this.retiredUniforms) b.destroy();
+    this.retiredUniforms.length = 0;
     this.resolveUniform.destroy();
     this.timer.destroy();
     this.planes.clear();
@@ -471,9 +522,7 @@ export class PerfEngine {
   private applyDesc(plane: PlaneRec): void {
     const d = plane.desc;
     planeModelMatrix(d, plane.model);
-    paramSlotNames(plane.behavior).forEach((name, i) => {
-      plane.params[i] = d.params?.[name] ?? plane.behavior.params[name]?.default ?? 0;
-    });
+    planeParamValues(plane.behavior, d.params, plane.params);
   }
 
   private pipelineFor(behavior: Behavior): GPUComputePipeline {
@@ -487,14 +536,27 @@ export class PerfEngine {
 
   /** Default seeding: uniform random at rest, entirely on the GPU. */
   private seedOnGpu(plane: PlaneRec): void {
-    const seed = Math.floor(plane.desc.seed * 0xffffffff) >>> 0;
-    // One submit per plane keeps slot 0 valid for each dispatch.
-    this.writeSlot(0, plane, null, null, 0, 0, 0, plane.count, 0, seed, 0, plane.count);
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData, 0, SLOT_STRIDE);
+    // The reserved last slot: frames never use it, so seeding cannot overwrite
+    // the slots of a frame that is encoded but not yet submitted.
+    const at = (this.uniformSlots - 1) * SLOT_STRIDE;
+    // INIT_WGSL reads only the Perf block: base, simCount, and the plane's u32 seed carried in weight.
+    packPerf(this.uniformView, at + 2 * BLOCK_ALIGN, {
+      mvp: this.mvp, // unused by INIT_WGSL
+      base: plane.base,
+      drawCount: 0,
+      simCount: plane.count,
+      weight: Math.floor(plane.desc.seed * 0xffffffff) >>> 0,
+      flags: 0,
+      fbWidth: this.width,
+      fbHeight: this.height,
+      velMax: plane.velMax,
+    });
+    // One submit per plane keeps the slot valid for each dispatch.
+    this.device.queue.writeBuffer(this.uniformBuffer, at, this.uniformData, at, SLOT_STRIDE);
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.initPipeline);
-    pass.setBindGroup(0, this.bindGroupFor(plane.page), [0, 0, 0]);
+    pass.setBindGroup(0, this.bindGroupFor(plane.page), [at, at, at]);
     pass.dispatchWorkgroups(...dispatchSize(plane.count));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
@@ -521,11 +583,10 @@ export class PerfEngine {
     if (slots <= this.uniformSlots) return;
     let cap = Math.max(64, this.uniformSlots);
     while (cap < slots) cap *= 2;
-    this.uniformBuffer?.destroy();
+    if (this.uniformBuffer) this.retiredUniforms.push(this.uniformBuffer);
     this.uniformSlots = cap;
     this.uniformData = new ArrayBuffer(cap * SLOT_STRIDE);
-    this.uniformF32 = new Float32Array(this.uniformData);
-    this.uniformU32 = new Uint32Array(this.uniformData);
+    this.uniformView = new DataView(this.uniformData);
     this.uniformBuffer = this.device.createBuffer({
       label: 'strata-perf plane uniforms',
       size: cap * SLOT_STRIDE,
@@ -551,53 +612,5 @@ export class PerfEngine {
       this.pageBindGroups[page] = bg;
     }
     return bg;
-  }
-
-  /**
-   * Fills one slot: Globals and Plane blocks laid out like the core engine's
-   * (src/gpu/shaderLib.ts), then this path's Perf block (see shaders.ts).
-   */
-  private writeSlot(
-    slot: number,
-    plane: PlaneRec,
-    viewProj: ArrayLike<number> | null,
-    mvp: Float32Array | null,
-    dt: number,
-    time: number,
-    frame: number,
-    simCount: number,
-    drawCount: number,
-    weight: number,
-    flags: number,
-    processed: number,
-  ): void {
-    const f = this.uniformF32;
-    const u = this.uniformU32;
-    // Globals
-    let o = (slot * SLOT_STRIDE) >> 2;
-    if (viewProj) f.set(viewProj, o);
-    f[o + 16] = time;
-    f[o + 17] = dt;
-    u[o + 18] = frame;
-    f[o + 19] = this.brightness;
-    f.set(this.brushes, o + (GLOBALS_BRUSHES_OFFSET >> 2));
-    // Plane
-    o += BLOCK_ALIGN >> 2;
-    f.set(plane.model, o);
-    f.set(plane.params, o + (PLANE_PARAMS_OFFSET >> 2));
-    u[o + (PLANE_COUNT_OFFSET >> 2)] = processed;
-    f[o + (PLANE_SEED_OFFSET >> 2)] = plane.desc.seed;
-    f[o + (PLANE_BRIGHTNESS_OFFSET >> 2)] = plane.desc.brightness ?? 1;
-    // Perf
-    o += BLOCK_ALIGN >> 2;
-    if (mvp) f.set(mvp, o);
-    u[o + 16] = plane.base;
-    u[o + 17] = drawCount;
-    u[o + 18] = simCount;
-    u[o + 19] = weight;
-    u[o + 20] = flags;
-    u[o + 21] = this.width;
-    u[o + 22] = this.height;
-    f[o + 23] = plane.velMax;
   }
 }

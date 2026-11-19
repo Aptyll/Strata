@@ -121,6 +121,30 @@ for (const splat of ["point", "bilinear"]) {
   check("cancel rejects with AbortError", error?.name === "AbortError", error?.message ?? "no error");
 }
 
+// ---- cancel keeps the work done so far, and the frame resumes exactly ---------
+{
+  const job = testJob({ splat: "bilinear" });
+  const opts = { initialBatch: 60_000, maxBatch: 60_000 };
+  const whole = await renderOnce(job, opts);
+  const controller = new AbortController();
+  /** @type {any} */
+  let saved = null;
+  let batches = 0;
+  try {
+    await renderOnce(job, opts, 1, {
+      signal: controller.signal,
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      onProgress: () => {
+        if (++batches === 7) controller.abort();
+      },
+    });
+  } catch (e) {
+    if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+  }
+  const resumed = saved ? await renderOnce(job, opts, 1, { resume: saved }) : null;
+  check("cancel saves a checkpoint that resumes exactly", resumed !== null && same(whole.lo, resumed.lo) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, saved ? `saved after ${saved.gpuEvaluated} particles` : "nothing saved");
+}
+
 // ---- batch invariance -------------------------------------------------------
 {
   const job = testJob({ splat: "bilinear", weighting: "flux", fluxRef: 8.5 });
@@ -149,14 +173,22 @@ for (const law of LAWS) {
   const out = await renderOnce(job, {}, frame);
   // Reference: same hash and law in doubles, same projection, point splat.
   const ref = new Float64Array(job.width * job.height);
-  const cam = cameraBasis(new CameraPath(/** @type {any} */ (job.camera)).atFrame(frame, job.frames));
+  const path = new CameraPath(/** @type {any} */ (job.camera));
+  const cam = cameraBasis(path.atFrame(frame, job.frames));
+  // Camera motion blur: the pose moves with each particle's shutter instant.
+  const shutterSpan = job.shutter / (job.frames - 1);
+  const tMid = frame / (job.frames - 1);
   const plane = job.planes[0];
-  const h = planeHomography(cam, /** @type {any} */ (plane), job.width, job.height);
+  const h0 = planeHomography(cam, /** @type {any} */ (plane), job.width, job.height);
+  const ho = planeHomography(cameraBasis(path.at(tMid - shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
+  const hc = planeHomography(cameraBasis(path.at(tMid + shutterSpan / 2)), /** @type {any} */ (plane), job.width, job.height);
   const time = job.timeOffset + (frame / job.fps) * job.timeScale;
   const span = (job.shutter / job.fps) * job.timeScale;
   for (let i = 0; i < plane.particleCount; i++) {
     const key = particleKey(i, plane.seed);
-    const t = time + span * (u01(draw(key, 6)) - 0.5);
+    const s = u01(draw(key, 6)) - 0.5;
+    const t = time + span * s;
+    const h = h0.map((v, i) => v + s * (hc[i] - ho[i]));
     const [x, y] = lawPosition(law, key, t, plane.params);
     const depth = h[2] * x + h[5] * y + h[8];
     if (!(depth > job.near)) continue;
@@ -193,6 +225,48 @@ for (const law of LAWS) {
   }
   const resumed = await renderOnce(job, { initialBatch: 77_777, maxBatch: 77_777 }, 1, { resume: saved });
   check("resume from checkpoint", saved !== null && same(whole.lo, resumed.lo) && same(whole.hi, resumed.hi) && whole.landed === resumed.landed && resumed.gpuEvaluated === whole.gpuEvaluated, `resumed at plane ${saved?.cursor.plane}, offset ${saved?.cursor.offset}`);
+}
+
+// ---- trillion kernel behind the same renderer ---------------------------------
+for (const splat of ["point", "bilinear"]) {
+  const job = testJob({ splat });
+  const n = job.planes.reduce((s, p) => s + p.particleCount, 0);
+  const out = await renderOnce(job, { kernel: "trillion" });
+  const sum = accumulationSum(out.lo, out.hi);
+  check(`trillion kernel: conservation, ${splat}`, sum === BigInt(n) * BigInt(ONE) && out.landed === BigInt(n) && out.gpuEvaluated === BigInt(n), `${sum / BigInt(ONE)} of ${n}, in frame ${out.landed}`);
+}
+{
+  const job = testJob();
+  job.camera = [{ t: 0, target: [0.4, 0.2, 0], yaw: 0.3, pitch: -0.2, distance: 1.6, fovY: 0.7 }];
+  const a = await renderOnce(job, { kernel: "trillion" });
+  const b = await renderOnce(job);
+  const inGrid = accumulationSum(a.lo, a.hi) / BigInt(ONE);
+  // Different hashing for shutter and splat, so compare counts, not pixels.
+  const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
+  check("trillion kernel: in-frame count matches offline kernel", a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
+}
+{
+  const job = testJob({ splat: "bilinear" });
+  const x = await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 });
+  const y = await renderOnce(job, { kernel: "trillion", initialBatch: 2 ** 20 });
+  check("trillion kernel: batch invariance", same(x.lo, y.lo) && same(x.hi, y.hi), `${x.batches} vs ${y.batches} batches`);
+  /** @type {any} */
+  let saved = null;
+  const controller = new AbortController();
+  let batches = 0;
+  try {
+    await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, {
+      signal: controller.signal,
+      checkpoint: { everyMs: 1e9, save: async (cursor, acc) => void (saved = { cursor, ...acc }) },
+      onProgress: () => {
+        if (++batches === 7) controller.abort();
+      },
+    });
+  } catch (e) {
+    if (/** @type {Error} */ (e).name !== "AbortError") throw e;
+  }
+  const resumed = saved ? await renderOnce(job, { kernel: "trillion", initialBatch: 50_000, maxBatch: 50_000 }, 1, { resume: saved }) : null;
+  check("trillion kernel: cancel and resume exactly", resumed !== null && same(x.lo, resumed.lo) && same(x.hi, resumed.hi) && resumed.landed === x.landed, saved ? `saved after ${saved.gpuEvaluated}` : "nothing saved");
 }
 
 // ---- PNG round trip ---------------------------------------------------------

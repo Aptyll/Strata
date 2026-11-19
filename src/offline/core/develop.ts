@@ -19,10 +19,14 @@ export const HIST_BINS = 256;
 export interface FrameStats {
   frame: number;
   /**
-   * Particles evaluated for this frame, counted on the GPU, as a decimal
-   * string. Equals the world's particle count for every complete frame.
+   * Particles evaluated for this frame, as a decimal string. Counted on the
+   * GPU when evaluatedBy is "gpu" (or absent); summed by the host from dispatch
+   * sizes when it is "host". Equals the world's particle count for every
+   * complete frame.
    */
   evaluated: string;
+  /** "gpu": counted by the shader. "host": summed from dispatch sizes (trillion kernel). */
+  evaluatedBy?: "gpu" | "host";
   /** Exact sum of the grid in weight units, as a decimal string. */
   unitSum: string;
   /**
@@ -80,11 +84,12 @@ export function frameStats(
   frame: number,
   acc: { lo: Uint32Array; hi: Uint32Array; landed: bigint },
   developed: { litPixels: number; maxCode: number; hist: number[] },
-  run: { evaluated: bigint; seconds: number; batches: number },
+  run: { evaluated: bigint; seconds: number; batches: number; evaluatedBy?: "gpu" | "host" },
 ): FrameStats {
   return {
     frame,
     evaluated: run.evaluated.toString(),
+    evaluatedBy: run.evaluatedBy,
     unitSum: accumulationSum(acc.lo, acc.hi).toString(),
     landed: acc.landed.toString(),
     litPixels: developed.litPixels,

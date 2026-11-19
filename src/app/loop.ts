@@ -14,6 +14,13 @@
  * Hooks run in the order they were pushed. renderFrame() is also what offline
  * capture calls to step the world at a fixed dt; while `offline` is true the
  * realtime tick keeps measuring fps but draws nothing.
+ *
+ * Two clocks. The world steps by `dt`, which the realtime tick caps at 1/30 s:
+ * below 30 fps the simulation runs in slow motion instead of taking steps too
+ * big to be stable. The camera and the pointer forces follow `wallDt`, the
+ * real time since the last frame, so the person's hand never goes into slow
+ * motion with the world: at 15 fps a drag, a flick or a W press still moves
+ * the camera as far per second as at 60.
  */
 import { measurePlanes } from "../core/budget";
 import type { CameraController, GpuContext } from "../core/contracts";
@@ -48,9 +55,17 @@ export function createFpsMeter(windowMs = 250): FpsMeter {
   };
 }
 
+/** Longest real-time step the camera and pointer take in one frame, so a hitch or a background tab is not one giant move. */
+const MAX_WALL_STEP = 0.1;
+
 export interface FrameInfo {
   /** Seconds simulated this frame. */
   dt: number;
+  /**
+   * Seconds of real time since the previous frame (capped at 0.1). Equal to `dt` except below
+   * 30 fps, where `dt` is capped lower. Use it for anything that follows the person, not the world.
+   */
+  wallDt: number;
   /** True while an offline render drives the loop. */
   offline: boolean;
 }
@@ -74,7 +89,7 @@ export interface FrameLoopDeps {
   fps: FpsMeter;
   /** Light per particle before exposure, read every frame. */
   brightness: () => number;
-  /** Packed pointer brushes for this frame (MAX_BRUSHES x BRUSH_FLOATS floats). */
+  /** Packed pointer brushes for this frame (MAX_BRUSHES x BRUSH_FLOATS floats). `dt` is real time. */
   brushes: (dt: number) => Float32Array;
 }
 
@@ -82,8 +97,12 @@ export interface FrameLoop {
   readonly hooks: FrameHook[];
   /** True while an offline render owns the loop: the realtime tick stops drawing. */
   offline: boolean;
-  /** Simulate and draw one frame, `dt` seconds after the previous one. */
-  renderFrame(dt: number): void;
+  /**
+   * Simulate and draw one frame, `dt` seconds after the previous one. `wallDt` is the real
+   * time that passed, for the camera and the pointer; leave it out and it is `dt`, which is
+   * what an offline render wants (its frames are evenly spaced whatever the clock says).
+   */
+  renderFrame(dt: number, wallDt?: number): void;
   /** Start the realtime requestAnimationFrame loop. */
   start(): void;
 }
@@ -99,8 +118,8 @@ export function createFrameLoop(deps: FrameLoopDeps): FrameLoop {
     hooks,
     offline: false,
 
-    renderFrame(dt) {
-      const info: FrameInfo = { dt, offline: loop.offline };
+    renderFrame(dt, wallDt = dt) {
+      const info: FrameInfo = { dt, wallDt, offline: loop.offline };
       time += dt;
       graph.resize();
       budget.adaptive.setViewport(graph.width, graph.height);
@@ -110,12 +129,12 @@ export function createFrameLoop(deps: FrameLoopDeps): FrameLoop {
         const e = hook.beforeCamera?.(info);
         if (typeof e === "number") exposure *= e;
       }
-      camera.update(dt);
+      camera.update(wallDt);
       for (const hook of hooks) hook.afterCamera?.(info);
 
       const viewProj = camera.viewProjection(graph.width / graph.height);
       // Pointer forces: hold still on a sheet to pull, right button or Shift to push.
-      const brushes = deps.brushes(dt);
+      const brushes = deps.brushes(wallDt);
       writeGlobals(gpu, { viewProj, time, dt, frame, brightness: deps.brightness() * exposure, brushes });
 
       const counts = budget.forFrame(info.offline).allocate({
@@ -133,11 +152,12 @@ export function createFrameLoop(deps: FrameLoopDeps): FrameLoop {
 
     start() {
       const tick = (now: number) => {
+        const elapsed = (now - last) / 1000;
         // Clamp dt so a background tab or a hitch does not explode the simulation.
-        const dt = Math.min((now - last) / 1000, 1 / 30);
+        const dt = Math.min(elapsed, 1 / 30);
         last = now;
         fps.tick(now);
-        if (!loop.offline) loop.renderFrame(dt);
+        if (!loop.offline) loop.renderFrame(dt, Math.min(elapsed, MAX_WALL_STEP));
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);

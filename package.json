@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
     "verify": "node src/verify/run.mjs",
     "verify:capture": "node src/capture/demo/verify.mjs",
     "record": "node src/manifest/node/record.mjs"

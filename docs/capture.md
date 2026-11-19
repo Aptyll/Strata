@@ -39,6 +39,16 @@ doing (idle drift, a flight in progress), advanced by the same fixed step, and
 you can still steer it during the render. Progress shows in one line at the
 bottom of the screen.
 
+Files keep the color theme (`T`, or the **theme** menu). A theme is a CSS
+filter on the canvas element (`src/ux/theme`), which the browser applies when
+it shows the canvas but which is not in the canvas pixels. Every capture reads
+the canvas element's computed filter and bakes it into the image after any
+downsampling, through a 2D canvas element with `ctx.filter` set
+(`OffscreenCanvas` ignores `url()` filters). Recordings read it every frame,
+so switching themes mid-recording shows up in the video. Pass `filter: null`
+to a still or recording to save the raw grey pixels, or a CSS filter string to
+force one.
+
 The rest of this document describes the module underneath, for use from other
 code.
 

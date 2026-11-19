@@ -38,9 +38,9 @@ export function validateBehavior(behavior: Behavior): string[] {
     if (spec.randomRange && (spec.randomRange[0] < spec.min || spec.randomRange[1] > spec.max || spec.randomRange[0] > spec.randomRange[1])) {
       issues.push(`${at} randomRange must lie inside min..max`);
     }
-    // A leftover reference is a typo that the WGSL compiler would only report at runtime.
   }
   if (!/\bfn\s+update\s*\(/.test(behavior.wgsl)) issues.push("wgsl must define fn update(p: Particle, i: u32) -> Particle");
+  // A param the WGSL reads but does not declare is a typo the WGSL compiler would only report at runtime.
   for (const m of behavior.wgsl.matchAll(/\bplane\.params\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
     if (!(m[1] in behavior.params)) issues.push(`wgsl reads plane.params.${m[1]}, which is not declared`);
   }

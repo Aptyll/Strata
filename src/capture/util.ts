@@ -161,6 +161,56 @@ export class Resampler {
   }
 }
 
+/**
+ * The CSS filter on a canvas element, or null when it has none. The app's
+ * color themes (src/ux/theme) are such a filter: the browser applies it when
+ * it shows the canvas, but it is not in the canvas pixels, so captures have to
+ * bake it in to save what is on screen.
+ */
+export function cssFilterOf(source: unknown): string | null {
+  if (typeof HTMLCanvasElement === 'undefined' || !(source instanceof HTMLCanvasElement)) return null;
+  const filter = getComputedStyle(source).filter;
+  return filter && filter !== 'none' ? filter : null;
+}
+
+/**
+ * Bakes a CSS filter into an image by drawing it into a 2D canvas element with
+ * `ctx.filter` set. It has to be an element: OffscreenCanvas accepts url()
+ * filters, which is what the themes use, and then ignores them. Use it on the
+ * final, already downsampled image, so a theme does not change how light is
+ * averaged.
+ */
+export class FilterStage {
+  readonly canvas: HTMLCanvasElement = document.createElement('canvas');
+  private readonly ctx: CanvasRenderingContext2D;
+
+  constructor() {
+    const ctx = this.canvas.getContext('2d', { alpha: true });
+    if (!ctx) throw new Error('capture: could not create a 2D context');
+    this.ctx = ctx;
+  }
+
+  /** Draws `source` at `width` x `height` through `filter` and returns the canvas holding the result. */
+  draw(source: CanvasImageSource, width: number, height: number, filter: string): HTMLCanvasElement {
+    setCanvasSize(this.canvas, width, height);
+    this.ctx.clearRect(0, 0, width, height);
+    this.ctx.filter = filter;
+    this.ctx.drawImage(source, 0, 0, width, height);
+    this.ctx.filter = 'none';
+    return this.canvas;
+  }
+
+  toBlob(type = 'image/png', quality?: number): Promise<Blob> {
+    return new Promise((resolve, reject) =>
+      this.canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('capture: could not encode the image'))),
+        type,
+        quality,
+      ),
+    );
+  }
+}
+
 // sRGB transfer function, as lookup tables: 8 bit code to linear, and linear
 // (in 1/4096 steps, ample for an 8 bit result) back to code.
 const TO_LINEAR = new Float32Array(256);
