@@ -6,5 +6,5 @@ The endless, seeded world of plane structures, and the streamer that keeps the p
 - **Key files:** `world.ts` (sectors and structures), `arrangements.ts` (layout recipes for groups of planes), `streamer.ts` (slot states: free, awake, asleep), `driver.ts` (turns streamer changes into `PlaneHost` add, remove and fade calls), `scene.ts` (world data to contract types), `layout.ts` (`scatterLayout` for the simple non-streaming layout), `rng.ts` (deterministic hashing), `math.ts`.
 - **`demo/`:** `/src/world/demo/`. **`test/`:** `node src/world/test/run.mjs`.
 - **Depends on:** `src/core/contracts.ts`, `src/math.ts`.
-- **Used by:** `src/main.ts`, the perf bench.
+- **Used by:** `src/main.ts` (`startStreamingWorld` for `?world`), `src/app/scene.ts` (`scatterLayout`), the perf bench.
 - **Status:** live in the app.

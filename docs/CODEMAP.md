@@ -53,7 +53,7 @@ build (`vite.config.ts`).
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
 | `src/ux` | camera rig and input, first-run experience, HUD, dice roll | `docs/ux/` |
-| `src/app` | small wiring modules for `src/main.ts` (key ownership, first-run opening) | `keys.ts` |
+| `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
 | `src/stateless` | 64-bit particle keys and randomness for stateless particles | `README.md` |
@@ -184,4 +184,90 @@ counter buffers with their formats, the offline pipeline._
 
 ## App shell, UX, world, interplane and capture
 
-_To be written by the app shell cleanup._
+### Boot: `src/main.ts` and `src/app/`
+
+`src/main.ts` is the boot sequence and nothing else; read it top to bottom.
+Each step is a small module in `src/app/`:
+
+| file | owns |
+| --- | --- |
+| `options.ts` | every URL option, parsed once into `AppOptions`; its header is the one table of `?` flags, including those other modules read |
+| `graph.ts` | the frame graph: `Simulation` plus every pass the app draws with, registered in one list; the rasterizer choice (`RASTERIZERS`: URL name, pass name, menu label); plane crossings |
+| `budget.ts` | which `ParticleBudget` runs: full (`src/core/budget.ts`) or adaptive (`src/perf/budget.ts`), and the target fps |
+| `scene.ts` | the current `Scene`, `loadScene` / `getScene`, the particle total, the generated layout (`buildScene`) |
+| `context.ts` | the `AppContext` handed to UI code; each member forwards to its owner |
+| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat and the app keys |
+| `keys.ts` | `KEYS`: every key, its owner and its label, plus the router that gives the camera every key nobody else owns |
+| `intro.ts` | runs the first-run opening on the app's camera and budget |
+| `loop.ts` | the frame loop, the fps meter and the hooks features plug into |
+
+Boot order, and where it matters:
+
+1. URL options, then the GPU (or the no-WebGPU fallback, `src/ux/experience/fallback.ts`).
+2. Frame graph, budget, key router, camera and its input, the parallax view, the scene host (loads the opening scene).
+3. `AppContext`, the streamed world (`?world`), panels, `window.strata` for the console.
+4. HUD, then pointer brushes, then the intro. Brushes must come after the HUD:
+   while a pointer is held they stop its moves from propagating, and the
+   HUD's idle timer listens for those moves on the same window listener phase.
+5. Frame loop and hooks, capture, record, `loop.start()`.
+
+HUD menu entries and keys sheet rows appear in registration order, so new
+entries go at the end of their group.
+
+### One frame (`src/app/loop.ts`)
+
+resize, `beforeCamera` hooks (the intro steers the camera and returns an
+exposure), camera update, `afterCamera` hooks (world streaming), Globals
+(view, time, brightness x exposure, pointer brushes), budget, `afterBudget`
+hooks (the intro thins counts), apply counts and run the graph, `afterFrame`
+hooks (HUD).
+
+Capture calls `renderFrame(dt)` itself for stills and offline video. While
+`loop.offline` is true (capture or the record job has the GPU) the realtime
+tick only measures fps. The frame is drawn through `view`, the parallax
+wrapper from `src/depth`; `camera` (the `EngineCamera` from `src/ux/camera`)
+is what input, scenes, the intro and the world move.
+
+### Recipes
+
+- **Esc menu setting**: a `hud.registerParam` in `registerMenu` in
+  `src/app/hud.ts`, at the end of its group. A feature that owns its settings
+  registers them in its own mount function instead, as capture does.
+- **Key**: a row in `KEYS` (`src/app/keys.ts`), registered from that row with
+  `hud.registerShortcut(shortcut(KEYS.x, run))`. The camera stops seeing it
+  automatically.
+- **Per-frame step**: push a `FrameHook` in `src/main.ts`. Edit the loop only
+  when the step needs data the hooks do not get.
+- **Pass**: a `src/passes/<name>.pass.ts` file is picked up by name; any other
+  pass goes in the list in `src/app/graph.ts`.
+- **URL option**: a field in `AppOptions` and a line in the table at the top of
+  `src/app/options.ts`.
+
+### `src/ux`
+
+| folder | what | used by |
+| --- | --- | --- |
+| `ux/camera` | the one camera: `CameraRig` (flights, focus, idle drift, picking), `EngineCamera` (the `CameraController` contract around it), `attachCameraInput` (mouse, touch, keys) | `src/main.ts` |
+| `ux/hud` | the HUD (`index.js`, plain JS typed by `index.d.ts`): dice, stats line, Esc menu, keys sheet, status line, jobs. `wire.ts` connects it to an `AppContext`: dice rolls, particle and brightness sliders, behavior params, the `#r=` share link | `src/app/hud.ts` |
+| `ux/behavior-ui` | `rollScene` (a seeded new scene) and `startRoll` (glides the live planes into it) | `ux/hud/wire.ts` |
+| `ux/theme` | color themes: a gradient map applied as one SVG filter on the canvas after the tone map, no per-particle cost; T cycles, `?theme=` shares | `src/app/hud.ts` |
+| `ux/experience` | the first-run experience. The app uses `intro-runner.ts` (through `src/app/intro.ts`), `engine-brushes.ts` (pointer forces), `capability.ts` and `fallback.ts` (no WebGPU). `createExperience` (`index.ts`) and `hints.ts` drive only the standalone demo, and `camera-rig.ts` is a thin front for `ux/camera` kept for that API | parts, from `src/main.ts` |
+
+Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm | node --input-type=module`.
+
+### `src/world`, `src/interplane`, `src/capture`
+
+- **World** (`docs/world.md`): `startStreamingWorld(app, options)` streams an
+  endless seeded world through `AppContext.addPlane` and `removePlane` around
+  the camera, ticked by an `afterCamera` hook. Loading any other scene clears
+  the streamed planes, and streaming carries on around the camera. Tests:
+  `node src/world/test/run.mjs`.
+- **Interplane** (`docs/interplane.md`): `createInterplane()` returns a compute
+  pass and a draw pass; `src/app/graph.ts` registers them after the
+  rasterizers. Off with `?interplane=0` or the "plane crossings" setting.
+- **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
+  adds P and V and the "capture" menu section, and reaches the app only
+  through `CaptureHost` (add a pass, render one frame, go offline, fix the
+  resolution). The record job (`src/record`) is separate: it renders
+  stateless particles with `src/offline` and borrows only the HUD and the
+  offline flag.
