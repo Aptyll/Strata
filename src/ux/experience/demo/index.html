@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>Strata: experience prototype</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+  #stage { position: fixed; inset: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair;
+           -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #count { position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom));
+           font: 400 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .18em;
+           color: #fff; opacity: 0; transition: opacity 1.6s ease; pointer-events: none;
+           font-variant-numeric: tabular-nums; }
+  #debug { position: absolute; top: 12px; left: 12px; font: 11px/1.5 ui-monospace, monospace; color: #6f6;
+           white-space: pre; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view"></canvas>
+  <div id="count" aria-hidden="true"></div>
+  <div id="debug" hidden></div>
+</div>
+<script type="module">
+// Standalone demo of the experience layer over a mock CPU world.
+//   ?fallback=1            show the WebGPU-unsupported screen
+//   ?intro=full|short|reduced
+//   ?planes=32&per=5000    world size
+//   ?debug=1               state readout
+import { createExperience, detectCapability, mountFallback, stackedPlanes } from '../index';
+import { createMockWorld } from './mock-world';
+
+const q = new URLSearchParams(location.search);
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('view');
+const countEl = document.getElementById('count');
+const debugEl = document.getElementById('debug');
+const cap = await detectCapability();
+
+if (q.has('fallback')) {
+  canvas.remove();
+  countEl.remove();
+  const status = q.get('fallback');
+  window.__fallback = mountFallback(stage, {
+    ...cap, webgpu: false,
+    status: ['no-api', 'no-adapter', 'insecure-context'].includes(status) ? status : 'no-api',
+  });
+} else {
+  const planeCount = +(q.get('planes') ?? (cap.touch ? 20 : 32));
+  const perPlane = +(q.get('per') ?? (cap.touch ? 2500 : 5000));
+  const planes = stackedPlanes(planeCount);
+  const heroIndex = planeCount >> 1;
+  const world = createMockWorld(planes, perPlane);
+  const xp = createExperience({
+    canvas, overlay: stage, planes, heroIndex,
+    touch: cap.touch, reducedMotion: cap.reducedMotion,
+    intro: q.get('intro') ?? undefined,
+    persist: !q.has('nopersist'),
+  });
+  window.__xp = xp;
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let image = null;
+  function resize() {
+    // The mock renderer is CPU-bound, so it draws at 1x. The real engine uses cap.maxPixelRatio.
+    canvas.width = Math.max(1, stage.clientWidth);
+    canvas.height = Math.max(1, stage.clientHeight);
+    image = ctx.createImageData(canvas.width, canvas.height);
+  }
+  resize();
+  new ResizeObserver(resize).observe(stage);
+
+  // The counter stands in for the real total: it pretends each mock particle
+  // is many, to show how the number should behave during the reveal.
+  const TOTAL = 256_000_000;
+  let shown = 0;
+  let running = true;
+  function tick(now) {
+    if (!running) return;
+    requestAnimationFrame(tick);
+    const f = xp.frame(now);
+    window.__frame = f;
+    world.step(f.dt, f.brushes);
+    world.draw(image, f, heroIndex);
+    ctx.putImageData(image, 0, 0);
+
+    let lit = 0;
+    for (let i = 0; i < planes.length; i++) lit += i === heroIndex ? f.heroBloom : f.planeGain[i];
+    const target = (lit / planes.length) * TOTAL * (f.sparkAlpha > 0 ? 1 : 0);
+    shown += (target - shown) * Math.min(1, f.dt * 6);
+    countEl.textContent = Math.max(f.sparkAlpha > 0.5 ? 1 : 0, Math.round(shown)).toLocaleString('en-US');
+    countEl.style.opacity = f.sparkAlpha > 0.5 ? (f.introDone ? 0.28 : 0.5) : 0;
+
+    if (q.has('debug')) {
+      debugEl.hidden = false;
+      const b = f.brushOutputs.filter(Boolean).map((o) =>
+        `${o.plane}:${o.strength.toFixed(2)}@${o.u.toFixed(2)},${o.v.toFixed(2)}`).join(' ');
+      debugEl.textContent = `phase ${f.phase}\nhover ${f.hoverPlane} focus ${f.focusedPlane}\n` +
+        `hint ${f.hint}\nbrush ${b}\nparticles ${world.count.toLocaleString()}\ndt ${(f.dt * 1000).toFixed(1)}ms`;
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    const visible = document.visibilityState === 'visible';
+    if (visible && !running) { running = true; requestAnimationFrame(tick); }
+    else if (!visible) running = false;
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'r') xp.replay('full'); });
+  requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>
