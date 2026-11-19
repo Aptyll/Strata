@@ -196,7 +196,6 @@ Limits to know about:
 
 - Loading another scene (dice roll, plane count slider) clears the streamed
   planes; the streamer then refills around the camera on top of that scene.
-- "Go to nearest plane" does not know about streamed planes yet.
 - None of this has been run on a GPU. The driver is tested against a fake host.
 
 ## Preview and tests

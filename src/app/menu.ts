@@ -77,16 +77,16 @@ export const MENU: MenuPage[] = [
       {
         group: "world",
         rows: [
-          { id: "particles", hint: "Particles stored on the GPU across all planes. Every one is stepped each frame." },
+          { id: "particles", hint: "Particles stored on the GPU, across all sheets. A sheet in view steps its particles every frame; a sheet out of view rests." },
           { id: "planes", hint: "Flat sheets in the world. Each one runs its own 2D particle system." },
-          { id: "interplane", hint: "Particles leave one plane and land on a neighbour." },
+          { id: "interplane", hint: "Particles leave one sheet and land on a neighbour." },
           { id: "share", label: "copy link to this world", hint: "Copies a link that replays this dice roll and color theme." },
         ],
       },
       {
         group: "camera",
         rows: [
-          { id: "autocam", hint: "The camera flies itself between dense planes. Any camera input takes over." },
+          { id: "autocam", hint: "The camera flies itself between dense sheets. Any camera input takes over." },
           { id: "parallax", hint: "The view slides a little with the pointer, for a sense of depth." },
         ],
       },

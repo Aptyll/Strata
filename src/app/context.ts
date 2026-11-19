@@ -40,7 +40,8 @@ export function createAppContext({ gpu, camera, sim, passes, scenes, fps }: AppC
     setRender: (patch) => void Object.assign(scenes.current.render, patch),
     stats: () => ({
       fps: fps.value,
-      particles: sim.planes.reduce((n, p) => n + p.activeCount, 0),
+      // Stepped this frame: a paused sheet (asleep in ?world) is drawn but not stepped, so it does not count.
+      particles: sim.planes.reduce((n, p) => n + (p.paused ? 0 : p.activeCount), 0),
       planes: sim.planes.length,
     }),
   };

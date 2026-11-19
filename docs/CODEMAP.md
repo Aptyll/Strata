@@ -42,6 +42,7 @@ verify, color life, the stateless laws demo and the design specimen.
 | `/src/ux/camera/demo/`, `/src/ux/experience/demo/`, `/src/ux/hud/demo/` | each folder | camera, first-run experience and HUD on their own |
 | `/src/ux/autocam/demo/` | `src/ux/autocam/demo/main.ts` | auto camera tour flying over dot-cloud sheets, no WebGPU |
 | `/src/ux/design/demo/` | `src/ux/design/demo/main.ts` | design tokens specimen: every type role, ink level, spacing step and timing in use, no WebGPU (also in the production build) |
+| `/src/ux/info/demo/` | `src/ux/info/demo/main.ts` | the information layer over a CPU stand-in engine: labelled counts, the sheet label, the full keys sheet, the about card; no WebGPU |
 
 ## Folders
 
@@ -60,7 +61,7 @@ verify, color life, the stateless laws demo and the design specimen.
 | `src/hue` | one color per sheet: a points rasterizer that tags each sheet's light with its hue, and a tint pass after the tone map | `sheetHue.ts` |
 | `src/interplane` | particles leaving one sheet's edge and arriving on a neighbour | `docs/interplane.md` |
 | `src/world` | sheet layouts, seeded generator, streaming sheets in and out around the camera | `docs/world.md` |
-| `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll | `docs/ux/` |
+| `src/ux` | camera rig and input, auto camera tour, first-run experience, HUD, dice roll, the words on screen (`info/`) | `docs/ux/` |
 | `src/app` | the app shell: the small modules `src/main.ts` boots from (URL options, frame graph, scene, HUD entries, key ownership, frame loop) | `src/main.ts`, then the section below |
 | `src/ui` | DOM panel registry (`*.panel.ts`, none yet) | `index.ts` |
 | `src/capture` | PNG stills, MP4 recording, offline video of the realtime world | `docs/capture.md` |
@@ -465,7 +466,7 @@ Each step is a small module in `src/app/`:
 | `budget.ts` | which `ParticleBudget` runs: full (`src/core/budget.ts`) or adaptive (`src/perf/budget.ts`), and the target fps |
 | `scene.ts` | the current `Scene`, `loadScene` / `getScene`, the particle total, the generated layout (`buildScene`) |
 | `context.ts` | the `AppContext` handed to UI code; each member forwards to its owner |
-| `hud.ts` | mounts the HUD and the color themes, then adds the app's menu entries, the "total" stat (shown, with the count named "active", only while the two differ) and the app keys |
+| `hud.ts` | mounts the HUD and the color themes, adds the app's menu entries and the app keys, then mounts the information layer (`src/ux/info`), which words the stats line ("simulated", and "stored" only while the two counts differ) |
 | `keys.ts` | `KEYS`: every key, its owner and its label, plus the router that gives the camera every key nobody else owns |
 | `menu.ts` | `MENU`: the Esc menu's table of contents. Every control by id with its page, section, position, name, one line hint and the switch it depends on; which sections start folded ("advanced"). `menuLayout()` hands it to the HUD. Also the menu's links to the benchmark, the offline renderer and the proof shots |
 | `intro.ts` | runs the first-run opening on the app's camera and budget |
@@ -527,6 +528,7 @@ is what input, scenes, the intro and the world move.
 | `ux/hud` | the HUD (`index.js`, plain JS typed by `index.d.ts`): dice, stats line, Esc menu, keys sheet, status line, jobs. `wire.ts` connects it to an `AppContext`: dice rolls, particle and brightness sliders, behavior params, the `#r=` share link | `src/app/hud.ts` |
 | `ux/behavior-ui` | `rollScene` (a seeded new scene) and `startRoll` (glides the live planes into it) | `ux/hud/wire.ts` |
 | `ux/design` | the design tokens every piece of chrome is styled with (`--st-*` custom properties: type roles, ink levels, spacing, motion, the theme accent); rules in `docs/ux/design.md` | chrome modules, as each is moved over |
+| `ux/info` | the information layer: what the words on screen say. Words the stats line ("1.21M simulated  2.00M stored  32 sheets"), the sheet label (the sheet the camera faces: name, one sentence, its count), the pointer and camera rows on the keys sheet, and the about card (I): simulated versus rendered. `words.ts` holds the vocabulary (`TERMS`) and the numbers the app may quote (`MEASURED`); rules in `docs/ux/information.md` | `src/app/hud.ts` |
 | `ux/theme` | color themes: a gradient map applied as one SVG filter on the canvas after the tone map, no per-particle cost; T cycles, `?theme=` shares | `src/app/hud.ts` |
 | `ux/experience` | the first-run experience. The app uses `intro-runner.ts` (through `src/app/intro.ts`), `engine-brushes.ts` (pointer forces), `capability.ts` and `fallback.ts` (no WebGPU). `createExperience` (`index.ts`) and `hints.ts` drive only the standalone demo, and `camera-rig.ts` is a thin front for `ux/camera` kept for that API | parts, from `src/main.ts` |
 
@@ -541,7 +543,7 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
   `npm test -- world`.
 - **Interplane** (`docs/interplane.md`): `createInterplane()` returns a compute
   pass and a draw pass; `src/app/graph.ts` registers them after the
-  rasterizers. Off with `?interplane=0` or the "plane crossings" setting.
+  rasterizers. Off with `?interplane=0` or the "sheet crossings" setting.
 - **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
   adds P and V and the "capture" menu section, and reaches the app only
   through `CaptureHost` (add a pass, render one frame, go offline, fix the

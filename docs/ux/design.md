@@ -184,13 +184,13 @@ particles.
 
 | region | lives there |
 | --- | --- |
-| top left | optional fps readout |
+| top left | optional fps readout. On a touch screen or a narrow window, the sheet label (under the readout) |
 | top center | Challenge mode only: the count, what it is, and its buttons |
 | top right | menu dot; the Esc menu opens under it |
-| center | title card, a message (loading, unsupported), the keys sheet, a card that takes over the screen |
+| center | title card, a message (loading, unsupported), the keys sheet, a card that takes over the screen (the about card behind I, the card when the GPU stops) |
 | bottom left | stats (H): count, time, fps. Challenge mode's readout |
 | bottom center | the die; a status line takes its place while a job runs; captions (hints) sit above it; an announcement above those. On the no-WebGPU page: its note |
-| bottom right | stats (H): behavior, plane |
+| bottom right | the sheet label: what the sheet the camera faces is doing (`src/ux/info`). On a touch screen the menu button takes this corner |
 
 New chrome picks a region from this table. If two things want the same
 region, one of them replaces the other (as the status line replaces the die);
@@ -215,6 +215,7 @@ Layers, back to front: `--st-z-caption` (text over the void), `--st-z-hud`
 | --- | --- | --- |
 | specimen | `src/ux/design/demo/` | yes |
 | HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | yes, through `--hud-*` properties that follow the tokens |
+| sheet label, about card, keys sheet groups | `src/ux/info/styles.ts` | yes |
 | hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | yes |
 | title card | `index.html` | yes, with fallbacks: it starts before the tokens arrive |
 | card when the GPU stops | `src/ux/recovery/card.ts` | yes |

@@ -77,7 +77,7 @@ Two very different modes, and the wording must keep them apart:
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
 | `hue/` | one color per sheet: a points rasterizer plus a tint pass (`?raster=hue`, off by default) |
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
@@ -157,8 +157,12 @@ defaults are heavy. Offline Node CLI: `src/offline/README.md`.
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
-  owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
+  owner (HUD, app, capture, theme, autocam, info, sound, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **Words on screen have one vocabulary.** Viewers read "sheet" (never
+  "plane"), and a particle count always carries "simulated", "stored" or
+  "rendered". The words, their definitions and the count formats live in
+  `src/ux/info/words.ts`; rules for new text: `docs/ux/information.md`.
 - **The Esc menu has a table of contents.** `MENU` in `src/app/menu.ts` lists
   every control by id: its page, section, position, name and a one line hint.
   Register the control where it is built, then give it a row there. Rarely

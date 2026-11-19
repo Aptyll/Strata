@@ -26,6 +26,7 @@ export type KeyOwner =
   | "capture" // registered by src/capture/app.ts with the rows main.ts passes in
   | "theme" // src/ux/theme/index.ts registers it itself; keep the row in sync
   | "autocam" // src/ux/autocam/index.ts registers the row main.ts passes in
+  | "info" // src/ux/info/index.ts registers the row src/app/hud.ts passes in
   | "panels" // src/ui/index.ts, only while a src/ui/*.panel.ts exists
   | "sound"; // src/audio/app.ts registers the row main.ts passes in
 
@@ -56,7 +57,7 @@ export const KEYS = {
   fewerParticles: { key: "[", code: "BracketLeft", owner: "app", label: "halve particles" },
   brighter: { key: "=", code: "Equal", owner: "app", label: "brighter" },
   dimmer: { key: "-", code: "Minus", owner: "app", label: "dimmer" },
-  nearestPlane: { key: "g", code: "KeyG", owner: "app", label: "go to nearest plane", camera: true },
+  nearestPlane: { key: "g", code: "KeyG", owner: "app", label: "go to nearest sheet", camera: true },
 
   screenshot: { key: "p", code: "KeyP", owner: "capture", label: "screenshot" },
   record: { key: "v", code: "KeyV", owner: "capture", label: "record video" },
@@ -64,6 +65,8 @@ export const KEYS = {
   nextTheme: { key: "t", code: "KeyT", owner: "theme", label: "next color theme" },
 
   autoCamera: { key: "c", code: "KeyC", owner: "autocam", label: "auto camera tour" },
+
+  about: { key: "i", code: "KeyI", owner: "info", label: "what is this" },
 
   sound: { key: "m", code: "KeyM", owner: "sound", label: "sound on or off" },
 
