@@ -69,6 +69,7 @@ build (`vite.config.ts`).
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
+| `src/site` | what the published site says about itself (build-time, nothing runs in the app): titles, descriptions and link previews for every shipped page from one table, the share card, `sitemap.xml`, the landing page's load budget | `README.md`, then `pages.ts` |
 | `src/math.ts` | column-major mat4 helpers that write into `out`, `planeModelMatrix`, quaternion helpers, `seededRandom` (mulberry32) | |
 | `docs/` | one doc per area, plus `explainers/rendering.html` | `architecture.md` |
 

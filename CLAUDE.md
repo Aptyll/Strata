@@ -82,6 +82,7 @@ Two very different modes, and the wording must keep them apart:
 | `record/` | launches a record-scale offline render from the app (`?record`) |
 | `proof/` | trillion proof shots (count-up, pull-back, loupe, dive, find) |
 | `verify/` | fast shader correctness checks (`*.verify.ts` picked up by name) |
+| `site/` | the published site's wrapper, build-time only: page titles and link previews from one table (`pages.ts`), share card, sitemap, landing page load budget |
 
 Frame stage order: `simulate`, `interplane`, `rasterize`, `depth`, `tonemap`,
 `ui`, `capture`. Exactly one rasterize pass is enabled at a time.
@@ -108,7 +109,9 @@ npm run record       # render manifests: make, check, reproduce (src/manifest)
 | `/src/verify/` | shader checks in a real browser |
 
 Production pages are listed in `vite.config.ts`; other `src/**/demo` pages are
-dev only. Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
+dev only. A production page also gets a row in `src/site/pages.ts`: its title,
+description and link preview come from there, not from tags in its HTML.
+Light tests: `npm test` runs every `*.test.js`, `*.test.mjs` or
 `*.test.ts` file under `src/` (drop one next to your code and it is picked up
 by name), and `npm run verify` runs the headless shader checks (about a second,
 needs Playwright). Offline Node CLI: `src/offline/README.md`.
