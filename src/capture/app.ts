@@ -11,7 +11,7 @@ import { TOKENS } from '../core/contracts';
 import type { Hud } from '../ux/hud/index.js';
 import { createCapturePass } from './capturePass';
 import { renderOffline } from './offline';
-import { isRecordingSupported, pickOutputFile } from './recorder';
+import { isRecordingSupported, pickOutputFile, type RecordingAudio, type RecordingResult } from './recorder';
 import { captureStillPNG } from './still';
 import { downloadBlob, timestampName } from './util';
 
@@ -36,6 +36,14 @@ export interface CaptureHost {
    * by (height / window height)^2, or captures taller than the window come out darker.
    */
   setResolution(size: { width: number; height: number } | null): void;
+  /**
+   * Optional soundtrack for offline video, muxed into the MP4. Called once
+   * right before each render starts (the realtime loop already stopped), with
+   * the video's frame rate; every frame rendered until the recording finishes
+   * or is cancelled belongs to it. Return null for a silent video. Live
+   * recordings (V) stay silent.
+   */
+  audio?: (fps: number) => RecordingAudio | null | undefined;
   /**
    * Keys for the two live actions, as HUD shortcut names. The app passes its
    * rows from src/app/keys.ts. Defaults: P screenshot, V record video.
@@ -216,24 +224,32 @@ export function mountCapture(host: CaptureHost): void {
         }
         await exclusive({ width: width * supersample, height: height * supersample }, async () => {
           abort = controller;
-          status(`Rendering ${width}x${height} at ${fps} fps`);
-          const result = await renderOffline({
-            canvas, width, height, fps, supersample,
-            duration: seconds,
-            step: () => {},
-            // The app simulates and draws in one call, so each video frame is one app frame.
-            render: () => host.frame(1 / fps),
-            flush: host.flush,
-            recording: { output },
-            signal: controller.signal,
-            onProgress: (p) =>
-              status(
-                `Rendering ${Math.round(p.progress * 100)}%  ${clock(p.time)} of ${clock(seconds)}  ` +
-                  `${clock(p.remaining)} left  (render video again to cancel)`,
-              ),
-          });
+          const audio = host.audio?.(fps) ?? null;
+          status(`Rendering ${width}x${height} at ${fps} fps${audio ? ' with sound' : ''}`);
+          let result: RecordingResult;
+          try {
+            result = await renderOffline({
+              canvas, width, height, fps, supersample,
+              duration: seconds,
+              step: () => {},
+              // The app simulates and draws in one call, so each video frame is one app frame.
+              render: () => host.frame(1 / fps),
+              flush: host.flush,
+              recording: { output, audio },
+              signal: controller.signal,
+              onProgress: (p) =>
+                status(
+                  `Rendering ${Math.round(p.progress * 100)}%  ${clock(p.time)} of ${clock(seconds)}  ` +
+                    `${clock(p.remaining)} left  (render video again to cancel)`,
+                ),
+            });
+          } catch (err) {
+            audio?.cancel?.(); // in case the render failed before the recorder took the soundtrack
+            throw err;
+          }
           if (result.blob) downloadBlob(result.blob, timestampName('strata', 'mp4'));
-          status(`Saved ${clock(result.duration)} of ${result.codec} video in ${clock(result.elapsed)}`, 6000);
+          const sound = result.audioCodec ? ' with sound' : '';
+          status(`Saved ${clock(result.duration)} of ${result.codec} video${sound} in ${clock(result.elapsed)}`, 6000);
         });
       })();
     },

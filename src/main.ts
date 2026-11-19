@@ -165,6 +165,8 @@ async function startApp(canvas: HTMLCanvasElement, options: AppOptions): Promise
       captureGain = size ? (size.height / Math.max(1, graph.height)) ** 2 : 1;
       graph.fixedSize = size;
     },
+    // Videos rendered while the sound is on carry it (src/audio).
+    audio: (fps) => sound.recordingAudio(fps),
     keys: { screenshot: KEYS.screenshot, record: KEYS.record },
   });
 

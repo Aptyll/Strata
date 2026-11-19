@@ -516,7 +516,7 @@ Camera self test: `npx esbuild src/ux/camera/selftest.ts --bundle --format=esm |
 - **Capture** (`docs/capture.md`): `mountCapture(host)` in `src/capture/app.ts`
   adds P and V and the "capture" menu section, and reaches the app only
   through `CaptureHost` (add a pass, render one frame, go offline, fix the
-  resolution). The record job (`src/record`) is separate: it renders
+  resolution, and optionally a soundtrack for rendered videos). The record job (`src/record`) is separate: it renders
   stateless particles with `src/offline` and borrows only the HUD and the
   offline flag.
 - **Audio** (`docs/audio.md`): `mountSound(host)` in `src/audio/app.ts` adds M

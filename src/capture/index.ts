@@ -6,7 +6,15 @@ export { capturePNG, captureStillPNG, captureTiledPNG, computeTiles } from './st
 export type { StillOptions, SupersampledStillOptions, TiledStillOptions, Tile, CaptureHook } from './still';
 
 export { startRecording, isRecordingSupported, pickOutputFile } from './recorder';
-export type { Recorder, RecordingOptions, RecordingResult, CaptureCodec, FrameImage } from './recorder';
+export type {
+  Recorder,
+  RecordingOptions,
+  RecordingResult,
+  RecordingAudio,
+  CaptureCodec,
+  CaptureAudioCodec,
+  FrameImage,
+} from './recorder';
 
 export { TextureReader } from './gpuReadback';
 export type { PendingRead } from './gpuReadback';
