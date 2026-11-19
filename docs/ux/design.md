@@ -157,12 +157,12 @@ particles.
 
 | region | lives there |
 | --- | --- |
-| top left | optional fps readout |
+| top left | optional fps readout. On a touch screen or a narrow window, the sheet label (under the readout) |
 | top right | menu dot; the Esc menu opens under it |
-| center | title card, a message (loading, unsupported), the keys sheet |
+| center | title card, a message (loading, unsupported), the keys sheet, the about card (I) |
 | bottom left | stats (H): count, time, fps. Challenge mode's readout |
 | bottom center | the die; a status line takes its place while a job runs; captions (hints) sit above it; an announcement above those |
-| bottom right | stats (H): behavior, plane |
+| bottom right | the sheet label: what the sheet the camera faces is doing (`src/ux/info`). On a touch screen the menu button takes this corner |
 
 New chrome picks a region from this table. If two things want the same
 region, one of them replaces the other (as the status line replaces the die);
@@ -182,6 +182,7 @@ they do not stack.
 | surface | file | uses the tokens |
 | --- | --- | --- |
 | specimen | `src/ux/design/demo/` | yes |
+| sheet label, about card, keys sheet groups | `src/ux/info/styles.ts` | yes |
 | HUD, Esc menu, keys sheet | `src/ux/hud/*.js` | not yet |
 | hints, no-WebGPU page | `src/ux/experience/hints.ts`, `fallback.ts` | not yet |
 | title card | `index.html` | not yet |

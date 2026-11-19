@@ -36,7 +36,9 @@ export const INFO_CSS = `
   bottom: var(--st-edge-bottom);
   max-width: min(calc(var(--st-u) * 84), calc(100% - var(--st-edge-left) - var(--st-edge-right)));
   text-align: right;
-  text-shadow: var(--st-halo);
+  /* A focused sheet fills the view, so this text usually sits on particles, not on the void:
+     the halo three times over, and nothing fainter than dim. */
+  text-shadow: var(--st-halo), var(--st-halo), var(--st-halo);
   opacity: 0;
   transition: opacity var(--st-slow) var(--st-ease-soft);
 }
@@ -51,7 +53,7 @@ export const INFO_CSS = `
 /* Tracked capitals end with a gap; pull it back so the name lines up with the text under it. */
 .si-sheet-name { ${TYPE.caption} color: var(--st-strong); margin-right: calc(-1 * var(--st-track-wide)); }
 .si-sheet-text { ${TYPE.body} margin: var(--st-space-1) 0; }
-.si-sheet-meta { ${TYPE.fine} }
+.si-sheet-meta { ${TYPE.fine} color: var(--st-dim); }
 .si-sheet[data-level="short"] .si-sheet-text, .si-sheet-text:empty { display: none; }
 
 /* ---- keys sheet: a second column for the pointer and the camera keys ----- */
@@ -165,14 +167,18 @@ export const INFO_CSS = `
   /* One column: the second group follows the first, so its heading needs its space back. */
   .si-cols > section + section > h2:first-child { margin-top: var(--st-space-6); }
 }
-@media (max-width: 520px), (pointer: coarse) {
-  /* A phone keeps its thumb-reach corner for the menu button; the label moves above the stats line. */
+@media (max-width: 899px), (pointer: coarse) {
+  /* The bottom of a small screen is taken (stats, the die, hints, the menu button), so the label
+     goes top left, clear of the menu dot in the other corner. */
   .strata-hud > .si-sheet {
-    right: auto; left: var(--st-edge-left);
-    bottom: calc(var(--st-edge-bottom) + var(--st-space-12));
+    top: var(--st-edge-top); bottom: auto;
+    left: var(--st-edge-left); right: auto;
+    max-width: min(calc(var(--st-u) * 84), calc(100% - var(--st-edge-left) - var(--st-edge-right) - var(--st-space-8)));
     text-align: left;
   }
   .si-sheet-name { margin-right: 0; }
+  /* Under the fps readout when "fps in corner" is on. */
+  .strata-hud:has(.sm-corner) > .si-sheet { top: calc(var(--st-edge-top) + var(--st-space-6)); }
 }
 @media (pointer: coarse) {
   /* The last lines must scroll clear of the round menu button (src/ux/mobile) in the corner. */

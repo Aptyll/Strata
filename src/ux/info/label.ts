@@ -1,6 +1,7 @@
 /**
- * The sheet label: a small caption in the bottom right corner that says what
- * one sheet is doing, like the label next to a picture on a wall.
+ * The sheet label: a small caption in the bottom right corner (top left on a
+ * small screen) that says what one sheet is doing, like the label next to a
+ * picture on a wall.
  *
  *   full    name, the behavior's one-sentence description, "sheet 7 of 32 ·
  *           62.5K particles simulated". Shown while the camera faces a sheet.
@@ -46,12 +47,13 @@ export function createSheetLabel(root: HTMLElement): SheetLabel {
     el,
     show(facts, level) {
       const line = `${sheetNumberLine(facts)} · ${sheetCountLine(facts)}`;
+      // Exposed before the name changes, so a screen reader hears the new name.
+      el.setAttribute("aria-hidden", "false");
       el.dataset.level = level;
       set(name, facts.name);
       set(text, facts.description);
       set(meta, line);
       el.classList.add("is-on");
-      el.setAttribute("aria-hidden", "false");
       return facts.name.length + line.length + (level === "full" ? facts.description.length : 0);
     },
     hide() {

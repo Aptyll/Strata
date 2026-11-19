@@ -79,10 +79,11 @@ The site opens straight into the simulation. Everything else sits behind a key.
 | `W` `A` `S` `D`, `Q` `E` | fly, hold Shift to go faster |
 | `,` `.` | previous or next sheet |
 | `R` | roll the dice: new behaviors, new system |
-| `H` | stats: particles, time, fps |
+| `H` | stats: particles simulated, sheets, time, fps |
+| `I` | what am I looking at: sheets, live counts, simulated versus rendered |
 | `Esc` | settings |
 | `F` | fullscreen |
-| `?` | every key |
+| `?` | every control: pointer, camera keys, shortcuts |
 | `[` `]` | halve or double the particle count |
 | `-` `=` | dimmer or brighter |
 | `G` | go to the nearest sheet |
