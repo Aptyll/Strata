@@ -42,11 +42,8 @@ jobs:
           # The site's full public address, for canonical links and link preview images (src/site).
           STRATA_SITE_URL: ${{ steps.pages.outputs.base_url }}/
 
-      # The rendering explainer is a standalone page; publish it next to the app.
-      - name: Add the explainer pages
-        run: |
-          mkdir -p dist/docs/explainers
-          cp docs/explainers/*.html dist/docs/explainers/
+      # The build also writes the standalone pages in docs/explainers to
+      # dist/docs/explainers (src/site/plugin.mjs), so dist is the whole site.
 
       - uses: actions/upload-pages-artifact@v4
         with:
