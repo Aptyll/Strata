@@ -14,6 +14,7 @@ import { create, globals } from "webgpu";
 import { CameraPath } from "../core/camera";
 import { ONE } from "../core/job";
 import { lawPosition, particleKey, draw, u01 } from "../core/laws";
+import { STATELESS_LAWS } from "../../stateless/laws";
 import { cameraBasis, planeHomography } from "../core/math";
 import { decodeGrayPng16, encodeGrayPng } from "../core/png";
 import { StatelessRenderer, accumulationSum } from "../core/renderer";
@@ -200,9 +201,12 @@ for (const splat of ["point", "bilinear"]) {
 }
 
 // ---- CPU cross-check --------------------------------------------------------
-for (const law of LAWS) {
+for (const law of [...LAWS, ...STATELESS_LAWS.map((l) => l.id)]) {
   const job = testJob();
-  job.planes = [{ ...job.planes[LAWS.indexOf(law)], particleCount: 200_000 }];
+  // src/stateless laws ride on the first sheet with their default params.
+  const core = LAWS.indexOf(/** @type {any} */ (law));
+  const stateless = STATELESS_LAWS.find((l) => l.id === law);
+  job.planes = [{ ...job.planes[Math.max(0, core)], law, params: stateless ? [...stateless.defaults] : job.planes[core].params, particleCount: 200_000 }];
   const frame = 2;
   const out = await renderOnce(job, {}, frame);
   // Reference: same hash and law in doubles, same projection, point splat.
@@ -234,7 +238,11 @@ for (const law of LAWS) {
   let l1 = 0;
   for (let i = 0; i < ref.length; i++) l1 += Math.abs(ref[i] - (out.lo[i] + out.hi[i] * 2 ** 32) / ONE);
   const moved = l1 / 2 / plane.particleCount;
-  check(`CPU cross-check, ${law}`, moved < 0.002, `${(moved * 100).toFixed(4)}% of particles in a different pixel`);
+  // Ribbons folds space (stretch 40 against at most 4 for the others), so the
+  // same f32 rounding moves about ten times as many particles across a pixel
+  // edge. A wrong formula would move most of them, not a fraction of a percent.
+  const limit = (stateless?.cost.stretch ?? 0) > 10 ? 0.005 : 0.002;
+  check(`CPU cross-check, ${law}`, moved < limit, `${(moved * 100).toFixed(4)}% of particles in a different pixel`);
 }
 
 // ---- resume -----------------------------------------------------------------
@@ -278,6 +286,15 @@ for (const splat of ["point", "bilinear"]) {
   // Different hashing for shutter and splat, so compare counts, not pixels.
   const rel = Math.abs(Number(a.landed - b.landed)) / Number(b.landed);
   check("trillion kernel: in-frame count matches offline kernel", a.landed === inGrid && rel < 0.01, `${a.landed} vs ${b.landed} (${(rel * 100).toFixed(3)}%)`);
+}
+{
+  // A src/stateless law through both kernels: same in-frame count.
+  const job = testJob();
+  job.planes = [{ ...job.planes[0], law: "galaxy", params: [...STATELESS_LAWS.find((l) => l.id === "galaxy").defaults] }];
+  const a = await renderOnce(job, { kernel: "trillion" });
+  const b = await renderOnce(job);
+  const rel = Math.abs(Number(a.landed - b.landed)) / Math.max(1, Number(b.landed));
+  check("stateless law (galaxy) on both kernels", b.landed > 0n && rel < 0.01, `${a.landed} vs ${b.landed}`);
 }
 {
   const job = testJob({ splat: "bilinear" });

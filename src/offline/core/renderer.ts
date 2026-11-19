@@ -13,6 +13,7 @@ import { cameraBasis, planeHomography, type CameraBasis } from "./math";
 import { BATCH_UNIFORM_BYTES, WORKGROUP_SIZE, accumulateShader } from "./shaders";
 import { TrillionKernel, type TrillionPlane } from "../../trillion/kernel";
 import { OFFLINE_LAWS } from "../../trillion/offlineLaws";
+import { STATELESS_LAWS } from "../../stateless/laws";
 
 /**
  * Which kernel adds particles to the grid.
@@ -182,7 +183,13 @@ export class StatelessRenderer {
     validateJob(job);
     const r = new StatelessRenderer(device, job, opts);
     if (r.kernel === "trillion") {
-      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws: OFFLINE_LAWS });
+      // Only the laws this job uses, so no pipeline is compiled for nothing.
+      const used = new Set<string>(job.planes.map((p) => p.law));
+      const laws = [
+        ...OFFLINE_LAWS.filter((l) => used.has(l.id)),
+        ...STATELESS_LAWS.filter((l) => used.has(l.id)).map((l) => ({ id: l.id, fn: l.fn, wgsl: l.wgsl })),
+      ];
+      r.tk = await TrillionKernel.create(device, { width: r.gridWidth, height: r.gridHeight, laws });
       r.tkRead = device.createBuffer({
         label: "offline trillion read",
         size: r.gridWidth * r.gridHeight * 8,
