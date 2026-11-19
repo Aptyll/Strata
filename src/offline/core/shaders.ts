@@ -76,6 +76,30 @@ fn add64(idx: u32, w: u32) {
   }
 }
 
+// Write combining for point splats. Each invocation evaluates perInvocation
+// consecutive particles and keeps one running (pixel, weight) pair: a
+// particle that lands on the same pixel as the one before it is added to the
+// pair instead of issuing its own atomic. The pair is flushed with one add64
+// when the pixel changes, before the weight could wrap, and at the end of the
+// invocation. Integer sums are exact, so the grid is bit-identical to one add
+// per particle. It pays where consecutive particles share a pixel (dense
+// cores, a world collapsed toward one pixel) and costs one compare elsewhere.
+var<private> runPix: u32 = 0u;
+var<private> runW: u32 = 0u;
+
+fn flushRun() {
+  if (runW != 0u) { add64(runPix, runW); }
+  runW = 0u;
+}
+
+fn combine(idx: u32, w: u32) {
+  if (idx != runPix || runW > 0xffffffffu - w) {
+    flushRun();
+    runPix = idx;
+  }
+  runW += w;
+}
+
 // Adds one particle to the grid. Returns true when its position is inside
 // the frame, whatever its weight.
 fn splat(pos: vec2f, key: Key) -> bool {
@@ -97,7 +121,7 @@ ${
     w = u32(f * 65536.0 + u01(draw(key, 7u)));
     if (w == 0u) { return true; }
   }
-  add64(u32(s.y) * B.gridWidth + u32(s.x), w);
+  combine(u32(s.y) * B.gridWidth + u32(s.x), w);
   return true;`
     : /* wgsl */ `
   // Particles just outside the frame still spread light onto its edge pixels.
@@ -151,6 +175,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_ind
     let t = B.time + B.shutterSpan * (u01(draw(key, 6u)) - 0.5);
     if (splat(${LAW_FN[law]}(key, t, p), key)) { landed++; }
   }
+  // Point splats leave their last run of light in registers until here.
+  flushRun();
   // One global atomic per workgroup, not per particle. At most
   // WORKGROUP_SIZE * perInvocation <= 2^18 per workgroup, so u32 is enough.
   atomicAdd(&wgLanded, landed);
