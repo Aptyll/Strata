@@ -18,7 +18,9 @@
 import { FULLSCREEN_VS, HASH_WGSL, pickHdrFormat } from './common';
 
 const UBO_SIZE = 112;
-const ROW_GROUPS = 16384;
+// Short rows: a dispatch is a rectangle, so up to one row of invocations runs
+// past the count and exits early. 256 groups keeps that under 65,536.
+const ROW_GROUPS = 256;
 const WORKGROUP = 256;
 
 const BATCH_WGSL = /* wgsl */ `

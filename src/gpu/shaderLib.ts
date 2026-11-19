@@ -5,10 +5,14 @@ export const PARTICLE_STRIDE = 16;
 export const WORKGROUP_SIZE = 256;
 /**
  * Workgroups per dispatch row. A plane with more particles than one row holds
- * (8,388,608) dispatches several rows, so the per-dimension workgroup limit
- * (65,535 by default) never caps a plane's size.
+ * (65,536) dispatches several rows, so the per-dimension workgroup limit
+ * (65,535 by default) never caps a plane's size. Rows are short on purpose:
+ * a dispatch is a rectangle, so up to one row of invocations runs past the
+ * count and exits early. With 256 groups that is under 65,536 wasted
+ * invocations; with 32,768 it was up to 8.4 million. 65,535 rows still reach
+ * 4.29 billion particles, the u32 index limit.
  */
-export const DISPATCH_ROW_GROUPS = 32768;
+export const DISPATCH_ROW_GROUPS = 256;
 
 /** Workgroup counts (x, y) that cover \`count\` particles. */
 export function dispatchSize(count: number): [number, number] {
