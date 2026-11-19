@@ -26,7 +26,9 @@
 
 import { behaviors, getBehavior } from '../../behaviors';
 import { scatterLayout, scatterRadius } from '../../world/layout';
-import { mat4LookAt, mat4Multiply, mat4Perspective, PerfEngine, requestPerfDevice } from '../index';
+import { requestGpuDevice } from '../../gpu/context';
+import { mat4LookAt, mat4Multiply, mat4Perspective } from '../../math';
+import { PerfEngine } from '../index';
 import { runSelfTest } from './selftest';
 
 interface BenchWorld {
@@ -151,7 +153,7 @@ async function setup(
 }
 
 async function main(): Promise<void> {
-  const device = await requestPerfDevice({ timestamps: flag('timer', true) });
+  const device = await requestGpuDevice({ timestamps: flag('timer', true) });
   device.lost.then((info) => fail(`WebGPU device lost (${info.reason}): ${info.message}`));
   device.addEventListener('uncapturederror', (e) => console.error('WebGPU error:', (e as GPUUncapturedErrorEvent).error.message));
   const format = navigator.gpu.getPreferredCanvasFormat();

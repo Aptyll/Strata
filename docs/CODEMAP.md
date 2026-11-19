@@ -62,7 +62,7 @@ build (`vite.config.ts`).
 | `src/record` | launches a record-scale offline render from the app's Esc menu or `?record` | `index.ts` |
 | `src/proof` | trillion proof shots built on the offline renderer | `README.md` |
 | `src/verify` | shader verify harness: compile, lint, run and compare with a CPU reference | `README.md` |
-| `src/math.ts` | column-major mat4 and quaternion helpers, `seededRandom` (mulberry32) | |
+| `src/math.ts` | column-major mat4 helpers that write into `out`, `planeModelMatrix`, quaternion helpers, `seededRandom` (mulberry32) | |
 | `docs/` | one doc per area, plus `explainers/rendering.html` | `architecture.md` |
 
 ## Which particle engine is which
@@ -120,7 +120,9 @@ CPU twins for the perf format are in `src/perf/packing.ts`.
 | the engine's Globals, Plane or Particle in WGSL, or their byte offsets | `src/gpu/shaderLib.ts` |
 | pcg hash, `u01`, fullscreen triangle, basic tone curve in WGSL | `src/gpu/wgsl.ts` |
 | a 2D dispatch that covers any count | `dispatchSize` and `DISPATCH_ROW_PARTICLES` in `src/gpu/shaderLib.ts` |
-| matrices, quaternions, a seeded CPU random | `src/math.ts` |
+| matrices, a plane's model matrix, quaternions, a seeded CPU random | `src/math.ts` |
+| a WebGPU device with the large buffer limits (and optional timestamps) | `requestGpuDevice` in `src/gpu/context.ts` |
+| a compute pipeline that logs WGSL errors with line numbers | `compileComputePipeline` in `src/gpu/context.ts` |
 | keys and randomness for stateless particles | `src/stateless/rng.ts` |
 | tone parameters, HDR format choice, render-side WGSL | `src/render/common.ts` |
 | a compile check for a shader you generate | a `*.verify.ts` file next to it, see `src/verify/README.md` |
