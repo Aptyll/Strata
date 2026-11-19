@@ -41,11 +41,7 @@ jobs:
       - name: Type check and build
         run: npm run build
 
-      # Seconds each, no GPU needed. Shader checks (npm run verify) need a
-      # browser with WebGPU and are not run here yet.
-      - name: World tests
-        run: node src/world/test/run.mjs
-      - name: Depth tests
-        run: node src/depth/test/run.mjs
-      - name: Stateless particle key tests
-        run: node src/stateless/test/run.mjs
+      # Every *.test.* file under src/, a few seconds, no GPU. Shader checks
+      # (npm run verify) need a browser with WebGPU and are not run here yet.
+      - name: Unit tests
+        run: npm test
