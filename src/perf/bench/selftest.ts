@@ -118,7 +118,9 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
 
   // --- CPU: ParticleBudget for the shared engine ---------------------------
   {
-    const b = new PerfBudget({ width: 1000, height: 1000, pixelDensity: 4 });
+    // A fake clock that jumps a full second per call, so every call is one governor step.
+    let clock = 0;
+    const b = new PerfBudget({ width: 1000, height: 1000, pixelDensity: 4, now: () => (clock += 1000) });
     const planes = [
       { capacity: 1_000_000, distance: 1, visible: true, screenCoverage: 0.5 },
       { capacity: 1_000_000, distance: 9, visible: true, screenCoverage: 0.01 },
@@ -131,6 +133,13 @@ export async function runSelfTest(device: GPUDevice): Promise<TestResult[]> {
     check('budget: backs off when fps is low', low[0] < 100_000 && low[0] >= 1, `${low.join(', ')} scale ${b.scale.toFixed(3)}`);
     for (let i = 0; i < 600; i++) b.allocate({ planes, fps: 60, targetFps: 60 });
     check('budget: recovers when fps holds', b.scale === 1, `scale ${b.scale}`);
+
+    // The app passes one averaged reading for every frame of a 250 ms window.
+    // Those 15 frames are one step: the cut must not compound.
+    let t = 0;
+    const g = new PerfBudget({ now: () => t });
+    for (let i = 0; i < 15; i++, t += 1000 / 60) g.allocate({ planes, fps: 45, targetFps: 60 });
+    check('budget: a stale fps reading cuts once, not once per frame', g.scale === 0.8, `scale ${g.scale}`);
   }
 
   // --- GPU ----------------------------------------------------------------

@@ -20,7 +20,7 @@ npm run dev
 | --- | --- |
 | `?n=50M&planes=64` | Live view of the real behaviors on a scatter layout. Drag to orbit, wheel to zoom, `[` `]` brightness. |
 | `?bench=1` | Automated sweep from 1M to 100M, with and without culling and LOD. Prints ms per frame. |
-| `?selftest=1` | 25 correctness checks on the real GPU device, including every registered behavior. |
+| `?selftest=1` | 26 correctness checks on the real GPU device, including every registered behavior. |
 
 More switches (`behaviors`, `seed`, `brightness`, `cull`, `lod`, `hidden`, `bilinear`, `density`, `sim`, `res`,
 `offscreen`, `timer`, `counts`, `batch`) are listed at the top of
@@ -186,8 +186,11 @@ same into a caller-owned encoder, for frame graphs.
   light per pixel in fixed point, honouring per-plane brightness.
 - **`PerfBudget`** implements `ParticleBudget` and is the app's "hold frame
   rate" option (`?adaptive=1`): a density cap per plane from `screenCoverage`,
-  zero for culled planes, and a global governor that backs off when fps drops
-  below target and recovers slowly. Note that the shared renderer does not
+  zero for culled planes, and a global governor that steps twice a second:
+  it cuts by up to 20% when fps is below target and grows about 10% a second
+  while it holds. It steps on a clock, not per frame, because the fps it reads
+  is a 250 ms average (stepping per frame compounded one stale reading into a
+  collapse). Note that the shared renderer does not
   brighten thinned planes, so a throttled plane gets dimmer. `PerfEngine` does
   compensate.
 - **`PerfEngine` as the main simulation** is not wired into `src/main.ts` yet.
