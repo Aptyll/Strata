@@ -2,56 +2,17 @@
 // described in src/core/contracts.ts. Nothing here is registered
 // automatically; whoever builds the frame graph adds the passes it wants.
 //
-// In the app today (src/main.ts):
+// In the app today:
 //   createDensityTonemapPass  the default tone map, built by src/passes/tonemap.pass.ts
-//   createDensitySplatPass    one of the rasterizers, picked with ?raster=splat
+//   createDensitySplatPass    one of the rasterizers (src/app/graph.ts), picked with ?raster=splat
 
-import type { FrameContext, GpuContext, Mat4, Pass, PlaneDesc } from '../core/contracts';
+import type { FrameContext, GpuContext, Mat4, Pass } from '../core/contracts';
+import { mat4Multiply, planeModelMatrix } from '../math';
 import { SplatAccumulator, type SplatBatch, type SplatMode } from './splat';
 import { DensityPost, type DensitySettings } from './post';
 
 type Dyn<T> = T | (() => T);
 const get = <T>(v: Dyn<T>): T => (typeof v === 'function' ? (v as () => T)() : v);
-
-/**
- * Plane-local to world: translate * rotate * scale(halfSize). Column major.
- * The same matrix the simulation uploads as `plane.model`
- * (fromTRS(position, rotation, [halfSize.x, halfSize.y, 1]) in src/math.ts),
- * written into `out` so a per-frame caller allocates nothing.
- */
-export function planeModelMatrix(d: PlaneDesc, out: Mat4 = new Float32Array(16)): Mat4 {
-  const [x, y, z, w] = d.rotation;
-  const [sx, sy] = d.halfSize;
-  out[0] = (1 - 2 * (y * y + z * z)) * sx;
-  out[1] = 2 * (x * y + z * w) * sx;
-  out[2] = 2 * (x * z - y * w) * sx;
-  out[3] = 0;
-  out[4] = 2 * (x * y - z * w) * sy;
-  out[5] = (1 - 2 * (x * x + z * z)) * sy;
-  out[6] = 2 * (y * z + x * w) * sy;
-  out[7] = 0;
-  out[8] = 2 * (x * z + y * w);
-  out[9] = 2 * (y * z - x * w);
-  out[10] = 1 - 2 * (x * x + y * y);
-  out[11] = 0;
-  out[12] = d.position[0];
-  out[13] = d.position[1];
-  out[14] = d.position[2];
-  out[15] = 1;
-  return out;
-}
-
-/**
- * out = a * b, column major. `out` may be the same array as `b` (each column
- * of b is read before that column of out is written), but not as `a`.
- */
-export function mulMat4(a: ArrayLike<number>, b: ArrayLike<number>, out: Mat4 = new Float32Array(16)): Mat4 {
-  for (let c = 0; c < 4; c++) {
-    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
-    for (let r = 0; r < 4; r++) out[c * 4 + r] = a[r] * b0 + a[4 + r] * b1 + a[8 + r] * b2 + a[12 + r] * b3;
-  }
-  return out;
-}
 
 export interface DensityTonemapPassOptions {
   /** Starting settings. Change them later through `pass.post.settings`. */
@@ -118,7 +79,8 @@ export interface DensitySplatPassOptions {
 export function createDensitySplatPass(opts: DensitySplatPassOptions = {}): Pass & { splat: SplatAccumulator | null } {
   let splat: SplatAccumulator | null = null;
   const batches: SplatBatch[] = [];
-  const models: Mat4[] = [];
+  const model: Mat4 = new Float32Array(16);
+  const mvps: Mat4[] = [];
   const pass = {
     name: 'density-splat',
     stage: 'rasterize' as const,
@@ -137,14 +99,14 @@ export function createDensitySplatPass(opts: DensitySplatPassOptions = {}): Pass
       batches.length = 0;
       frame.planes.forEach((plane, i) => {
         if (!plane.activeCount) return;
-        const model = planeModelMatrix(plane.desc, (models[i] ??= new Float32Array(16)));
+        planeModelMatrix(plane.desc, model);
         batches.push({
           buffer: plane.particles,
           count: plane.activeCount,
           stride: 16,
           offset: 0,
           dims: 2,
-          mvp: mulMat4(viewProj, model, model),
+          mvp: mat4Multiply((mvps[i] ??= new Float32Array(16)), viewProj, model),
           energy: energy * (plane.desc.brightness ?? 1),
           size,
         });
