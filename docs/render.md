@@ -229,10 +229,15 @@ bytes. Both exist for headless testing.
 
 ## What was verified, and what was not
 
-Checked in headless Chromium on a software GPU (SwiftShader): all shaders
-compile, the three splat modes produce matching images, output is monochrome,
-and total energy matches between modes. See the pull request for numbers.
+Checked in headless Chromium on a software GPU (SwiftShader), 1M particles at
+960 x 540: every shader compiles, `compute` and `quad` render the full chain
+(splat, trails, bloom, tone map) to images that agree to within 0.01 of mean
+8 bit brightness, the output is strictly monochrome, and 0.01% of pixels are
+saturated.
 
-Not checked: performance on real hardware. The software GPU says nothing
-about frame rates, so the claims above about which mode is faster are from
-how the techniques work, not from measurements here.
+Not checked: `point` mode was not rendered (it shares its projection and
+energy code with `quad`, but that run was cut short), the two frame graph
+passes in `passes.ts` have only been type checked because there is no engine
+to run them in yet, and nothing here was run on real hardware. The statements
+above about which mode is faster come from how the techniques work, not from
+measurements.
