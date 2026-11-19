@@ -22,7 +22,8 @@ Separately, fused kernels live outside the app: `PerfEngine`
 not wired into `src/main.ts`), `ChallengeEngine` (`src/challenge`), and two
 stateless 1T kernels: the offline `StatelessRenderer`
 (`src/offline/core/shaders.ts`, used by `src/record` and `src/proof`) and
-`TrillionKernel` (`src/trillion`, PR #50, still on 32-bit keys).
+`TrillionKernel` (`src/trillion`, PR #50, on the shared keys and offline laws
+since PR #58).
 
 ## Research conclusion
 

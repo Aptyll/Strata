@@ -27,7 +27,7 @@ the 32-bit `h0`. Mixing a batch number into a 32-bit hash does not help either:
 exactly 233 times. And with 32-bit keys, different sheets draw from the same
 2^32 keys, so they are reshuffles of each other rather than independent.
 
-## State on main (2026-11-19, after PR #51)
+## State on main (2026-11-19, after PR #58)
 
 Done:
 
@@ -38,19 +38,17 @@ Done:
   duplicates among 16.7M keys from four sheets (zero).
 - PR #47 switched `src/offline` (and through it `src/record` and `src/proof`)
   to those keys. The `trillion` preset is 1024 sheets of 976,562,500.
+- PR #58 switched `src/trillion` to the same keys and the offline laws.
 
 Open:
 
-1. **`src/trillion` (PR #50) still uses 32-bit keys.** Its laws are
-   `fn <fn>(key: u32, ...)`, and `TrillionPlane.count` says "at most 2^32
-   (keys are 32 bit, more would repeat positions)".
-2. **The per-sheet index is still a u32** (`validateJob` caps a sheet at
+1. **The per-sheet index is still a u32** (`validateJob` caps a sheet at
    2^32 - 1). Fine for 1024 sheets; a single sheet holding the trillion (for
    example a one-sheet deep zoom) needs a 64-bit index into `particleKey`.
-3. **Other stateless hashes**: the procedural mode of `src/challenge` and the
+2. **Other stateless hashes**: the procedural mode of `src/challenge` and the
    pattern shader in `src/render/demo` have their own hashes. Not record
    paths, but they must not be quoted as trillion counts.
-4. The engine's stateless particle kind (in progress in another thread) must
+3. The engine's stateless particle kind (in progress in another thread) must
    use the shared key from the start.
 
 Smaller pitfalls, same family: `f32(index)` is exact only to 16,777,216
@@ -59,12 +57,12 @@ Smaller pitfalls, same family: `f32(index)` is exact only to 16,777,216
 
 ## Steps
 
-1. Port `src/trillion` laws to `Key` and `particleKey` from
-   `src/stateless/rng.ts` (prepend `STATELESS_RNG_WGSL`), and drop its own
-   hash. Coordinate with the thread that owns `src/trillion`.
-2. Add one line to `docs/gpu-scale.md` under Precision: "Identity bits per
+1. Add one line to `docs/gpu-scale.md` under Precision: "Identity bits per
    distribution must be at least log2 of its particle count. Use
    `particleKey` from `src/stateless/rng.ts`; do not write a new particle hash."
+2. Make the engine's stateless kind import `particleKey` (check its branch or
+   PR before it merges), and label the `src/challenge` procedural mode as not
+   a record path.
 3. Only if a one-sheet trillion shot is wanted: take the index as
    `vec2u(lo, hi)` in `particleKey`, lift the 2^32 - 1 cap in
    `src/offline/core/job.ts`, and extend `src/stateless/test` with indices
@@ -72,13 +70,14 @@ Smaller pitfalls, same family: `f32(index)` is exact only to 16,777,216
 
 ## Files to touch
 
-- `src/trillion/*` (with its owner), `docs/gpu-scale.md`
+- `docs/gpu-scale.md`, the engine's stateless kind (with its owner)
 - only for step 3: `src/stateless/rng.ts`, `src/stateless/test/*`,
   `src/offline/core/job.ts`, `src/offline/core/shaders.ts`
 
 ## Done when
 
-- No stateless kernel on main defines its own particle hash; `grep -rn "key: u32" src/trillion` is empty.
+- Every record path (`src/offline`, `src/trillion`, the engine's stateless
+  kind) takes its keys from `src/stateless/rng.ts`.
 - `node src/stateless/test/run.mjs` passes.
 - If step 3 was done: a one-sheet job with more than 2^32 particles validates,
   and with the whole sheet in view its count-mode grid sum equals its particle
