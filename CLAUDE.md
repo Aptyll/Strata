@@ -73,12 +73,8 @@ Two very different modes, and the wording must keep them apart:
 | `world/` | sheet layouts, seeded endless world, streaming sheets around the camera |
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
-<<<<<<< HEAD
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
-=======
 | `hue/` | one color per sheet: a points rasterizer plus a tint pass (`?raster=hue`, off by default) |
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
->>>>>>> origin/main
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
