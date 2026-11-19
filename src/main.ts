@@ -340,4 +340,9 @@ async function start(): Promise<void> {
   requestAnimationFrame(tick);
 }
 
-start();
+// ?challenge opens Challenge mode (src/challenge) instead of the world.
+if (query.has("challenge")) {
+  void import("./challenge/main").then((m) => m.startChallenge(document.getElementById("canvas") as HTMLCanvasElement));
+} else {
+  start();
+}
