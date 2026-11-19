@@ -11,12 +11,18 @@ The first real numbers landed in PR #44 (`docs/perf.md`): the stateful
 `PerfEngine` at 1920 x 1080, brute force, runs about 11.6 billion particles
 per second (85 ps each, every particle simulated and splatted). Its author
 suspects the framebuffer atomics (an 8.3 MB grid, twice the 4 MB L2) for the
-time that memory traffic does not explain. The stateless 1T kernel at 4K is
-still unmeasured. It moves no particle data, but does more math per particle
-(a 64-bit Feistel key of about 27 integer ops, plus the law) and writes into a
-33 MB grid per word. Two 1T kernels exist on main: `src/offline/core/shaders.ts`
-(used by `src/record` and `src/proof`) and `src/trillion/kernel.ts` (PR #50).
-Measure the one the film uses.
+time that memory traffic does not explain.
+
+The stateless offline renderer has since been run in Chrome on the same card
+(`/src/offline/web/`; the Node runner cannot run there, because Windows
+Application Control blocks `dawn.node`): about **3.3 billion particles per
+second** with point splats on a frame-filling sheet, so about **5 minutes per
+1T 4K frame**. That figure is in `docs/story/how-it-was-built.md` but not yet
+in `docs/perf.md`, and it predates write combining (PR #65). It moves no
+particle data, but does more math per particle (a 64-bit Feistel key of about
+27 integer ops, plus the law) and writes into a 33 MB grid per word. Two 1T
+kernels exist on main: `src/offline/core/shaders.ts` (used by `src/record` and
+`src/proof`) and `src/trillion/kernel.ts` (PR #50).
 
 ## Research conclusion
 
@@ -27,14 +33,19 @@ seconds per frame = 10^12 / R          (R = particles evaluated per second)
 render hours      = frames * 10^12 / R / 3600
 ```
 
-| R (estimate range) | one 1T frame | 10 s at 60 fps (600 frames, preset `trillion`) | 10 s at 30 fps |
+| R | one 1T frame | 10 s at 60 fps (600 frames, preset `trillion`) | 10 s at 30 fps |
 | --- | --- | --- | --- |
+| 3.3 G/s (measured, Chrome) | 303 s | 50.5 h | 25.3 h |
 | 5 G/s | 200 s | 33.3 h | 16.7 h |
 | 10 G/s | 100 s | 16.7 h | 8.3 h |
 | 20 G/s | 50 s | 8.3 h | 4.2 h |
 
-The 11.6 G/s anchor makes the middle row plausible, but it is a different
-kernel at a quarter of the pixels.
+A 1T 4K *still* is about 5 minutes today; a 1T *clip* is a day or more. A
+clip needs the per-frame time cut by an order of magnitude, which is what the
+levers below are for. A proposal from the "Propose the fastest path to 1T on an
+RTX 2070" thread ("Fastest honest path to 1T particles on an RTX 2070")
+estimates 10 to 15 s per frame with stratified particle labels, register run
+merging and a shared-memory tile. Unmeasured.
 
 Ceilings on a 2070 (estimates from the spec sheet, to be replaced by the bench):
 
@@ -60,44 +71,39 @@ Levers, most valuable first:
 1. **30 fps instead of 60** halves the bill with no change to the picture per frame.
 2. **Point splat** (1 atomic per particle) instead of bilinear (4). `world.ts`
    already picks point above 2 x 10^10 particles.
-3. **Per-thread write combining.** Each invocation already loops over
-   `perInvocation` (64) consecutive particles in `src/offline/core/shaders.ts`.
-   Keep a running (pixel, weight) pair and only call `add64` when the pixel
-   changes. Exact. It only pays where consecutive particles share a pixel
-   (dense cores, the collapse shot), because ids are placed at random; elsewhere
-   it costs one compare.
+3. **Per-thread write combining.** Done in PR #65: each invocation keeps a
+   running (pixel, weight) pair and calls `add64` only when the pixel changes.
+   It pays where consecutive particles share a pixel (dense cores, the
+   collapse), because ids are placed at random. Re-measure after it.
 4. **Cheaper per-particle math.** Hoist anything that depends only on the
    plane out of the loop; skip the flux rounding draw when the weight is 1.
-5. **Coherent ids** (bigger change): order ids so consecutive particles land
-   near each other, then accumulate a tile in workgroup memory and flush once.
+5. **Coherent ids** (bigger change, the biggest expected win): order ids so
+   consecutive particles land near each other (stratified labels), then
+   accumulate a tile in workgroup memory and flush once. Needs an owner.
 6. **Shard** with `--shard i/n` if a second GPU becomes available.
 
 ## Steps
 
-1. On Noah's machine (the "Run Strata on the real GPU" thread has it):
-   ```sh
-   cd src/offline && npm install
-   npx tsx node/cli.mjs bench
-   ```
-   It prints R for each law and both splat modes at 3840 x 2160, plus the
-   clip times. Note the bench draws one full-frame sheet, so it measures the
-   scattered (close-up) case.
+1. On Noah's machine (the "Run Strata on the real GPU" thread has it), in
+   Chrome at `/src/offline/web/` (not the Node runner, which is blocked
+   there): re-measure R after PR #65 for each law at 3840 x 2160. A
+   frame-filling sheet measures the scattered (close-up) case.
 2. Also time one real frame of the `trillion` preset near the start (wide
-   shot) and one near the end (close-up). Run `npx tsx node/cli.mjs` with no
-   arguments for the frame and range flags. These two numbers bound the clip.
+   shot) and one near the end (close-up). These two numbers bound the clip.
 3. Fill the table above with measured values in `docs/perf.md` (new section
    "Offline stateless throughput") and in `src/offline/README.md`.
 4. Pick clip length and fps from a render budget Noah can live with. Rule:
    `frames = budget_hours * 3600 * R / 10^12`. Ask Noah with a decision card
    (2 to 4 options, one recommended), for example 10 s at 30 fps versus 5 s at 60 fps.
-5. If R is below 5 G/s, implement lever 3 (write combining) before rendering,
-   then bench again. It is a small, exact change.
+5. If a clip is wanted, give lever 5 (coherent ids and a shared tile) an
+   owner, calibrated with a four-mode bench (math only, random global atomics,
+   run merge, run merge plus tile).
 
 ## Files to touch
 
 - `docs/perf.md` (append a section), `src/offline/README.md` (numbers only)
-- `src/offline/core/shaders.ts` only if lever 3 is needed; coordinate with the
-  offline renderer thread, which owns `src/offline`.
+- `src/offline/core/shaders.ts` for lever 5; coordinate with the offline
+  renderer thread, which owns `src/offline`.
 
 ## Done when
 

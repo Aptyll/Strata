@@ -1,7 +1,22 @@
 # Brief: the video scale ladder and the one-pixel ending
 
-Owner (2026-11-19): unowned. It builds on `src/proof` (proof shots thread)
-and `src/offline` (offline renderer thread); coordinate with both.
+Owner (2026-11-19): the ladder itself is done in the Node runner (PR #59);
+the browser ladder and the one-pixel ending are unowned. It builds on
+`src/proof` (proof shots thread) and `src/offline` (offline renderer thread);
+coordinate with both.
+
+## State on main (after PR #68)
+
+- Done, PR #59: `npx tsx node/cli.mjs ladder` in `src/offline`
+  (`core/ladder.ts`) freezes one frame and renders it at 1M, 100M, 10B and 1T
+  by scaling every sheet's `particleCount` with exact largest-remainder math.
+  Exposure is locked per particle (white scales with the count). This is the
+  proportional prefix and locked exposure described below.
+- Done, PR #65: per-thread write combining in the accumulate shader.
+- Open: the Node runner cannot run on Noah's PC (Windows Application Control
+  blocks `dawn.node`), so the ladder needs a browser entry point
+  (`/src/offline/web/` or `/src/proof/web/`). The one-pixel collapse and the
+  one-pixel opening frame do not exist yet.
 
 ## Context
 
@@ -51,37 +66,31 @@ structure get smoother, and faint structure appear, rung by rung.
   exactly `10^12 * ONE`, a proof anyone can read (the loupe shot already reads
   one pixel's exact 64-bit count).
 - **The collapse frames are the slow ones.** All adds converge on a few
-  addresses, and same-address atomics serialize. Add per-thread write
-  combining in `src/offline/core/shaders.ts`: keep a running (pixel, weight)
-  across the particles of one invocation and call `add64` only when the pixel
-  changes. Exact, and up to 64 times fewer atomics once particles share pixels.
+  addresses, and same-address atomics serialize. Per-thread write combining
+  (PR #65: a running (pixel, weight) per invocation, `add64` only when the
+  pixel changes) cuts that by up to the particles per invocation, exactly.
   The 64-bit grid holds the result (10^12 x 65536 = 6.6 x 10^16, under 2^64).
 - **Lock exposure for the collapse too**, and let the final pixel clip to white.
 
 ## Steps
 
-1. In `src/proof/shots.ts`, add `scaledJob(job, fraction, name)` (every
-   sheet's count times `fraction`, rounded) and `ladderPasses(o, counts)` that
-   holds each rung for a second or two, with a locked white per rung and the
-   existing tally label.
+1. Browser ladder: add a "ladder" shot to `src/proof/shots.ts` and
+   `src/proof/web/main.ts` that calls `core/ladder.ts` (no new scaling code)
+   and holds each rung for a second or two with the existing tally label.
 2. Add `collapsePasses(o, frames, target)`: per-frame jobs with sheets scaled
    toward `target` by s(t), locked exposure, `weighting: "count"`.
-3. Add write combining to the accumulate shader. Keep
-   `npx tsx node/test.mjs` in `src/offline` bit-identical.
-4. Opening frame: one white pixel on black, the same pixel the collapse ends on.
-5. Render rungs 1 to 4 on any GPU first as a check; rungs 5 and 6 on the 2070.
+3. Opening frame: one white pixel on black, the same pixel the collapse ends on.
+4. Render rungs up to 10B on any GPU first as a check; 1T on the 2070
+   (about 5 minutes per 1T 4K frame in Chrome).
 
 ## Files to touch
 
 - `src/proof/shots.ts`, `src/proof/web/main.ts` (shot list)
-- `src/offline/core/shaders.ts` (write combining), `src/offline/core/grade.ts`
-  (locked white per pass, if not already expressible)
+- reuse `src/offline/core/ladder.ts`; change it only to export what the browser needs
 
 ## Done when
 
-- Rungs 1 to 4 render from one world with identical camera and seeds, every
-  sheet is visible at every rung, and the frames differ only in grain.
+- The ladder renders in Chrome from `/src/proof/web/` (or `/src/offline/web/`)
+  with the same rungs and locked exposure as the Node `ladder` command.
 - The collapse ends on one lit pixel whose 64-bit count divided by `ONE` is
   exactly the job's particle count.
-- Write combining leaves the offline self-checks bit-identical, and the bench
-  number does not drop.
