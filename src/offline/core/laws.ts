@@ -23,45 +23,24 @@
  *   vortex:    [bands, fill, circulation, coreRadius, extent, _, _, _]
  *   lissajous: [freqX, freqY, shells, thickness, rateX, rateY, shellPhase, extent]
  */
+import { STATELESS_RNG_WGSL, draw, pcg, particleKey, tri, u01, type Key } from "../../stateless/rng";
 import type { LawId } from "./job";
+
+export { draw, pcg, particleKey, tri, u01, type Key };
 
 export const LAW_INDEX: Record<LawId, number> = { kepler: 0, vortex: 1, lissajous: 2 };
 
-/** Shared by every shader in this folder: hashing and the batch uniform. */
-export const WGSL_COMMON = /* wgsl */ `
-const TAU = 6.283185307179586;
+/**
+ * Shared by every shader in this folder. The particle identity and random
+ * draws come from src/stateless/rng.ts: a 64-bit key from a Feistel network
+ * on (plane seed, index), so every particle in the world is distinct by
+ * construction as long as plane seeds are unique (validateJob checks that).
+ */
+export const WGSL_COMMON = STATELESS_RNG_WGSL;
 
-// PCG output permutation used as a u32 -> u32 hash. Bijective.
-fn pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-
-// Uniform float in [0, 1) from the top 24 bits. Exact in f32.
-fn u01(h: u32) -> f32 {
-  return f32(h >> 8u) * (1.0 / 16777216.0);
-}
-
-// Triangular distribution on (-1, 1), variance 1/6, from one hash.
-fn tri(h: u32) -> f32 {
-  return (f32(h & 0xffffu) + f32(h >> 16u)) * (1.0 / 65536.0) - 1.0;
-}
-
-// The particle's identity: index mixed with the plane seed.
-fn particleKey(i: u32, seed: u32) -> u32 {
-  return pcg(pcg(i) + seed);
-}
-
-// The k-th independent random draw of a particle.
-fn draw(key: u32, k: u32) -> u32 {
-  return pcg(key + k * 0x9e3779b9u);
-}
-`;
-
-/** Defines `fn lawPosition(law: u32, key: u32, t: f32, p: array<f32, 8>) -> vec2f`. */
+/** Defines `fn lawPosition(law: u32, key: Key, t: f32, p: array<f32, 8>) -> vec2f`. */
 export const WGSL_LAWS = /* wgsl */ `
-fn lawKepler(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
+fn lawKepler(key: Key, t: f32, p: array<f32, 8>) -> vec2f {
   let ecc = clamp(p[0] + p[6] * tri(draw(key, 3u)), 0.0, 0.6);
   let u = u01(draw(key, 0u));
   // Apocenter a * (1 + ecc) stays inside the sheet.
@@ -87,7 +66,7 @@ fn lawKepler(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
   return vec2f(x * co - y * so, x * so + y * co);
 }
 
-fn lawVortex(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
+fn lawVortex(key: Key, t: f32, p: array<f32, 8>) -> vec2f {
   let bands = max(1.0, floor(p[0]));
   let j = floor(u01(draw(key, 0u)) * bands);
   // A ruled sheet: soft-edged stripes along y.
@@ -102,7 +81,7 @@ fn lawVortex(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
   return vec2f(x0 * c - y0 * s, x0 * s + y0 * c) * p[4];
 }
 
-fn lawLissajous(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
+fn lawLissajous(key: Key, t: f32, p: array<f32, 8>) -> vec2f {
   let tau = TAU * u01(draw(key, 0u));
   let shells = max(1.0, floor(p[2]));
   let j = floor(u01(draw(key, 1u)) * shells);
@@ -114,7 +93,7 @@ fn lawLissajous(key: u32, t: f32, p: array<f32, 8>) -> vec2f {
   return vec2f(amp * sin(ax), amp * sin(ay));
 }
 
-fn lawPosition(law: u32, key: u32, t: f32, p: array<f32, 8>) -> vec2f {
+fn lawPosition(law: u32, key: Key, t: f32, p: array<f32, 8>) -> vec2f {
   switch law {
     case 0u: { return lawKepler(key, t, p); }
     case 1u: { return lawVortex(key, t, p); }
@@ -127,20 +106,10 @@ fn lawPosition(law: u32, key: u32, t: f32, p: array<f32, 8>) -> vec2f {
 
 const TAU = 6.283185307179586;
 
-export function pcg(v: number): number {
-  const s = (Math.imul(v, 747796405) + 2891336453) >>> 0;
-  const w = Math.imul(((s >>> ((s >>> 28) + 4)) ^ s) >>> 0, 277803737) >>> 0;
-  return ((w >>> 22) ^ w) >>> 0;
-}
-export const u01 = (h: number): number => (h >>> 8) / 16777216;
-export const tri = (h: number): number => ((h & 0xffff) + (h >>> 16)) / 65536 - 1;
-export const particleKey = (i: number, seed: number): number => pcg((pcg(i) + seed) >>> 0);
-export const draw = (key: number, k: number): number => pcg((key + Math.imul(k, 0x9e3779b9)) >>> 0);
-
 const wrapAngle = (a: number): number => a - TAU * Math.round(a / TAU);
 const clamp = (x: number, lo: number, hi: number): number => Math.min(Math.max(x, lo), hi);
 
-export function lawPosition(law: LawId, key: number, t: number, p: number[]): [number, number] {
+export function lawPosition(law: LawId, key: Key, t: number, p: number[]): [number, number] {
   switch (law) {
     case "kepler": {
       const ecc = clamp(p[0] + p[6] * tri(draw(key, 3)), 0, 0.6);
