@@ -199,7 +199,7 @@ Settings (`post.settings.tone`):
 | `curve` | `log` | `log`: `log(1+x)/log(1+white)`. `power`: `(x/white)^power`. `linear`: `x/white` |
 | `power` | 0.5 | exponent for `power` |
 | `display` | `soft` | `soft`: identity up to 0.75, then a smooth shoulder. `filmic`: ACES style fit with a toe, more contrast, sparse dust sinks toward black. `clip`: hard clamp |
-| `dither` | 1 | triangular noise in 8 bit steps; stops banding in dark gradients |
+| `dither` | 1 | triangular noise in 8 bit steps, added to the sRGB value; stops banding in dark gradients. It shrinks to the distance from black or white, so black stays exactly 0 and neither end is biased |
 
 `white` is the control that matters most. A good starting point is a multiple
 of the mean density, around `24 * particles * energy / pixels`; the demo does
