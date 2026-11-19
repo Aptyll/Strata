@@ -17,6 +17,12 @@ motion (see `core/laws.ts`):
 | `vortex` | tracers in a steady circular shear flow winding a ruled sheet |
 | `lissajous` | two-dimensional harmonic oscillators flowing along nested figures |
 
+Jobs can also use the laws in `src/stateless/laws` by id: `veil`, `galaxy`,
+`web` and `ribbons`. They run on both kernels, and the self-checks compare
+each one against its double-precision mirror. The `alive_preview` and
+`alive_trillion` presets (1T, 4K, 24 fps, 10 s) draw their sheets from them.
+None of them has been timed on a real GPU yet.
+
 This is honest work per particle (a hash, an orbit solve, a projection and an
 atomic add), but it is not a time-stepped simulation with interactions. The
 default label burned into the video says so.
@@ -57,7 +63,8 @@ npx tsx node/cli.mjs render --preset trillion    # 1e12 particles, 4K60, 10 s
 npx tsx node/cli.mjs encode --out out/trillion
 ```
 
-Presets: `smoke`, `preview`, `billion`, `ten_billion`, `trillion`, plus three
+Presets: `smoke`, `preview`, `billion`, `ten_billion`, `trillion`, `alive_preview`,
+`alive_trillion`, plus three
 hand-placed hero compositions that default to a 1T 4K still (`core/compositions.ts`):
 `heroA` (close, four sheets, one edge-on as a line of light), `heroB` (a
 cathedral stack of floors), `heroC` (the camera inside a cloud of sheets).
@@ -114,9 +121,8 @@ counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
 splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
 u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
 flux weighting becomes a per-sheet keep probability from the sheet center's
-depth, and `evaluated` is summed by the host from dispatch sizes (the stats
-JSON says `"evaluatedBy": "host"`, and the default label says "dispatched"
-instead of "evaluated"). Camera motion blur is in the offline kernel only; the
+depth. Both kernels count `evaluated` and `landed` on the GPU. Camera motion
+blur is in the offline kernel only; the
 trillion kernel uses the mid-shutter camera. `bench --kernel both` compares them on one
 machine. The page has the same choice.
 
