@@ -8,7 +8,7 @@ Research briefs (what to build, from the papers and notes) live one folder up in
 
 | ID | Finding | Evidence | Severity | Owner (folder) | Status |
 | --- | --- | --- | --- | --- | --- |
-| [V01](V01-edge-on-sheets-saturate.md) | Sheets seen edge-on collapse into saturated white needles | `engine/first-render.png`, 1T frames (worst in `trillion-A.png`) | medium | `src/perf`, `src/challenge`, `src/render`, `src/passes`, `src/depth`, `src/offline` | look decision for Noah. Until he chooses, keep true density (no change) |
+| [V01](V01-edge-on-sheets-saturate.md) | Sheets seen edge-on collapse into saturated white needles | `engine/first-render.png`, 1T frames (worst in `trillion-A.png`) | medium | `src/perf`, `src/challenge`, `src/render`, `src/passes`, `src/depth`, `src/offline` | decided: keep true density, no change (Noah, 01:59 UTC). Handle it with framing |
 | [V02](V02-tone-curve-lifts-mid-greys.md) | The realtime tone curve lifts one particle to mid-grey and squeezes dense structure | shader arithmetic, `render/density-demo-1M.png`, `engine/first-render.png` | medium | `src/render`, `src/passes`, `src/challenge` | open |
 | [V03](V03-dense-frames-come-out-flat.md) | Dense frames come out flat because auto exposure has no black floor | `render/counts-auto-exposure.png`, 1T frames | high for the 1T video, medium for the app | `src/render/counts.ts`, `src/offline/core/grade.ts` | 1T part done: contrast 256 (Noah, 01:39 UTC) in PR #67. `CountToneMapper` floor open |
 | [V04](V04-depth-haze-lifts-the-void.md) | Depth cues fix the blown core but fill the void with grey haze | `docs/depth/cues-off.jpg`, `cues-on.jpg` | medium (off by default) | `src/depth` | open |
