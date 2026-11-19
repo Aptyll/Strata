@@ -220,7 +220,10 @@ await captureTiledPNG({
 Supersampling matters for this project in particular: with more particles
 than pixels, a 1x render keeps one sample per pixel and aliases, while a
 supersampled one averages every sub-pixel sample into the final pixel.
-Downscaling is done in successive halvings, so it is a true box filter.
+Whole-factor downscaling (2x, 3x, ...) is a box filter computed in linear
+light, so one lit subpixel among dark ones keeps its share of the light
+instead of being crushed toward black, as averaging sRGB codes would do.
+Other ratios fall back to `drawImage` in successive halvings.
 
 `captureStillPNG` is limited by the GPU's maximum texture size
 (`maxRenderSize`, default 8192). Beyond that, `captureTiledPNG` renders the
