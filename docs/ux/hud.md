@@ -58,6 +58,13 @@ Stats stay on once asked for, idle or not, since asking for them is a
 deliberate act. The choice is remembered across visits. On touch screens the
 same switch is the `stats` button in the menu footer.
 
+The HUD itself knows nothing about Strata: it shows the numbers it is given. In
+the app, the information layer (`src/ux/info`, `docs/ux/information.md`) gives
+those numbers their words ("1.21M simulated  2.00M stored  32 sheets"), puts a
+label for the sheet the camera faces in the bottom right corner, adds the
+pointer gestures and camera keys to the keys sheet, and adds the about card
+behind `I`.
+
 ## The die
 
 A 28 px outlined square with pips. Hover tilts it a few degrees. Pressing it

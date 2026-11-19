@@ -77,7 +77,7 @@ Two very different modes, and the wording must keep them apart:
 | `interplane/` | particles leaving one sheet and landing on another |
 | `depth/` | depth cues: settings and WGSL used by the compute rasterizer (`?depth=1`) and the debug sprites (`?raster=sprites`); parallax `?parallax=1`; all off by default |
 | `hue/` | one color per sheet: a points rasterizer plus a tint pass (`?raster=hue`, off by default) |
-| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with) |
+| `ux/` | `camera/`, `autocam/` (C auto camera tour), `hud/` (H stats, Esc settings), `experience/` (intro), `behavior-ui/` (R dice), `design/` (tokens all chrome is styled with), `info/` (the words on screen: labelled counts, sheet label, I about card), `returning/` (second visit on: N today's world, K keep a world, Backspace previous world, "what's new" lines) |
 | `ui/` | panel registry (`<id>.panel.ts`) |
 | `capture/` | PNG stills and MP4 video (`docs/capture.md`) |
 | `audio/` | generative soundtrack: live sound driven by the scene (off by default, M), offline render to WAV in step with video frames (`docs/audio.md`) |
@@ -157,13 +157,22 @@ defaults are heavy. Offline Node CLI: `src/offline/README.md`.
   from `src/stateless/rng.ts` (Feistel, bijective, tested). Draw numbers
   `k = 0..5` belong to laws; `6` and `7` belong to the offline runner.
 - **Keys have owners.** `KEYS` in `src/app/keys.ts` lists every key, its
-  owner (HUD, app, capture, theme, autocam, panels) and label; the camera gets every key not
+  owner (HUD, app, capture, theme, autocam, info, returning, sound, panels) and label; the camera gets every key not
   in it. A new shortcut gets a row there and is registered from that row.
+- **Words on screen have one vocabulary.** Viewers read "sheet" (never
+  "plane"), and a particle count always carries "simulated", "stored" or
+  "rendered". The words, their definitions and the count formats live in
+  `src/ux/info/words.ts`; rules for new text: `docs/ux/information.md`.
 - **The Esc menu has a table of contents.** `MENU` in `src/app/menu.ts` lists
   every control by id: its page, section, position, name and a one line hint.
   Register the control where it is built, then give it a row there. Rarely
   needed controls go in the page's folded "advanced" section, and six page
   tabs is all that fits on one line.
+- **Tell returning visitors what is new.** When you ship something a visitor
+  can do, append one line to `NEWS` in `src/ux/returning/news.ts` ("color
+  themes", "press T"). Append only: a visitor's record stores how many lines
+  they were told. Today's world only replaces the opening on the plain
+  address; any query other than `?theme=` is left alone (`docs/ux/returning.md`).
 - **Chrome is styled with the design tokens.** Fonts, sizes, text opacities,
   spacing and timings of anything on screen come from `src/ux/design` as
   `var(--st-*)`; no literal fonts, alphas or durations in new UI. Rules and

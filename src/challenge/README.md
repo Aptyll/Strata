@@ -168,6 +168,26 @@ by nested compression waves (caustics), or orbits on nested ellipses (a
 density-wave disc). Particle ids are hashed so that no two particles are
 copies of each other.
 
+## Is the kernel slower over time? (A/B)
+
+One rerun on the RTX 2070 showed about 2x more GPU time per particle than an
+earlier run, with the kernels unchanged. The leading guess is atomic
+contention, not code: same-pixel `atomicAdd`s serialize, and over a run the
+wells and filaments crowd particles onto fewer pixels, while the idle orbit
+turns sheets toward edge-on. That is a guess until measured. To check it on a
+real GPU:
+
+1. `/?challenge&count=100M&still=1`, note `gpuMs` (press `C`) at about 5 s
+   and again at about 90 s. Then the same without `still=1`.
+2. Repeat both with `&agg=1`, which merges same-pixel hits inside a subgroup
+   before the atomic (needs the `subgroups` feature, otherwise it is ignored
+   and the JSON says `"aggregate": false`).
+
+If `gpuMs` grows with run time at a fixed count, it is contention. If `agg=1`
+then helps, it can become the default. The aggregated path writes a
+bit-identical accumulation buffer (checked on the software GPU, both modes,
+flat and distance weights); only the number of atomics changes.
+
 ## Relation to `src/perf`
 
 `src/perf` (PerfEngine) arrived at the same core idea independently: 8 byte

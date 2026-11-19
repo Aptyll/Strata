@@ -4,15 +4,18 @@
  * color themes (src/ux/theme: a "theme" menu section and T), then adds what
  * only the app knows about:
  *
- *   menu      planes, the rasterizer choice, the look (bloom, trails, white
+ *   menu      sheets, the rasterizer choice, the look (bloom, trails, white
  *             point, contrast, depth cues, sub-pixel splats), pointer
- *             parallax, plane crossings, performance (hold frame rate, target
+ *             parallax, sheet crossings, performance (hold frame rate, target
  *             fps, challenge)
- *   stats     "total": every particle in the world, shown (and the HUD's own
- *             count named "active") only while the budget pauses some sheets
- *   keys      ] [ particles, = - brightness, G nearest plane (rows in ./keys.ts)
+ *   keys      ] [ particles, = - brightness, G nearest sheet (rows in ./keys.ts)
  *
- * With ?world the planes and particles sliders and ] [ are left out: the
+ * Last, the information layer (src/ux/info) gives the stats line its words
+ * ("1.20M simulated  2.00M stored  32 sheets", the second count only while
+ * some sheets rest) and adds the sheet label, every control behind ? and the
+ * about card behind I.
+ *
+ * With ?world the sheets and particles sliders and ] [ are left out: the
  * streamer sizes that world. Options the URL sets explicitly (?raster, ?depth,
  * ?subpixel, ?parallax, ?interplane, ?adaptive, ?fps) are not overridden by
  * saved settings.
@@ -27,8 +30,9 @@ import type { AppContext } from "../core/contracts";
 import type { ParallaxCamera } from "../depth";
 import type { DensitySettings } from "../render";
 import type { EngineCamera } from "../ux/camera";
-import { formatCount, formatExact, type Hud } from "../ux/hud/index.js";
+import type { Hud } from "../ux/hud/index.js";
 import { mountHud } from "../ux/hud/wire";
+import { mountInfo } from "../ux/info";
 import { mountThemes } from "../ux/theme";
 import type { BudgetChoice } from "./budget";
 import type { RenderGraph } from "./graph";
@@ -77,42 +81,15 @@ export function mountAppHud({ app, canvas, scenes, render, budget, camera, view,
     // Particles stay where they are and start obeying the new rule, instead of a hard cut.
     transition: { swapBehavior: (plane, target) => render.sim.setBehavior(plane, target) },
   });
-  hud.defineStat("total", { label: "total", format: formatCount });
   mountThemes(hud, canvas); // color themes: Esc menu, T to cycle, ?theme=red
 
   registerMenu(hud, { scenes, render, budget, view, options });
   registerMenuLinks(hud); // the benchmark, the offline renderer and the proof shots pages
   registerKeys(hud, { scenes, camera, options });
+  // What the words on screen say: labelled counts, the sheet label, every control behind ?, about behind I.
+  mountInfo({ hud, app, canvas, rig: camera.rig, key: KEYS.about });
 
-  // The HUD's own count ("particles", from app.stats()) is what is being stepped;
-  // "total" is every particle in the world. They differ only while the budget
-  // pauses sheets, so show one number when they read the same, and otherwise
-  // "1.20M active  2.00M total".
-  let split: boolean | undefined;
-  const refreshCounts = () => {
-    const active = app.stats().particles;
-    const total = scenes.total;
-    const nowSplit = formatCount(active) !== formatCount(total);
-    if (nowSplit !== split) {
-      split = nowSplit;
-      // Redefining a stat resets it, so repeat the HUD's own format and tooltip.
-      hud.defineStat("particles", {
-        label: split ? "active" : "",
-        format: formatCount,
-        title: (v) => `${formatExact(v)} ${split ? "active " : ""}particles`,
-      });
-      hud.setStat("particles", active); // the label and the number change together
-    }
-    hud.setStat("total", split ? total : null);
-  };
-
-  return {
-    hud,
-    update(dt) {
-      update(dt);
-      refreshCounts();
-    },
-  };
+  return { hud, update };
 }
 
 function registerMenu(
@@ -127,11 +104,11 @@ function registerMenu(
   // into it and move the camera.
   if (options.world === null) {
     hud.registerParam({
-      id: "planes", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: scenes.planeCount,
+      id: "planes", label: "sheets", type: "range", live: false, persist: false, min: 1, max: 256, step: 1, value: scenes.planeCount,
       onChange: (v) => {
         scenes.planeCount = Math.round(v);
         scenes.rebuild();
-        // Keep the link true to the screen: it carries the plane count, and the rebuilt layout has no roll in it.
+        // Keep the link true to the screen: it carries the sheet count, and the rebuilt layout has no roll in it.
         const url = new URL(location.href);
         url.searchParams.set("planes", String(scenes.planeCount));
         url.hash = "";
@@ -187,7 +164,7 @@ function registerMenu(
     value: view.parallax.enabled, onChange: (on) => (view.parallax.enabled = on),
   });
   hud.registerParam({
-    id: "interplane", label: "plane crossings", type: "toggle", group: "look", persist: saved("interplane"),
+    id: "interplane", label: "sheet crossings", type: "toggle", group: "look", persist: saved("interplane"),
     value: render.interplane.enabled, onChange: render.interplane.set,
   });
 

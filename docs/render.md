@@ -100,7 +100,13 @@ import { DensityPost } from '../render';
 
 const post = new DensityPost(device, { format: targetFormat });
 post.resize(width, height);
-post.settings.tone.white = 24 * particles / (width * height);
+// Scale invariant start: black point at a quarter of the mean density, white
+// at 24 times the mean. See "Tone mapping" below for why the black point
+// matters, and CountToneMapper for exposure measured from the image.
+const mean = particles / (width * height);
+const black = Math.max(1, mean / 4);
+post.settings.tone.exposure = 1 / black;
+post.settings.tone.white = Math.max(12, 24 * mean) / black;
 
 // per frame
 post.encode(encoder, densityView, targetView, 1 / 60);
@@ -212,10 +218,25 @@ Settings (`post.settings.tone`):
 | `display` | `soft` | `soft`: identity up to 0.75, then a smooth shoulder. `filmic`: ACES style fit with a toe, more contrast, sparse dust sinks toward black. `clip`: hard clamp |
 | `dither` | 1 | triangular noise in 8 bit steps, added to the sRGB value; stops banding in dark gradients. It shrinks to the distance from black or white, so black stays exactly 0 and neither end is biased |
 
-`white` is the control that matters most. A good starting point is a multiple
-of the mean density, around `24 * particles * energy / pixels`; the demo does
-that when `white` is left on auto. There is no automatic exposure from the
-image itself yet.
+`white` and `exposure` together set the curve. With the log curve, the `1` in
+`log(1 + exposure * density)` acts as a black point of `1 / exposure`
+particles: densities below it fall into the toe, and each doubling above it
+adds the same brightness step. At exposure 1 that black point is one
+particle, which is right for sparse scenes but makes the frame drift toward
+white as counts grow, because every pixel then sits far above it (visual QA,
+`docs/qa/challenge/`, figure 01).
+
+So scale both with the mean density `mean = particles * energy / pixels`:
+
+- `exposure = 1 / black` with `black = max(1, mean / 4)`
+- `white = max(12, 24 * mean) / black`
+
+Then the picture keeps its balance from 1 to millions of particles per
+pixel; the demo does this when `white` is left on auto. For large counts, or
+when the density is uneven enough that the mean misleads, measure the image
+instead: `CountToneMapper` (below) places black and white at percentiles of
+the lit pixels, and `exposureFromHistogram` does the same for any histogram
+you build yourself.
 
 ## Bloom
 

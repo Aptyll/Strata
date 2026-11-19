@@ -12,7 +12,9 @@ Everything between the person and the simulation. Each subfolder is self-contain
 | `mobile/` | Touch screens: a smaller particle budget picked from the device, and a round button that opens the settings menu (phones have no Esc key). Touch camera gestures live in `camera/input.ts`. | live on touch devices |
 | `recovery/` | What the app does when the GPU fails: a card and one automatic restart after a lost device, the last world that fit when a particle count does not, a card instead of a black page when boot throws. Demo: `/src/ux/recovery/demo/`. | live |
 | `design/` | The design tokens (`--st-*`): type roles, ink levels, spacing, motion and the theme accent that all chrome is styled with. Rules: `docs/ux/design.md`. Specimen: `/src/ux/design/demo/`. | tokens live; chrome is being moved over |
+| `info/` | The information layer: what the words on screen say. Labelled counts on the stats line ("simulated", "stored", "sheets"), the label for the sheet the camera faces, the pointer and camera rows on the keys sheet, and the about card (I) that explains simulated versus rendered. Vocabulary and rules: `docs/ux/information.md`. Demo: `/src/ux/info/demo/`. | live |
 | `theme/` | Color themes: a gradient map on the canvas after the tone map (one SVG filter), T to cycle, `?theme=`; mounted by `src/app/hud.ts`. | live |
+| `returning/` | Reasons to come back, from the second visit on: today's world (N), kept worlds (K), previous world (Backspace), "what's new" lines. Remembered in `localStorage` only. Rules: `docs/ux/returning.md`. Demo: `/src/ux/returning/demo/`. | live |
 
 - **Depends on:** `src/core/contracts.ts`.
 - **Used by:** `src/main.ts`, `src/app`, `src/capture`, `src/record`, `src/challenge`.
