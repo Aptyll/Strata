@@ -123,7 +123,12 @@ fn update(p: Particle, i: u32) -> Particle {
 
   var o: Particle;
   o.pos = r.xy * P.size;
-  o.vel = vec2f(r.z, ang);
+  // vel carries hidden state: the depth coordinate and the angle used this
+  // frame. The angle is stored in (-pi, pi] rather than [0, 2pi) because the
+  // 8 byte perf path clamps velocity to +-velMax (4 by default); an angle
+  // above 4 was clamped, the next frame un-rotated by the wrong angle, and the
+  // attractor smeared for a third of every tumble.
+  o.vel = vec2f(r.z, ang - select(0.0, 6.2831853, ang > 3.14159265));
   return o;
 }
 `,
