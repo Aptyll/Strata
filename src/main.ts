@@ -12,6 +12,7 @@ import { mountPanels } from "./ui";
 import { attachCameraInput, createCamera, planeTargetFromDesc, poseFromState } from "./ux/camera";
 import { formatCount } from "./ux/hud/index.js";
 import { mountHud } from "./ux/hud/wire";
+import { startStreamingWorld, type StreamingWorld } from "./world";
 import { scatterLayout, scatterRadius } from "./world/layout";
 
 // URL options:
@@ -19,6 +20,7 @@ import { scatterLayout, scatterRadius } from "./world/layout";
 //   &raster=points   draw with the point-list pass instead of the compute rasterizer
 //   &adaptive=1      thin planes to hold the frame rate
 //   &fps=60          frame rate the adaptive budget aims for
+//   &world=strata    stream an endless seeded world instead of the fixed layout (docs/world.md)
 const query = new URLSearchParams(location.search);
 const num = (key: string, fallback: number) => {
   const v = Number(query.get(key));
@@ -89,10 +91,15 @@ async function start(): Promise<void> {
   let planeCount = Math.round(num("planes", 32));
   let total = 0;
   let scene = buildScene(particles, planeCount, num("brightness", 0.2));
+  // With ?world the planes come from the streamer, so the scene itself starts empty.
+  const worldSeed = query.get("world");
+  if (worldSeed !== null) scene = { ...scene, planes: [], camera: { ...scene.camera, target: [6, 6, 6], distance: 10 } };
+  let streaming: StreamingWorld | null = null;
   /** Camera of the last scene handed out, to tell "same camera" from "move the camera". */
   let handedOut = "";
 
   const loadScene = (next: Scene) => {
+    streaming?.clear(); // setPlanes below destroys every plane, streamed ones included
     scene = next;
     sim.setPlanes(scene.planes);
     total = sim.planes.reduce((n, p) => n + p.capacity, 0);
@@ -144,6 +151,12 @@ async function start(): Promise<void> {
       planes: sim.planes.length,
     }),
   };
+  if (worldSeed !== null) {
+    streaming = startStreamingWorld(app, {
+      seed: worldSeed || "strata",
+      maxParticles: query.has("particles") ? particles : 8_000_000,
+    });
+  }
   mountPanels(app);
   // Handy for poking at the engine from the console.
   (window as unknown as { strata: AppContext }).strata = app;
@@ -226,6 +239,7 @@ async function start(): Promise<void> {
     graph.resize();
     adaptiveBudget.setViewport(graph.width, graph.height);
     camera.update(dt);
+    streaming?.tick(dt);
     const viewProj = camera.viewProjection(graph.width / graph.height);
     writeGlobals(gpu, { viewProj, time, dt, frame, brightness: scene.render.brightness });
 

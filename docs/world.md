@@ -25,11 +25,9 @@ const scene = createWorldScene(world, {
   maxParticlesPerPlane: 1_000_000,
 });
 
-// Streaming: call once per frame.
-const streamer = createStreamer(world, { maxPlanes: 256, maxAwake: 64 });
-const diff = streamer.update({ position: eye, forward }, dt);
-for (const { slot, plane } of diff.despawned) freePlane(slot);
-for (const { slot, plane } of diff.spawned) createPlane(slot, toPlaneDesc(plane, behaviorIds));
+// Streaming into the running app: once at start, then once per frame.
+const streaming = startStreamingWorld(app, { seed: 'strata' });
+streaming.tick(dt);
 ```
 
 ## Plane data
@@ -168,16 +166,31 @@ struct PlaneSlot {
 
 ## Hooking into the engine
 
-`createWorldScene` works with `AppContext.loadScene` as it stands. True
-streaming needs two things the shared contracts do not have yet:
+Open the app with `?world=strata` (any seed) and it streams the endless world
+instead of the fixed layout. `&particles=` sets the total particle budget
+(default 8 million in this mode).
 
-- A way to add and remove a single plane while running (today only
-  `loadScene` rebuilds everything).
-- A per-plane brightness multiplier so `slot.fade` can be applied.
+That is one call in `main.ts`, `startStreamingWorld(app, options)`, plus
+`streaming.tick(dt)` each frame. Underneath, `createWorldDriver(host, source, options)`
+in `driver.ts` maps the streamer onto the `PlaneHost` contract:
 
-Sleeping maps onto what exists: set `activeCount` to 0 in the simulate stage
-for asleep planes while still drawing them, which needs separate simulate and
-draw counts, or a `ParticleBudget` that is told the slot state.
+| streamer | engine |
+| --- | --- |
+| `spawned` | `host.addPlane(toPlaneDesc(plane))`, at most `maxSpawnsPerFrame` (default 2) per frame, most important first, because creating a plane allocates and fills its particle buffer. |
+| `despawned` | `host.removePlane(instance)` |
+| `slot.fade` | `desc.brightness`, pushed with `host.updatePlane` when it changes by 1/128 or more. |
+| asleep or leaving | `instance.paused = true`: drawn, not stepped. |
+
+`startStreamingWorld` scales the world for the engine: sectors 12 units wide,
+5,000 particles per square unit, 2,000 to 2 million per plane, 192 slots with
+64 awake. All of it can be overridden through its options.
+
+Limits to know about:
+
+- Loading another scene (dice roll, plane count slider) clears the streamed
+  planes; the streamer then refills around the camera on top of that scene.
+- "Go to nearest plane" does not know about streamed planes yet.
+- None of this has been run on a GPU. The driver is tested against a fake host.
 
 ## Preview and tests
 
