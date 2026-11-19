@@ -85,12 +85,12 @@ export function mountCapture(host: CaptureHost): void {
   let busy = false;
   let abort: AbortController | null = null;
 
-  hud.registerShortcut({ key: 'p', label: 'screenshot', run: () => !busy && live.requestScreenshot() });
+  hud.registerShortcut({ key: 'p', label: 'screenshot', run: (e) => !busy && !e.repeat && live.requestScreenshot() });
   hud.registerShortcut({
     key: 'v',
     label: 'record video',
-    run: () => {
-      if (busy) return;
+    run: (e) => {
+      if (busy || e.repeat) return;
       void live.toggleRecording().catch(() => {});
     },
   });

@@ -3,7 +3,7 @@
  * parallel do not both react to the same press.
  *
  *   HUD     R dice, H stats, Esc settings, F fullscreen, ? keys, plus the app
- *           shortcuts registered in main.ts ([ ] - = G) and capture (P V)
+ *           shortcuts registered in main.ts ([ ] - = G P V)
  *   camera  WASD / arrows / Q E / Shift to fly, , . previous and next plane,
  *           Home to fly home, Space to toggle idle drift
  *
@@ -12,7 +12,7 @@
  */
 
 /** KeyboardEvent.code values the HUD and app shortcuts own; the camera never sees them. */
-const RESERVED = new Set(["KeyH", "Escape", "KeyF", "KeyR", "KeyG", "KeyP", "KeyV", "BracketLeft", "BracketRight", "Minus", "Equal"]);
+const RESERVED = new Set(["KeyH", "Escape", "KeyF", "KeyR", "KeyG", "BracketLeft", "BracketRight", "Minus", "Equal", "KeyP", "KeyV"]);
 
 export interface KeyRouter {
   /** Pass as `keyTarget` to attachCameraInput. */
