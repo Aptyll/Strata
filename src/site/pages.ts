@@ -49,14 +49,14 @@ export const SITE = {
   author: { name: "Aptyll", url: "https://github.com/Aptyll" },
   license: "https://opensource.org/license/mit",
   locale: "en_US",
-  /** Made by share/make-card.py from docs/record/trillion-A.png; the numbers on it are that frame's GPU tallies. */
+  /** Made by share/make-card.py from docs/record/trillion-key2-f0.png; the numbers on it are that frame's GPU tallies. */
   card: {
     file: "src/site/share/strata-1t.jpg",
     width: 1200,
     height: 630,
     alt:
-      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: a spiral disc, " +
-      "a ribbon of looping curves and a sheet of fine rings. 985,878,512,802 of the particles are in the frame.",
+      "One frame of 1,000,000,000,000 particles rendered by Strata, white on black: one large glowing disc " +
+      "in front of hundreds of small spiral and ring sheets. 107,787,615,440 of the particles are in the frame.",
   } satisfies ShareCard,
 };
 
