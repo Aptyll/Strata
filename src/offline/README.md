@@ -113,7 +113,7 @@ Use the Node runner for renders that take hours. A browser tab can be
 throttled in the background, and browsers reset the GPU if one submission runs
 too long, so the page keeps batches short (about 120 ms) at some cost in speed.
 
-## Two kernels
+## Kernels
 
 `--kernel offline` (default) is this folder's accumulate shader: returning
 64-bit atomics, exact per-particle flux weights, and evaluated and in-frame
@@ -121,10 +121,16 @@ counts both counted on the GPU. `--kernel trillion` runs `src/trillion`'s
 splat kernel behind the same renderer, checkpoints and grade: fire-and-forget
 u32 atomics folded into u64, shared-memory tiles for small sheets. With it,
 flux weighting becomes a per-sheet keep probability from the sheet center's
-depth. Both kernels count `evaluated` and `landed` on the GPU. Camera motion
-blur is in the offline kernel only; the
-trillion kernel uses the mid-shutter camera. `bench --kernel both` compares them on one
-machine. The page has the same choice.
+depth. `--kernel trillion-strata` is the same kernel with stratified laws, so
+neighbouring particles land near each other and their hits merge before the
+global atomics (the fast path; not yet timed on the 2070).
+
+All kernels count `evaluated` and `landed` on the GPU and blur camera moves
+over the shutter. The trillion kernels use a constant salt, so each particle
+keeps its sub-pixel corner and shutter instant from frame to frame, as the
+offline kernel does with draws 6 and 7. `bench --kernel both` compares offline
+and trillion on one machine, `--kernel all` adds trillion-strata. The page has
+the same choice.
 
 ## Checks
 
